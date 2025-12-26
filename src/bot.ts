@@ -422,14 +422,30 @@ export class YBBTallyBot {
         const restOfCommand = commandMatch[1].trim();
         
         // Parse: "Description" amount day payer
-        // Try to match quoted description first
-        const quotedMatch = restOfCommand.match(/^"([^"]+)"\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/);
-        const unquotedMatch = restOfCommand.match(/^(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/);
+        // Handle both regular quotes (") and smart quotes ("")
+        // Also handle descriptions without quotes (single word)
+        // Try to match quoted description first (both regular and smart quotes)
+        const quotedMatchRegular = restOfCommand.match(/^"([^"]+)"\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
+        const quotedMatchSmart = restOfCommand.match(/^[""]([^""]+)[""]\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
+        const quotedMatch = quotedMatchRegular || quotedMatchSmart;
+        const unquotedMatch = restOfCommand.match(/^(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
         
-        let description: string;
-        let amountStr: string;
-        let dayStr: string;
-        let payerStr: string;
+        // Debug: log what we're trying to parse
+        console.log('Parsing recurring command:', {
+          fullText: ctx.message.text,
+          restOfCommand,
+          restOfCommandLength: restOfCommand.length,
+          restOfCommandChars: restOfCommand.split('').map(c => c.charCodeAt(0)),
+          quotedMatchRegular: !!quotedMatchRegular,
+          quotedMatchSmart: !!quotedMatchSmart,
+          quotedMatch: !!quotedMatch,
+          unquotedMatch: !!unquotedMatch
+        });
+        
+        let description: string = '';
+        let amountStr: string = '';
+        let dayStr: string = '';
+        let payerStr: string = '';
         
         if (quotedMatch) {
           // Quoted description
@@ -438,10 +454,61 @@ export class YBBTallyBot {
           // Unquoted description (single word)
           [, description, amountStr, dayStr, payerStr] = unquotedMatch;
         } else {
+          // Fallback: try to parse manually by splitting on spaces
+          // This handles cases where quotes might be different or formatting is off
+          const parts = restOfCommand.split(/\s+/);
+          if (parts.length >= 4) {
+            // Try to reconstruct: if first part starts with quote, combine until we find closing quote
+            if (parts[0].startsWith('"') || parts[0].startsWith('"')) {
+              // Find where description ends
+              let descEnd = 0;
+              for (let i = 0; i < parts.length; i++) {
+                if (parts[i].endsWith('"') || parts[i].endsWith('"')) {
+                  descEnd = i;
+                  break;
+                }
+              }
+              description = parts.slice(0, descEnd + 1).join(' ').replace(/^[""]|[""]$/g, '');
+              if (descEnd + 1 < parts.length) amountStr = parts[descEnd + 1];
+              if (descEnd + 2 < parts.length) dayStr = parts[descEnd + 2];
+              if (descEnd + 3 < parts.length) payerStr = parts[descEnd + 3];
+            } else {
+              // No quotes, single word description
+              description = parts[0];
+              amountStr = parts[1];
+              dayStr = parts[2];
+              payerStr = parts[3];
+            }
+            
+            console.log('Fallback parsing:', { description, amountStr, dayStr, payerStr });
+          } else {
+            // Debug: show what we're trying to parse
+            console.error('Failed to parse recurring command:', restOfCommand, 'Parts:', parts);
+            await ctx.reply(
+              'Incorrect format. Use:\n' +
+              '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
+              'Example: `/recurring add "Internet Bill" 50 15 bryan`\n\n' +
+              `Debug: Could not parse "${restOfCommand}" (${parts.length} parts found)`,
+              { parse_mode: 'Markdown' }
+            );
+            return;
+          }
+        }
+
+        // Trim all values and validate they exist
+        description = description?.trim() || '';
+        amountStr = amountStr?.trim() || '';
+        dayStr = dayStr?.trim() || '';
+        payerStr = payerStr?.trim() || '';
+
+        // Debug logging
+        console.log('Parsed values:', { description, amountStr, dayStr, payerStr });
+
+        if (!amountStr) {
           await ctx.reply(
-            'Incorrect format. Use:\n' +
-            '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
-            'Example: `/recurring add "Internet Bill" 50 15 bryan`',
+            'Error: Could not extract amount from command.\n\n' +
+            `Received: \`${ctx.message.text}\`\n` +
+            `Parsed: description="${description}", amount="${amountStr}", day="${dayStr}", payer="${payerStr}"`,
             { parse_mode: 'Markdown' }
           );
           return;
@@ -450,10 +517,27 @@ export class YBBTallyBot {
         const amount = parseFloat(amountStr);
         const dayOfMonth = parseInt(dayStr);
         payerStr = payerStr.toLowerCase();
+        
+        // Debug logging
+        console.log('Parsed numeric values:', { amount, dayOfMonth, payerStr, amountIsNaN: isNaN(amount) });
 
         // Validate
         if (isNaN(amount) || amount <= 0) {
-          await ctx.reply('Invalid amount. Please provide a positive number.');
+          console.error('Amount validation failed:', { 
+            amount, 
+            amountStr, 
+            parsed: parseFloat(amountStr),
+            fullText: ctx.message.text,
+            restOfCommand,
+            quotedMatch: !!quotedMatch,
+            unquotedMatch: !!unquotedMatch
+          });
+          await ctx.reply(
+            `Invalid amount "${amountStr}". Please provide a positive number.\n\n` +
+            `Received: \`${ctx.message.text}\`\n` +
+            `Parsed: description="${description}", amount="${amountStr}", day="${dayStr}", payer="${payerStr}"`,
+            { parse_mode: 'Markdown' }
+          );
           return;
         }
 
