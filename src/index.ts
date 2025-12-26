@@ -10,6 +10,20 @@ import QuickChart from 'quickchart-js';
 
 dotenv.config();
 
+// --- RENDER KEEP-ALIVE (MOVE THIS TO THE TOP) ---
+// We start the web server FIRST so Render sees us immediately
+const port = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running!');
+});
+// '0.0.0.0' forces it to listen on all addresses (Required for Render)
+server.listen(port, '0.0.0.0', () => {
+    console.log(`Keep-alive server listening on port ${port}`);
+});
+
+// --- YOUR BOT CODE STARTS BELOW HERE ---
+
 const prisma = new PrismaClient();
 const analyticsService = new AnalyticsService();
 const expenseService = new ExpenseService();
@@ -211,16 +225,4 @@ async function main() {
 }
 
 main();
-
-// --- RENDER KEEP-ALIVE ---
-// This creates a "fake" website so Render doesn't kill the bot
-const port = process.env.PORT || 8080;
-const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Bot is running!');
-});
-
-server.listen(port, () => {
-    console.log(`Keep-alive server listening on port ${port}`);
-});
 
