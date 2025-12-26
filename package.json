@@ -1,0 +1,39 @@
+{
+  "name": "ybb-tally-bot",
+  "version": "1.0.0",
+  "description": "Private Telegram bot for managing shared expenses",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": ["telegram", "bot", "expenses", "tally"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@prisma/client": "^5.19.0",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.1.0",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "quickchart-js": "^1.0.2",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "prisma": "^5.19.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.0"
+  }
+}
+
+
+
+
+
