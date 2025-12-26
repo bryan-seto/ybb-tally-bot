@@ -1,4 +1,4 @@
-import { Telegraf, Context, session } from 'telegraf';
+import { Telegraf, Context, session, Markup } from 'telegraf';
 import { PrismaClient } from '@prisma/client';
 import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
@@ -551,9 +551,15 @@ export class YBBTallyBot {
         await ctx.reply(
           `${transactionInfo}Is ${amountStr} correct?\n\n` +
           `Merchant: ${receiptData.merchant || 'Unknown'}\n` +
-          `Category: ${receiptData.category || 'Other'}\n\n` +
-          `Reply "yes" to confirm, or send the correct amount.`,
-          { parse_mode: 'Markdown' }
+          `Category: ${receiptData.category || 'Other'}`,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Yes', callback_data: 'confirm_amount' }],
+              ],
+            },
+          }
         );
       } catch (error: any) {
         console.error('Error processing receipt:', error);
@@ -577,10 +583,15 @@ export class YBBTallyBot {
           session.awaitingPayer = true;
           
           await ctx.reply(
-            'Who paid for this expense?\n\n' +
-            'Reply with:\n' +
-            '• "bryan" or "1" for Sir Bryan\n' +
-            '• "hwei yeen" or "2" for Madam Hwei Yeen'
+            'Who paid for this expense?',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Bryan', callback_data: 'payer_bryan' }],
+                  [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                ],
+              },
+            }
           );
         } else {
           // Try to parse as amount
@@ -591,11 +602,15 @@ export class YBBTallyBot {
             session.awaitingPayer = true;
             
             await ctx.reply(
-              `Amount updated to SGD $${amount.toFixed(2)}.\n\n` +
-              'Who paid for this expense?\n\n' +
-              'Reply with:\n' +
-              '• "bryan" or "1" for Sir Bryan\n' +
-              '• "hwei yeen" or "2" for Madam Hwei Yeen'
+              `Amount updated to SGD $${amount.toFixed(2)}.\n\nWho paid for this expense?`,
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: 'Bryan', callback_data: 'payer_bryan' }],
+                    [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                  ],
+                },
+              }
             );
           } else {
             await ctx.reply('Please reply "yes" to confirm the amount, or send the correct amount.');
@@ -756,6 +771,121 @@ export class YBBTallyBot {
           }
         }
         return;
+      }
+    });
+
+    // Handle callback queries (button clicks)
+    this.bot.on('callback_query', async (ctx) => {
+      if (!ctx.session) {
+        ctx.session = {};
+      }
+      const callbackData = ctx.callbackQuery.data;
+      const session = ctx.session;
+
+      // Handle amount confirmation button
+      if (callbackData === 'confirm_amount') {
+        await ctx.answerCbQuery();
+        
+        if (!session.receiptData) {
+          await ctx.reply('Error: Receipt data not found. Please try again.');
+          return;
+        }
+        
+        session.awaitingAmountConfirmation = false;
+        session.awaitingPayer = true;
+        
+        try {
+          await ctx.editMessageText(
+            'Who paid for this expense?',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Bryan', callback_data: 'payer_bryan' }],
+                  [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                ],
+              },
+            }
+          );
+        } catch (error) {
+          // If editing fails, send a new message
+          await ctx.reply(
+            'Who paid for this expense?',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Bryan', callback_data: 'payer_bryan' }],
+                  [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                ],
+              },
+            }
+          );
+        }
+        return;
+      }
+
+      // Handle payer selection buttons
+      if (callbackData === 'payer_bryan' || callbackData === 'payer_hweiyeen') {
+        await ctx.answerCbQuery();
+        
+        const payerRole: 'Bryan' | 'HweiYeen' = callbackData === 'payer_bryan' ? 'Bryan' : 'HweiYeen';
+        
+        const user = await prisma.user.findFirst({
+          where: { role: payerRole },
+        });
+
+        if (!user) {
+          await ctx.reply('Error: User not found in database. Please ensure users are initialized.');
+          session.awaitingPayer = false;
+          return;
+        }
+
+        // Create transaction
+        const receiptData = session.receiptData;
+        if (!receiptData) {
+          await ctx.reply('Error: Receipt data not found. Please try again.');
+          return;
+        }
+
+        const transaction = await prisma.transaction.create({
+          data: {
+            amountSGD: receiptData.amount,
+            currency: receiptData.currency || 'SGD',
+            category: receiptData.category || 'Other',
+            description: receiptData.merchant || receiptData.description,
+            payerId: user.id,
+            date: receiptData.date ? new Date(receiptData.date) : getNow(),
+            splitType: 'FULL',
+          },
+        });
+
+        // Clear session
+        session.receiptData = null;
+        session.awaitingPayer = false;
+        session.awaitingAmountConfirmation = false;
+
+        // Show outstanding balance
+        const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+        
+        try {
+          await ctx.editMessageText(
+            `✅ Expense recorded!\n\n` +
+            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
+            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
+            `Category: ${transaction.category || 'Other'}\n\n` +
+            balanceMessage,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (error) {
+          // If editing fails, send a new message
+          await ctx.reply(
+            `✅ Expense recorded!\n\n` +
+            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
+            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
+            `Category: ${transaction.category || 'Other'}\n\n` +
+            balanceMessage,
+            { parse_mode: 'Markdown' }
+          );
+        }
       }
     });
   }

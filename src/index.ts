@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import cron from 'node-cron';
+import http from 'http';
 import { PrismaClient } from '@prisma/client';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
@@ -210,4 +211,16 @@ async function main() {
 }
 
 main();
+
+// --- RENDER KEEP-ALIVE ---
+// This creates a "fake" website so Render doesn't kill the bot
+const port = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running!');
+});
+
+server.listen(port, () => {
+    console.log(`Keep-alive server listening on port ${port}`);
+});
 
