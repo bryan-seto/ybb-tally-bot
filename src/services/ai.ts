@@ -12,6 +12,7 @@ interface ReceiptData {
   category?: string;
   transactionCount?: number;
   individualAmounts?: number[]; // Array of individual transaction amounts in SGD
+  merchants?: string[]; // Array of merchant names when multiple receipts
 }
 
 export class AIService {
@@ -24,18 +25,42 @@ export class AIService {
   }
 
   /**
-   * Process receipt image and extract data
+   * Process receipt image(s) and extract data
    * Logs latency to SystemLog
+   * @param imageBuffers - Single buffer or array of buffers for multiple receipts
    */
   async processReceipt(
-    imageBuffer: Buffer,
+    imageBuffers: Buffer | Buffer[],
     userId: bigint,
     mimeType: string = 'image/jpeg'
   ): Promise<ReceiptData> {
     const startTime = Date.now();
+    const buffers = Array.isArray(imageBuffers) ? imageBuffers : [imageBuffers];
+    const isMultiple = buffers.length > 1;
 
     try {
-      const prompt = `Analyze this image. It could be:
+      const prompt = isMultiple
+        ? `I have provided ${buffers.length} images of receipts. Please analyze them together.
+
+IMPORTANT:
+- If they are multiple parts of one long receipt (e.g., top and bottom of same receipt), combine them and provide a SINGLE total.
+- If they are different receipts, sum all the totals and list all the merchants.
+
+Extract the following information in JSON format:
+{
+  "isValid": true/false (true if any image contains expense/transaction data),
+  "total": number (the total amount in SGD - sum of all receipts if multiple, or single total if one receipt),
+  "currency": string (e.g., "SGD", "USD", "THB" - use SGD if amounts are converted),
+  "merchant": string (merchant/store name, or "Multiple Receipts" if different merchants, null if not found),
+  "merchants": array of strings (list of all merchant names found across all receipts, empty array if not found),
+  "date": string (date in YYYY-MM-DD format - use the most recent transaction date, null if not found),
+  "category": string (category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found),
+  "transactionCount": number (total number of individual transactions across all receipts),
+  "individualAmounts": array of numbers (list of each receipt's total amount in SGD, in the order they appear)
+}
+
+Return ONLY valid JSON, no additional text.`
+        : `Analyze this image. It could be:
 1. A traditional receipt/invoice
 2. A YouTrip transaction history screenshot
 3. A banking app transaction list
@@ -47,6 +72,7 @@ Extract the following information in JSON format:
   "total": number (the total amount in SGD - if multiple transactions, sum all SGD amounts excluding credits/top-ups/refunds),
   "currency": string (e.g., "SGD", "USD", "THB" - use SGD if amounts are converted),
   "merchant": string (merchant/store name, or "Multiple Transactions" if multiple merchants, null if not found),
+  "merchants": array of strings (list of merchant names, empty array if single merchant or not found),
   "date": string (date in YYYY-MM-DD format - use the most recent transaction date, null if not found),
   "category": string (category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found),
   "transactionCount": number (number of individual transactions if this is a transaction list, 1 for single receipt),
@@ -64,14 +90,15 @@ IMPORTANT FOR YOUTRIP/BANKING SCREENSHOTS:
 
 Return ONLY valid JSON, no additional text.`;
 
-      const imagePart = {
+      // Prepare image parts
+      const imageParts = buffers.map(buffer => ({
         inlineData: {
-          data: imageBuffer.toString('base64'),
+          data: buffer.toString('base64'),
           mimeType,
         },
-      };
+      }));
 
-      const result = await this.model.generateContent([prompt, imagePart]);
+      const result = await this.model.generateContent([prompt, ...imageParts]);
       const response = await result.response;
       const text = response.text();
 
@@ -82,6 +109,11 @@ Return ONLY valid JSON, no additional text.`;
       }
 
       const receiptData: ReceiptData = JSON.parse(jsonMatch[0]);
+      
+      // Ensure merchants array exists
+      if (!receiptData.merchants) {
+        receiptData.merchants = receiptData.merchant ? [receiptData.merchant] : [];
+      }
 
       const latencyMs = Date.now() - startTime;
 

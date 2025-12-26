@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
     res.end('Bot is running!');
 });
 // '0.0.0.0' forces it to listen on all addresses (Required for Render)
-server.listen(port, '0.0.0.0', () => {
+server.listen(Number(port), '0.0.0.0', () => {
     console.log(`Keep-alive server listening on port ${port}`);
 });
 

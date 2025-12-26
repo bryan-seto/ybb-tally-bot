@@ -23,6 +23,7 @@ interface BotSession {
     date?: string;
     category?: string;
     individualAmounts?: number[];
+    merchants?: string[];
   };
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
@@ -33,12 +34,41 @@ interface BotSession {
   manualDescription?: string;
 }
 
+interface PendingReceiptData {
+  receiptData: {
+    amount: number;
+    currency: string;
+    merchant?: string;
+    date?: string;
+    category?: string;
+    individualAmounts?: number[];
+    merchants?: string[];
+  };
+  chatId: number;
+  userId: bigint;
+}
+
+interface PendingPhoto {
+  fileId: string;
+  filePath: string;
+  buffer?: Buffer;
+}
+
+interface PhotoCollection {
+  photos: PendingPhoto[];
+  timer: NodeJS.Timeout | null;
+  statusMessageId?: number;
+  userId: bigint;
+}
+
 export class YBBTallyBot {
   private bot: Telegraf<Context & { session?: BotSession }>;
   private aiService: AIService;
   private analyticsService: AnalyticsService;
   private expenseService: ExpenseService;
   private allowedUserIds: Set<string>;
+  private photoCollections: Map<number, PhotoCollection> = new Map(); // chat_id -> collection
+  private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
 
   constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
     this.bot = new Telegraf(token);
@@ -68,12 +98,19 @@ export class YBBTallyBot {
 
       // Log all interactions
       try {
+        let command = 'photo';
+        if (ctx.message && 'text' in ctx.message && ctx.message.text) {
+          command = ctx.message.text;
+        } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery && ctx.callbackQuery.data) {
+          command = ctx.callbackQuery.data;
+        }
+        
         await prisma.systemLog.create({
           data: {
             userId: BigInt(userId),
             event: 'command_used',
             metadata: {
-              command: ctx.message?.text || ctx.callbackQuery?.data || 'photo',
+              command,
               chatType: ctx.chat?.type,
             },
           },
@@ -128,33 +165,33 @@ export class YBBTallyBot {
       const userName = USER_NAMES[ctx.from.id.toString()] || 'User';
       await ctx.reply(
         `At your service, ${userName}!\n\n` +
-        `**Commands:**\n` +
-        `/start - Register this group\n` +
-        `/add - Manually add an expense\n` +
-        `/balance - Check outstanding balance\n` +
-        `/admin_stats - View analytics (admin only)\n` +
-        `/report [month_offset] - Generate monthly report (default: last month)\n` +
-        `/help - Show this help message\n\n` +
-        `**Features:**\n` +
+        `💰 **Commands:**\n` +
+        `\`/start\` - Register this group\n` +
+        `\`/add\` - Manually add an expense\n` +
+        `\`/balance\` - Check outstanding balance\n` +
+        `\`/recurring\` - Manage recurring expenses\n` +
+        `\`/report [offset]\` - Generate monthly report\n` +
+        `\`/admin_stats\` - View analytics (admin only)\n` +
+        `\`/help\` - Show this help message\n\n` +
+        `📸 **Receipt Processing:**\n` +
         `• Send a receipt photo to automatically extract expense details\n` +
-        `• Automatic 70/30 split (Bryan 70%, Hwei Yeen 30%)\n` +
-        `• Recurring bills automation\n` +
-        `• Monthly reports (automatic on 1st of month or on-demand)\n\n` +
-        `**Recurring Expenses:**\n` +
-        `To add a recurring expense, use:\n` +
-        `/recurring add <description> <amount> <day_of_month> <payer>\n\n` +
-        `Example: /recurring add "Internet Bill" 50 15 bryan\n` +
-        `• Description: Name of the recurring expense\n` +
-        `• Amount: Amount in SGD\n` +
-        `• Day of month: 1-31 (when to process)\n` +
-        `• Payer: "bryan" or "hweiyeen"\n\n` +
-        `Recurring expenses are automatically processed on the specified day each month at 09:00 SGT.\n\n` +
-        `**Monthly Reports:**\n` +
-        `Generate custom monthly reports anytime:\n` +
-        `• \`/report\` - Last month's report\n` +
-        `• \`/report 0\` - Current month's report\n` +
-        `• \`/report 2\` - Report from 2 months ago\n\n` +
-        `Reports include spending breakdown, top categories, and a visual chart.`
+        `• Supports traditional receipts, YouTrip screenshots, and banking apps\n` +
+        `• Automatic 70/30 split (Bryan 70%, Hwei Yeen 30%)\n\n` +
+        `💡 **Pro Tip:** Send multiple receipt photos within 10 seconds! ` +
+        `I'll collect them all and process them together. Perfect for:\n` +
+        `• Multiple parts of one long receipt\n` +
+        `• Multiple receipts from the same shopping trip\n` +
+        `• Batch processing of expenses\n\n` +
+        `📅 **Recurring Expenses:**\n` +
+        `\`/recurring add "Description" <amount> <day> <payer>\`\n` +
+        `Example: \`/recurring add "Internet Bill" 50 15 bryan\`\n` +
+        `Automatically processed on the specified day each month at 09:00 SGT.\n\n` +
+        `📈 **Monthly Reports:**\n` +
+        `\`/report\` - Current month\n` +
+        `\`/report 1\` - Last month\n` +
+        `\`/report 2\` - 2 months ago\n` +
+        `Includes spending breakdown, top categories, and visual charts.`,
+        { parse_mode: 'Markdown' }
       );
     });
 
@@ -480,90 +517,68 @@ export class YBBTallyBot {
    * Setup message handlers
    */
   private setupHandlers(): void {
-    // Photo handler - receipt processing
+    // Photo handler - receipt processing with debouncing
     this.bot.on('photo', async (ctx) => {
       try {
-        const userName = USER_NAMES[ctx.from.id.toString()] || 'User';
-        await ctx.reply('Processing receipt... At your service!');
-
+        const chatId = ctx.chat.id;
+        const userId = BigInt(ctx.from.id);
+        
         // Get the largest photo
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const file = await ctx.telegram.getFile(photo.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-
-        // Download image
-        const response = await fetch(fileUrl);
-        const imageBuffer = Buffer.from(await response.arrayBuffer());
-
-        // Process with AI
-        const receiptData = await this.aiService.processReceipt(
-          imageBuffer,
-          BigInt(ctx.from.id),
-          'image/jpeg'
-        );
-
-        if (!receiptData.isValid) {
-          await ctx.reply('Not a receipt. Please send a valid receipt image.');
-          return;
-        }
-
-        if (!receiptData.total) {
-          await ctx.reply('Could not extract total amount from receipt. Please try again or use /add to add manually.');
-          return;
-        }
-
-        // Store receipt data in session
-        if (!ctx.session) {
-          ctx.session = {};
-        }
-        ctx.session.receiptData = {
-          amount: receiptData.total,
-          currency: receiptData.currency || 'SGD',
-          merchant: receiptData.merchant,
-          date: receiptData.date,
-          category: receiptData.category,
-          individualAmounts: receiptData.individualAmounts,
-        };
-        ctx.session.awaitingAmountConfirmation = true;
-
-        // Ask for confirmation
-        const amountStr = receiptData.currency === 'SGD' 
-          ? `SGD $${receiptData.total.toFixed(2)}`
-          : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
         
-        // Build transaction breakdown if multiple transactions
-        let transactionInfo = '';
-        if (receiptData.transactionCount && receiptData.transactionCount > 1) {
-          transactionInfo = `Found ${receiptData.transactionCount} transactions.\n\n`;
-          
-          // Show individual amounts if available
-          if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0) {
-            transactionInfo += '**Breakdown:**\n';
-            receiptData.individualAmounts.forEach((amt, index) => {
-              transactionInfo += `${index + 1}. SGD $${amt.toFixed(2)}\n`;
-            });
-            transactionInfo += `\n**Total: ${amountStr}**\n\n`;
-          } else {
-            transactionInfo += `Total: ${amountStr}\n\n`;
-          }
+        // Get or create photo collection for this chat
+        let collection = this.photoCollections.get(chatId);
+        if (!collection) {
+          collection = {
+            photos: [],
+            timer: null,
+            userId,
+          };
+          this.photoCollections.set(chatId, collection);
         }
+
+        // Add photo to collection
+        collection.photos.push({
+          fileId: photo.file_id,
+          filePath: file.file_path || '',
+        });
+
+        // Clear existing timer
+        if (collection.timer) {
+          clearTimeout(collection.timer);
+        }
+
+        // Update or create status message
+        const photoCount = collection.photos.length;
+        const statusText = `📥 Collecting receipts... (${photoCount} photo${photoCount > 1 ? 's' : ''} received)`;
         
-        await ctx.reply(
-          `${transactionInfo}Is ${amountStr} correct?\n\n` +
-          `Merchant: ${receiptData.merchant || 'Unknown'}\n` +
-          `Category: ${receiptData.category || 'Other'}`,
-          {
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: 'Yes', callback_data: 'confirm_amount' }],
-              ],
-            },
+        if (collection.statusMessageId) {
+          try {
+            await ctx.telegram.editMessageText(
+              chatId,
+              collection.statusMessageId,
+              undefined,
+              statusText
+            );
+          } catch (error) {
+            // If edit fails, send new message
+            const statusMsg = await ctx.reply(statusText);
+            collection.statusMessageId = statusMsg.message_id;
           }
-        );
+        } else {
+          const statusMsg = await ctx.reply(statusText);
+          collection.statusMessageId = statusMsg.message_id;
+        }
+
+        // Set new timer (10 seconds)
+        collection.timer = setTimeout(async () => {
+          await this.processPhotoBatch(chatId, collection!);
+        }, 10000);
+
       } catch (error: any) {
-        console.error('Error processing receipt:', error);
-        await ctx.reply('Sorry, I encountered an error processing the receipt. Please try again.');
+        console.error('Error handling photo:', error);
+        await ctx.reply('Sorry, I encountered an error. Please try again.');
       }
     });
 
@@ -574,6 +589,24 @@ export class YBBTallyBot {
       }
       const text = ctx.message.text.toLowerCase().trim();
       const session = ctx.session;
+      const chatId = ctx.chat.id;
+
+      // If user sends text during photo collection, clear the collection
+      // (they might be sending a correction or canceling)
+      if (this.photoCollections.has(chatId)) {
+        const collection = this.photoCollections.get(chatId);
+        if (collection && collection.timer) {
+          clearTimeout(collection.timer);
+          if (collection.statusMessageId) {
+            try {
+              await ctx.telegram.deleteMessage(chatId, collection.statusMessageId);
+            } catch (error) {
+              // Ignore if message already deleted
+            }
+          }
+          this.photoCollections.delete(chatId);
+        }
+      }
 
       // Handle amount confirmation for receipt
       if (session.awaitingAmountConfirmation) {
@@ -597,6 +630,9 @@ export class YBBTallyBot {
           // Try to parse as amount
           const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
           if (!isNaN(amount) && amount > 0) {
+            if (!session.receiptData) {
+              session.receiptData = { amount: 0, currency: 'SGD' };
+            }
             session.receiptData.amount = amount;
             session.awaitingAmountConfirmation = false;
             session.awaitingPayer = true;
@@ -642,12 +678,18 @@ export class YBBTallyBot {
 
           // Create transaction
           const receiptData = session.receiptData;
+          if (!receiptData) {
+            await ctx.reply('Error: Receipt data not found. Please try again.');
+            session.awaitingPayer = false;
+            return;
+          }
+          
           const transaction = await prisma.transaction.create({
             data: {
               amountSGD: receiptData.amount,
               currency: receiptData.currency || 'SGD',
               category: receiptData.category || 'Other',
-              description: receiptData.merchant || receiptData.description,
+              description: receiptData.merchant || 'Expense',
               payerId: user.id,
               date: receiptData.date ? new Date(receiptData.date) : getNow(),
               splitType: 'FULL',
@@ -655,7 +697,7 @@ export class YBBTallyBot {
           });
 
           // Clear session
-          session.receiptData = null;
+          session.receiptData = undefined;
           session.awaitingPayer = false;
           session.awaitingAmountConfirmation = false;
 
@@ -695,6 +737,7 @@ export class YBBTallyBot {
             `Amount: SGD $${amount.toFixed(2)}\n\n` +
             'Enter category (Food, Transport, Shopping, Bills, Other):'
           );
+          return;
         } else if (session.manualAddStep === 'category') {
           session.manualCategory = text || 'Other';
           session.manualAddStep = 'description';
@@ -735,10 +778,10 @@ export class YBBTallyBot {
 
             const transaction = await prisma.transaction.create({
               data: {
-                amountSGD: session.manualAmount,
+                amountSGD: session.manualAmount || 0,
                 currency: 'SGD',
                 category: session.manualCategory || 'Other',
-                description: session.manualDescription,
+                description: session.manualDescription || '',
                 payerId: user.id,
                 date: getNow(),
                 splitType: 'FULL',
@@ -747,10 +790,10 @@ export class YBBTallyBot {
 
             // Clear session
             session.manualAddMode = false;
-            session.manualAddStep = null;
-            session.manualAmount = null;
-            session.manualCategory = null;
-            session.manualDescription = null;
+            session.manualAddStep = undefined;
+            session.manualAmount = undefined;
+            session.manualCategory = undefined;
+            session.manualDescription = undefined;
 
             const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
             
@@ -779,14 +822,38 @@ export class YBBTallyBot {
       if (!ctx.session) {
         ctx.session = {};
       }
+      
+      // Type guard for callback query with data
+      if (!('data' in ctx.callbackQuery) || !ctx.callbackQuery.data) {
+        await ctx.answerCbQuery('Invalid callback');
+        return;
+      }
+      
       const callbackData = ctx.callbackQuery.data;
       const session = ctx.session;
 
-      // Handle amount confirmation button
-      if (callbackData === 'confirm_amount') {
+      // Handle amount confirmation button (with or without receiptId)
+      if (callbackData === 'confirm_amount' || callbackData.startsWith('confirm_amount_')) {
         await ctx.answerCbQuery();
         
-        if (!session.receiptData) {
+        let receiptDataToUse: PendingReceiptData['receiptData'] | null = null;
+        let receiptId: string | null = null;
+        
+        // Check if this is from pendingReceipts (batch processing)
+        if (callbackData.startsWith('confirm_amount_')) {
+          receiptId = callbackData.replace('confirm_amount_', '');
+          const pendingReceipt = this.pendingReceipts.get(receiptId);
+          if (pendingReceipt) {
+            receiptDataToUse = pendingReceipt.receiptData;
+            // Store in session for payer selection
+            session.receiptData = receiptDataToUse;
+          }
+        } else {
+          // Legacy: from session
+          receiptDataToUse = session.receiptData || null;
+        }
+        
+        if (!receiptDataToUse) {
           await ctx.reply('Error: Receipt data not found. Please try again.');
           return;
         }
@@ -794,14 +861,16 @@ export class YBBTallyBot {
         session.awaitingAmountConfirmation = false;
         session.awaitingPayer = true;
         
+        const payerCallbackPrefix = receiptId ? `payer_${receiptId}_` : 'payer_';
+        
         try {
           await ctx.editMessageText(
             'Who paid for this expense?',
             {
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: 'Bryan', callback_data: 'payer_bryan' }],
-                  [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                  [{ text: 'Bryan', callback_data: `${payerCallbackPrefix}bryan` }],
+                  [{ text: 'Hwei Yeen', callback_data: `${payerCallbackPrefix}hweiyeen` }],
                 ],
               },
             }
@@ -813,8 +882,8 @@ export class YBBTallyBot {
             {
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: 'Bryan', callback_data: 'payer_bryan' }],
-                  [{ text: 'Hwei Yeen', callback_data: 'payer_hweiyeen' }],
+                  [{ text: 'Bryan', callback_data: `${payerCallbackPrefix}bryan` }],
+                  [{ text: 'Hwei Yeen', callback_data: `${payerCallbackPrefix}hweiyeen` }],
                 ],
               },
             }
@@ -823,11 +892,28 @@ export class YBBTallyBot {
         return;
       }
 
-      // Handle payer selection buttons
-      if (callbackData === 'payer_bryan' || callbackData === 'payer_hweiyeen') {
+      // Handle payer selection buttons (with or without receiptId)
+      if (callbackData.startsWith('payer_')) {
         await ctx.answerCbQuery();
         
-        const payerRole: 'Bryan' | 'HweiYeen' = callbackData === 'payer_bryan' ? 'Bryan' : 'HweiYeen';
+        let receiptId: string | null = null;
+        let payerRole: 'Bryan' | 'HweiYeen';
+        
+        // Parse callback data
+        // Format: payer_bryan, payer_hweiyeen, or payer_receiptId_bryan/payer_receiptId_hweiyeen
+        const parts = callbackData.split('_');
+        
+        if (parts.length === 2) {
+          // Format: payer_bryan or payer_hweiyeen
+          payerRole = parts[1] === 'bryan' ? 'Bryan' : 'HweiYeen';
+        } else if (parts.length >= 3) {
+          // Format: payer_receiptId_bryan or payer_receiptId_hweiyeen
+          receiptId = parts.slice(1, -1).join('_');
+          payerRole = parts[parts.length - 1] === 'bryan' ? 'Bryan' : 'HweiYeen';
+        } else {
+          await ctx.reply('Error: Invalid callback data.');
+          return;
+        }
         
         const user = await prisma.user.findFirst({
           where: { role: payerRole },
@@ -839,29 +925,56 @@ export class YBBTallyBot {
           return;
         }
 
-        // Create transaction
-        const receiptData = session.receiptData;
-        if (!receiptData) {
+        // Get receipt data from pendingReceipts or session
+        let receiptDataToUse: PendingReceiptData['receiptData'] | null = null;
+        let pendingReceipt: PendingReceiptData | null = null;
+        
+        if (receiptId) {
+          pendingReceipt = this.pendingReceipts.get(receiptId) || null;
+          if (pendingReceipt) {
+            receiptDataToUse = pendingReceipt.receiptData;
+          }
+        }
+        
+        if (!receiptDataToUse && session.receiptData) {
+          receiptDataToUse = session.receiptData;
+        }
+        
+        if (!receiptDataToUse) {
           await ctx.reply('Error: Receipt data not found. Please try again.');
           return;
         }
 
         const transaction = await prisma.transaction.create({
           data: {
-            amountSGD: receiptData.amount,
-            currency: receiptData.currency || 'SGD',
-            category: receiptData.category || 'Other',
-            description: receiptData.merchant || receiptData.description,
+            amountSGD: receiptDataToUse.amount,
+            currency: receiptDataToUse.currency || 'SGD',
+            category: receiptDataToUse.category || 'Other',
+            description: receiptDataToUse.merchant || 'Multiple Receipts',
             payerId: user.id,
-            date: receiptData.date ? new Date(receiptData.date) : getNow(),
+            date: receiptDataToUse.date ? new Date(receiptDataToUse.date) : getNow(),
             splitType: 'FULL',
           },
         });
 
-        // Clear session
-        session.receiptData = null;
+        // Clear session and pending receipt
+        session.receiptData = undefined;
         session.awaitingPayer = false;
         session.awaitingAmountConfirmation = false;
+        if (receiptId) {
+          this.pendingReceipts.delete(receiptId);
+        }
+        
+        // Clean up old pending receipts (older than 1 hour)
+        const oneHourAgo = Date.now() - 3600000;
+        for (const [id, receipt] of this.pendingReceipts.entries()) {
+          if (id.startsWith('receipt_')) {
+            const timestamp = parseInt(id.split('_')[2]);
+            if (timestamp && timestamp < oneHourAgo) {
+              this.pendingReceipts.delete(id);
+            }
+          }
+        }
 
         // Show outstanding balance
         const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
@@ -888,6 +1001,140 @@ export class YBBTallyBot {
         }
       }
     });
+  }
+
+  /**
+   * Process a batch of photos after debounce period
+   */
+  private async processPhotoBatch(chatId: number, collection: PhotoCollection): Promise<void> {
+    try {
+      // Clear the collection from map
+      this.photoCollections.delete(chatId);
+
+      // Delete status message
+      if (collection.statusMessageId) {
+        try {
+          await this.bot.telegram.deleteMessage(chatId, collection.statusMessageId);
+        } catch (error) {
+          // Ignore if message already deleted
+        }
+      }
+
+      if (collection.photos.length === 0) {
+        return;
+      }
+
+      // Download all images
+      const imageBuffers: Buffer[] = [];
+      for (const photo of collection.photos) {
+        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${photo.filePath}`;
+        const response = await fetch(fileUrl);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        imageBuffers.push(buffer);
+      }
+
+      // Send processing message
+      const processingMsg = await this.bot.telegram.sendMessage(
+        chatId,
+        'Processing receipt(s)... At your service!'
+      );
+
+      // Process with AI (multiple images)
+      const receiptData = await this.aiService.processReceipt(
+        imageBuffers,
+        collection.userId,
+        'image/jpeg'
+      );
+
+      // Delete processing message
+      try {
+        await this.bot.telegram.deleteMessage(chatId, processingMsg.message_id);
+      } catch (error) {
+        // Ignore if message already deleted
+      }
+
+      if (!receiptData.isValid) {
+        await this.bot.telegram.sendMessage(chatId, 'Not a receipt. Please send a valid receipt image.');
+        return;
+      }
+
+      if (!receiptData.total) {
+        await this.bot.telegram.sendMessage(
+          chatId,
+          'Could not extract total amount from receipt. Please try again or use /add to add manually.'
+        );
+        return;
+      }
+
+      // Store receipt data in pendingReceipts map
+      const receiptId = `receipt_${chatId}_${Date.now()}`;
+      this.pendingReceipts.set(receiptId, {
+        receiptData: {
+          amount: receiptData.total,
+          currency: receiptData.currency || 'SGD',
+          merchant: receiptData.merchant,
+          date: receiptData.date,
+          category: receiptData.category,
+          individualAmounts: receiptData.individualAmounts,
+          merchants: receiptData.merchants || [],
+        },
+        chatId,
+        userId: collection.userId,
+      });
+
+      // Ask for confirmation
+      const amountStr = receiptData.currency === 'SGD' 
+        ? `SGD $${receiptData.total.toFixed(2)}`
+        : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
+      
+      // Build transaction breakdown
+      let transactionInfo = '';
+      if (collection.photos.length > 1) {
+        transactionInfo = `Processed ${collection.photos.length} receipt${collection.photos.length > 1 ? 's' : ''}.\n\n`;
+      }
+      
+      if (receiptData.merchants && receiptData.merchants.length > 0) {
+        transactionInfo += '**Merchants:**\n';
+        receiptData.merchants.forEach((merchant, index) => {
+          transactionInfo += `${index + 1}. ${merchant}\n`;
+        });
+        transactionInfo += '\n';
+      }
+      
+      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0) {
+        transactionInfo += '**Breakdown:**\n';
+        receiptData.individualAmounts.forEach((amt, index) => {
+          transactionInfo += `${index + 1}. SGD $${amt.toFixed(2)}\n`;
+        });
+        transactionInfo += `\n**Total: ${amountStr}**\n\n`;
+      } else {
+        transactionInfo += `**Total: ${amountStr}**\n\n`;
+      }
+      
+      await this.bot.telegram.sendMessage(
+        chatId,
+        `${transactionInfo}Is ${amountStr} correct?\n\n` +
+        `Merchant: ${receiptData.merchant || 'Multiple'}\n` +
+        `Category: ${receiptData.category || 'Other'}`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Yes', callback_data: `confirm_amount_${receiptId}` }],
+            ],
+          },
+        }
+      );
+
+    } catch (error: any) {
+      console.error('Error processing photo batch:', error);
+      await this.bot.telegram.sendMessage(
+        chatId,
+        'Sorry, I encountered an error processing the receipts. Please try again.'
+      );
+      // Clean up
+      this.photoCollections.delete(chatId);
+    }
   }
 
   /**

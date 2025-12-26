@@ -15,7 +15,7 @@ export function getNow(): Date {
  */
 export function formatDate(date: Date, formatStr: string = 'yyyy-MM-dd HH:mm:ss'): string {
   const zonedDate = toZonedTime(date, TIMEZONE);
-  return format(zonedDate, formatStr, { timeZone: TIMEZONE });
+  return format(zonedDate, formatStr);
 }
 
 /**
