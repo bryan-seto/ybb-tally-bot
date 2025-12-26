@@ -403,43 +403,53 @@ export class YBBTallyBot {
         return;
       }
 
-      if (args.length < 5) {
-        await ctx.reply(
-          'Incorrect format. Use:\n' +
-          '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
-          'Example: `/recurring add "Internet Bill" 50 15 bryan`',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
       try {
         // Parse arguments
-        // Handle description with quotes
-        let description = '';
-        let amountIndex = 1;
+        // Reconstruct the full command text to handle quoted descriptions
+        const fullText = ctx.message.text;
+        const commandMatch = fullText.match(/^\/recurring\s+add\s+(.+)$/i);
         
-        if (args[1].startsWith('"')) {
-          // Description is in quotes
-          let descParts = [];
-          let i = 1;
-          while (i < args.length && !args[i].endsWith('"')) {
-            descParts.push(args[i].replace(/^"/, ''));
-            i++;
-          }
-          if (i < args.length) {
-            descParts.push(args[i].replace(/"$/, ''));
-          }
-          description = descParts.join(' ');
-          amountIndex = i + 1;
+        if (!commandMatch) {
+          await ctx.reply(
+            'Incorrect format. Use:\n' +
+            '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
+            'Example: `/recurring add "Internet Bill" 50 15 bryan`',
+            { parse_mode: 'Markdown' }
+          );
+          return;
+        }
+        
+        const restOfCommand = commandMatch[1].trim();
+        
+        // Parse: "Description" amount day payer
+        // Try to match quoted description first
+        const quotedMatch = restOfCommand.match(/^"([^"]+)"\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/);
+        const unquotedMatch = restOfCommand.match(/^(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/);
+        
+        let description: string;
+        let amountStr: string;
+        let dayStr: string;
+        let payerStr: string;
+        
+        if (quotedMatch) {
+          // Quoted description
+          [, description, amountStr, dayStr, payerStr] = quotedMatch;
+        } else if (unquotedMatch) {
+          // Unquoted description (single word)
+          [, description, amountStr, dayStr, payerStr] = unquotedMatch;
         } else {
-          description = args[1];
-          amountIndex = 2;
+          await ctx.reply(
+            'Incorrect format. Use:\n' +
+            '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
+            'Example: `/recurring add "Internet Bill" 50 15 bryan`',
+            { parse_mode: 'Markdown' }
+          );
+          return;
         }
 
-        const amount = parseFloat(args[amountIndex]);
-        const dayOfMonth = parseInt(args[amountIndex + 1]);
-        const payerStr = args[amountIndex + 2].toLowerCase();
+        const amount = parseFloat(amountStr);
+        const dayOfMonth = parseInt(dayStr);
+        payerStr = payerStr.toLowerCase();
 
         // Validate
         if (isNaN(amount) || amount <= 0) {
@@ -527,6 +537,11 @@ export class YBBTallyBot {
         const photo = ctx.message.photo[ctx.message.photo.length - 1];
         const file = await ctx.telegram.getFile(photo.file_id);
         
+        if (!file.file_path) {
+          await ctx.reply('Error: Could not get file path from Telegram. Please try sending the photo again.');
+          return;
+        }
+        
         // Get or create photo collection for this chat
         let collection = this.photoCollections.get(chatId);
         if (!collection) {
@@ -541,7 +556,7 @@ export class YBBTallyBot {
         // Add photo to collection
         collection.photos.push({
           fileId: photo.file_id,
-          filePath: file.file_path || '',
+          filePath: file.file_path,
         });
 
         // Clear existing timer
@@ -1027,10 +1042,35 @@ export class YBBTallyBot {
       // Download all images
       const imageBuffers: Buffer[] = [];
       for (const photo of collection.photos) {
-        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${photo.filePath}`;
-        const response = await fetch(fileUrl);
-        const buffer = Buffer.from(await response.arrayBuffer());
-        imageBuffers.push(buffer);
+        if (!photo.filePath) {
+          console.error('Photo filePath is missing:', photo);
+          continue;
+        }
+        
+        try {
+          const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${photo.filePath}`;
+          const response = await fetch(fileUrl);
+          
+          if (!response.ok) {
+            console.error(`Failed to download image: ${response.status} ${response.statusText}`);
+            continue;
+          }
+          
+          const buffer = Buffer.from(await response.arrayBuffer());
+          imageBuffers.push(buffer);
+        } catch (error) {
+          console.error('Error downloading image:', error);
+          // Continue with other images
+        }
+      }
+      
+      if (imageBuffers.length === 0) {
+        await this.bot.telegram.sendMessage(
+          chatId,
+          'Error: Could not download any images. Please try again.'
+        );
+        this.photoCollections.delete(chatId);
+        return;
       }
 
       // Send processing message
@@ -1040,11 +1080,22 @@ export class YBBTallyBot {
       );
 
       // Process with AI (multiple images)
-      const receiptData = await this.aiService.processReceipt(
-        imageBuffers,
-        collection.userId,
-        'image/jpeg'
-      );
+      let receiptData;
+      try {
+        receiptData = await this.aiService.processReceipt(
+          imageBuffers,
+          collection.userId,
+          'image/jpeg'
+        );
+      } catch (error: any) {
+        console.error('AI processing error:', error);
+        await this.bot.telegram.sendMessage(
+          chatId,
+          `Error processing receipt with AI: ${error.message || 'Unknown error'}. Please try again.`
+        );
+        this.photoCollections.delete(chatId);
+        return;
+      }
 
       // Delete processing message
       try {
@@ -1128,9 +1179,16 @@ export class YBBTallyBot {
 
     } catch (error: any) {
       console.error('Error processing photo batch:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Photo collection:', {
+        chatId,
+        photoCount: collection.photos.length,
+        photos: collection.photos.map(p => ({ fileId: p.fileId, filePath: p.filePath }))
+      });
+      
       await this.bot.telegram.sendMessage(
         chatId,
-        'Sorry, I encountered an error processing the receipts. Please try again.'
+        `Sorry, I encountered an error processing the receipts: ${error.message || 'Unknown error'}. Please try again.`
       );
       // Clean up
       this.photoCollections.delete(chatId);
