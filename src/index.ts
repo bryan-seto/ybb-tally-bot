@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import http from 'http';
-import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
@@ -233,6 +232,18 @@ async function main() {
     
     if (isProduction && webhookUrl) {
       // Webhook mode for Render
+      // Dynamically import express only when needed (for production webhooks)
+      let expressModule: any;
+      try {
+        expressModule = require('express');
+      } catch (error: any) {
+        console.error('Express not found. Please ensure express is installed.');
+        console.error('Run: npm install express');
+        throw new Error('Express module is required for webhook mode. Please install it: npm install express');
+      }
+      
+      const express = expressModule.default || expressModule;
+      
       const webhookPath = `/webhook/${process.env.TELEGRAM_BOT_TOKEN}`;
       const fullWebhookUrl = `${webhookUrl}${webhookPath}`;
       
@@ -246,7 +257,7 @@ async function main() {
       app.use(express.json());
       
       // Health check endpoints
-      app.get('/', (req: Request, res: Response) => {
+      app.get('/', (req: any, res: any) => {
         res.json({ 
           status: 'ok', 
           message: 'Bot is running!', 
@@ -255,7 +266,7 @@ async function main() {
         });
       });
       
-      app.get('/health', (req: Request, res: Response) => {
+      app.get('/health', (req: any, res: any) => {
         res.json({ 
           status: 'ok', 
           message: 'Bot is running!', 
