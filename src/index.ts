@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import http from 'http';
+import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
@@ -10,16 +11,24 @@ import QuickChart from 'quickchart-js';
 
 dotenv.config();
 
-// --- RENDER KEEP-ALIVE (MOVE THIS TO THE TOP) ---
-// We start the web server FIRST so Render sees us immediately
-const port = process.env.PORT || 8080;
-const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Bot is running!');
+// --- RENDER KEEP-ALIVE (START IMMEDIATELY) ---
+// Simple HTTP server that starts immediately so Render sees us
+const port = process.env.PORT || 10000;
+const keepAliveServer = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      status: 'ok', 
+      message: 'Bot is starting...', 
+      timestamp: new Date().toISOString()
+    }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot is starting...');
 });
-// '0.0.0.0' forces it to listen on all addresses (Required for Render)
-server.listen(Number(port), '0.0.0.0', () => {
-    console.log(`Keep-alive server listening on port ${port}`);
+keepAliveServer.listen(Number(port), '0.0.0.0', () => {
+  console.log(`Keep-alive server listening on port ${port}`);
 });
 
 // --- YOUR BOT CODE STARTS BELOW HERE ---
@@ -216,8 +225,83 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 async function main() {
   try {
     await initializeDatabase();
-    await bot.launch();
-    console.log('YBB Tally Bot is running...');
+    
+    // Use webhooks in production (Render), long polling in development
+    const isProduction = process.env.NODE_ENV === 'production';
+    const webhookUrl = process.env.WEBHOOK_URL;
+    const port = process.env.PORT || 10000;
+    
+    if (isProduction && webhookUrl) {
+      // Webhook mode for Render
+      const webhookPath = `/webhook/${process.env.TELEGRAM_BOT_TOKEN}`;
+      const fullWebhookUrl = `${webhookUrl}${webhookPath}`;
+      
+      console.log(`Setting up webhook: ${fullWebhookUrl}`);
+      await bot.getBot().telegram.setWebhook(fullWebhookUrl);
+      
+      // Start Express server for webhooks
+      const app = express();
+      
+      // Middleware
+      app.use(express.json());
+      
+      // Health check endpoints
+      app.get('/', (req: Request, res: Response) => {
+        res.json({ 
+          status: 'ok', 
+          message: 'Bot is running!', 
+          timestamp: new Date().toISOString(),
+          mode: 'webhook'
+        });
+      });
+      
+      app.get('/health', (req: Request, res: Response) => {
+        res.json({ 
+          status: 'ok', 
+          message: 'Bot is running!', 
+          timestamp: new Date().toISOString(),
+          mode: 'webhook'
+        });
+      });
+      
+      // Webhook endpoint
+      app.use(bot.getBot().webhookCallback(webhookPath));
+      
+      // Close the simple keep-alive server and use Express instead
+      keepAliveServer.close();
+      
+      app.listen(Number(port), '0.0.0.0', () => {
+        console.log(`Webhook server listening on port ${port}`);
+        console.log('YBB Tally Bot is running with webhooks...');
+      });
+    } else {
+      // Long polling mode for development
+      // Start simple HTTP server for health checks
+      const healthServer = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
+        if (req.url === '/' || req.url === '/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            status: 'ok', 
+            message: 'Bot is running!', 
+            timestamp: new Date().toISOString(),
+            mode: 'long-polling'
+          }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Bot is running!');
+      });
+      
+      // Close the simple keep-alive server and use the health check server instead
+      keepAliveServer.close();
+      
+      healthServer.listen(Number(port), '0.0.0.0', () => {
+        console.log(`Health check server listening on port ${port}`);
+      });
+      
+      await bot.launch();
+      console.log('YBB Tally Bot is running with long polling...');
+    }
   } catch (error) {
     console.error('Error starting bot:', error);
     process.exit(1);

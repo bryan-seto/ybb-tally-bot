@@ -1162,6 +1162,13 @@ export class YBBTallyBot {
   }
 
   /**
+   * Get the bot instance (for webhook callbacks)
+   */
+  getBot(): Telegraf<Context & { session?: BotSession }> {
+    return this.bot;
+  }
+
+  /**
    * Launch the bot
    */
   async launch(): Promise<void> {
