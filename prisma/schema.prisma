@@ -21,18 +21,20 @@ model User {
 }
 
 model Transaction {
-  id          BigInt    @id @default(autoincrement())
-  amountSGD   Float
-  currency    String    @default("SGD")
-  category    String?
-  description String?
-  payerId     BigInt
-  date        DateTime  @default(now())
-  isSettled   Boolean   @default(false)
-  splitType   SplitType @default(FULL)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  payer       User      @relation("Payer", fields: [payerId], references: [id])
+  id                 BigInt    @id @default(autoincrement())
+  amountSGD          Float
+  currency           String    @default("SGD")
+  category           String?
+  description        String?
+  payerId            BigInt
+  date               DateTime  @default(now())
+  isSettled          Boolean   @default(false)
+  splitType          SplitType @default(FULL)
+  bryanPercentage    Float?    @default(0.7)
+  hweiYeenPercentage Float?    @default(0.3)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  payer              User      @relation("Payer", fields: [payerId], references: [id])
 
   @@map("transactions")
 }
@@ -88,8 +90,8 @@ enum UserRole {
 }
 
 enum SplitType {
-  FULL          // 70/30 split (default)
-  PARTIAL       // Legacy, not used
-  FIFTY_FIFTY   // 50/50 split
-  PAYER_ONLY    // 100% paid by payer only
+  FULL // 70/30 split (default)
+  PARTIAL // Legacy, not used
+  FIFTY_FIFTY // 50/50 split
+  PAYER_ONLY // 100% paid by payer only
 }

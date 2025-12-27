@@ -42,10 +42,8 @@ export class ExpenseService {
       }
       
       // Use custom split if available, otherwise default to 70/30
-      // @ts-ignore - These fields may need to be added to the schema
-      const bryanPercent = (t as any).bryanPercentage ?? 0.7;
-      // @ts-ignore
-      const hweiYeenPercent = (t as any).hweiYeenPercentage ?? 0.3;
+      const bryanPercent = t.bryanPercentage ?? 0.7;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
       
       bryanShare += t.amountSGD * bryanPercent;
       hweiYeenShare += t.amountSGD * hweiYeenPercent;
@@ -143,8 +141,7 @@ export class ExpenseService {
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
       // Use custom split if available, otherwise default to 70%
-      // @ts-ignore - These fields may need to be added to the schema
-      const bryanPercent = (t as any).bryanPercentage ?? 0.7;
+      const bryanPercent = t.bryanPercentage ?? 0.7;
       const bryanShare = t.amountSGD * bryanPercent;
       bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + bryanShare;
     });
@@ -159,8 +156,7 @@ export class ExpenseService {
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
       // Use custom split if available, otherwise default to 30%
-      // @ts-ignore - These fields may need to be added to the schema
-      const hweiYeenPercent = (t as any).hweiYeenPercentage ?? 0.3;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
       const hweiYeenShare = t.amountSGD * hweiYeenPercent;
       hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + hweiYeenShare;
     });
@@ -263,10 +259,8 @@ export class ExpenseService {
     });
 
     return transactions.map(t => {
-      // @ts-ignore - These fields may need to be added to the schema
-      const bryanPercent = (t as any).bryanPercentage;
-      // @ts-ignore
-      const hweiYeenPercent = (t as any).hweiYeenPercentage;
+      const bryanPercent = t.bryanPercentage;
+      const hweiYeenPercent = t.hweiYeenPercentage;
       const owed = this.calculateTransactionOwed(
         t.amountSGD, 
         t.payer.role as 'Bryan' | 'HweiYeen',
