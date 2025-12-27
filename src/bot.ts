@@ -2355,9 +2355,34 @@ export class YBBTallyBot {
           return;
         }
 
-        // Create member type map
+        // For manual expenses with Person A/B/C/D, create virtual users
         const memberTypes = new Map<bigint, 'real' | 'virtual'>();
-        selectedMembers.forEach((m) => memberTypes.set(m.id, m.type));
+        const virtualUserIds: bigint[] = [];
+        
+        if (session.pendingExpense.isManual) {
+          // Create virtual users for each Person A, B, C, D
+          for (const member of selectedMembers) {
+            if (member.name.startsWith('Person ')) {
+              const virtualUserId = await this.groupService.createVirtualUser(
+                session.pendingExpense.groupId,
+                member.name
+              );
+              virtualUserIds.push(virtualUserId);
+              memberTypes.set(virtualUserId, 'virtual');
+            } else {
+              // If somehow a real user got in, use them
+              memberTypes.set(member.id, member.type);
+            }
+          }
+        } else {
+          // For receipt-based expenses, use existing members
+          selectedMembers.forEach((m) => memberTypes.set(m.id, m.type));
+        }
+
+        // Use virtual user IDs if created, otherwise use original IDs
+        const memberIdsToUse = session.pendingExpense.isManual && virtualUserIds.length > 0
+          ? virtualUserIds
+          : selectedMembers.map((m) => m.id);
 
         // Create expense with splits
         const expenseId = await this.splitService.createExpenseWithSplits(
@@ -2367,7 +2392,7 @@ export class YBBTallyBot {
           session.pendingExpense.category,
           session.pendingExpense.payerId,
           session.pendingExpense.payerType,
-          selectedMembers.map((m) => m.id),
+          memberIdsToUse,
           memberTypes
         );
 
