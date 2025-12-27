@@ -1,4 +1,3 @@
-import { PrismaClient } from '@prisma/client';
 import {
   getStartOfDay,
   getEndOfDay,
@@ -6,8 +5,7 @@ import {
   getHour,
   getNow,
 } from '../utils/dateHelpers';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export class AnalyticsService {
   /**

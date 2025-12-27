@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { getStartOfMonth, getEndOfMonth, getMonthsAgo, formatDate } from '../utils/dateHelpers';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export class ExpenseService {
   /**

@@ -1,14 +1,29 @@
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import express, { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { getDayOfMonth, getNow, getMonthsAgo, getStartOfMonth, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
+import { prisma } from './lib/prisma';
 
 dotenv.config();
+
+// --- PREVENT MULTIPLE INSTANCES ---
+// Global flag to prevent multiple bot instances during development hot reloads
+declare global {
+  var botInstance: YBBTallyBot | undefined;
+  var isBooting: boolean | undefined;
+}
+
+// If bot is already running, exit early
+if (global.isBooting) {
+  console.log('⚠️  Bot is already starting, skipping duplicate initialization');
+  process.exit(0);
+}
+
+global.isBooting = true;
 
 // --- DUMMY WEB SERVER (RENDER KEEP-ALIVE) ---
 // Minimal Express server to prevent Render from sleeping
@@ -37,7 +52,6 @@ app.listen(Number(webServerPort), '0.0.0.0', () => {
 
 // --- YOUR BOT CODE STARTS BELOW HERE ---
 
-const prisma = new PrismaClient();
 const analyticsService = new AnalyticsService();
 const expenseService = new ExpenseService();
 
@@ -62,6 +76,55 @@ const bot = new YBBTallyBot(
   process.env.GEMINI_API_KEY!,
   process.env.ALLOWED_USER_IDS!
 );
+
+// Store bot instance globally to prevent duplicates
+global.botInstance = bot;
+
+// --- GRACEFUL SHUTDOWN ---
+// Ensure clean shutdown of bot and database connections
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) {
+    console.log('Shutdown already in progress...');
+    return;
+  }
+  
+  isShuttingDown = true;
+  console.log(`\n🛑 ${signal} received. Starting graceful shutdown...`);
+  
+  try {
+    // Stop the bot (stops polling or webhook processing)
+    console.log('⏹️  Stopping Telegram bot...');
+    await bot.stop(signal);
+    
+    // Disconnect from database
+    console.log('🔌 Disconnecting from database...');
+    await prisma.$disconnect();
+    
+    console.log('✅ Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Register shutdown handlers
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGQUIT', () => gracefulShutdown('SIGQUIT'));
+
+// Handle uncaught errors
+process.on('uncaughtException', async (error) => {
+  console.error('💥 Uncaught Exception:', error);
+  await gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  await gracefulShutdown('UNHANDLED_REJECTION');
+});
 
 /**
  * Initialize database - create users if they don't exist
@@ -221,10 +284,6 @@ cron.schedule('0 1 * * *', processRecurringExpenses);
 // Monthly report on 1st of month at 09:00 Asia/Singapore time = 01:00 UTC
 cron.schedule('0 1 1 * *', sendMonthlyReport);
 
-// Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
 // Start bot
 async function main() {
   try {
@@ -240,18 +299,31 @@ async function main() {
       const webhookPath = `/webhook/${process.env.TELEGRAM_BOT_TOKEN}`;
       const fullWebhookUrl = `${webhookUrl}${webhookPath}`;
       
-      console.log(`Setting up webhook: ${fullWebhookUrl}`);
+      // Delete any existing webhook first to prevent conflicts
+      console.log('🔄 Removing any existing webhook...');
+      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
+      
+      console.log(`📡 Setting up webhook: ${fullWebhookUrl}`);
       await bot.getBot().telegram.setWebhook(fullWebhookUrl);
       
       // Add webhook endpoint to existing Express app
       app.use(express.json());
       app.use(bot.getBot().webhookCallback(webhookPath));
       
-      console.log('YBB Tally Bot is running with webhooks...');
+      console.log('✅ YBB Tally Bot is running with webhooks...');
+      global.isBooting = false;
     } else {
       // Long polling mode for development
+      // Check if bot is already running
+      const me = await bot.getBot().telegram.getMe();
+      console.log(`🤖 Bot username: @${me.username}`);
+      
+      // Delete webhook to enable polling
+      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
+      
       await bot.launch();
-      console.log('YBB Tally Bot is running with long polling...');
+      console.log('✅ YBB Tally Bot is running with long polling...');
+      global.isBooting = false;
     }
   } catch (error) {
     console.error('Error starting bot:', error);

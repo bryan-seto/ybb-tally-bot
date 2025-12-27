@@ -1,12 +1,10 @@
 import { Telegraf, Context, session, Markup } from 'telegraf';
-import { PrismaClient } from '@prisma/client';
 import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
-
-const prisma = new PrismaClient();
+import { prisma } from './lib/prisma';
 
 // User ID mappings
 const USER_NAMES: { [key: string]: string } = {
