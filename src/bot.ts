@@ -37,12 +37,13 @@ interface BotSession {
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
-  manualAddStep?: 'description' | 'amount' | 'category' | 'payer' | 'split_count';
+  manualAddStep?: 'amount' | 'payer' | 'split' | 'category' | 'description';
   manualAmount?: number;
   manualAmountString?: string; // Accumulated amount string while typing
   manualCategory?: string;
   manualDescription?: string;
   manualPayerId?: bigint;
+  manualSplitMembers?: SplitMember[]; // Store selected members for split
   recurringMode?: boolean;
   recurringStep?: 'description' | 'amount' | 'day' | 'payer';
   recurringData?: {
@@ -76,7 +77,9 @@ interface BotSession {
     payerId: bigint;
     payerType: 'real' | 'virtual';
   };
-  receiptSplitCount?: boolean; // Flag to know we're waiting for receipt split count
+  receiptSplitCount?: boolean; // Flag to know we're waiting for receipt split count (deprecated)
+  receiptFlowStep?: 'category' | 'description'; // Current step in receipt flow
+  awaitingReceiptPayer?: boolean; // Flag to know we're waiting for payer selection in receipt flow
   awaitingVirtualUserName?: boolean;
   // Identity merging
   pendingIdentityMerge?: {
@@ -2047,18 +2050,7 @@ export class YBBTallyBot {
 
       // Handle manual add flow
       if (session.manualAddMode) {
-        if (session.manualAddStep === 'description') {
-          session.manualDescription = text;
-          session.manualAddStep = 'amount';
-          session.manualAmountString = ''; // Initialize amount string
-          await ctx.reply(
-            `Description: ${text}\n\n` +
-            'How much was it? (Tap numbers to build amount, then press ✅ Confirm)\n\n' +
-            'Current: $0.00',
-            this.getNumericKeyboard(true)
-          );
-          return;
-        } else if (session.manualAddStep === 'amount') {
+        if (session.manualAddStep === 'amount') {
           // Handle Cancel
           if (textLower.includes('cancel') || text === '❌ Cancel') {
             session.manualAddMode = false;
@@ -2082,34 +2074,77 @@ export class YBBTallyBot {
           }
           
           session.manualAmount = amount;
-            session.manualAmountString = undefined;
-          session.manualAddStep = 'category';
+          session.manualAmountString = undefined;
+          session.manualAddStep = 'payer';
+          
+          // Get group and show payer selection
+          const chatId = ctx.chat?.id;
+          const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
+          
+          if (!group) {
+            await ctx.reply('Error: Group not found. Please use this in a group chat.');
+            session.manualAddMode = false;
+            return;
+          }
+          
+          // Build payer buttons from group members
+          const payerButtons: any[] = [];
+          
+          // Get Telegram user info for each member
+          let adminMap = new Map<number, any>();
+          if (chatId) {
+            try {
+              const administrators = await this.bot.telegram.getChatAdministrators(chatId);
+              for (const admin of administrators) {
+                if (!admin.user.is_bot && admin.user.id) {
+                  adminMap.set(admin.user.id, admin.user);
+                }
+              }
+            } catch (error) {
+              console.error('Error getting chat administrators:', error);
+            }
+          }
+          
+          for (const member of group.members) {
+            let displayName = member.name;
+            
+            if (member.telegramId) {
+              const telegramIdNum = Number(member.telegramId);
+              
+              if (adminMap.has(telegramIdNum)) {
+                const telegramUser = adminMap.get(telegramIdNum);
+                displayName = telegramUser.first_name || 
+                             (telegramUser.username ? `@${telegramUser.username}` : null) || 
+                             member.name;
+              } else if (chatId) {
+                try {
+                  const chatMember = await this.bot.telegram.getChatMember(
+                    chatId,
+                    telegramIdNum
+                  );
+                  if (chatMember.user) {
+                    displayName = chatMember.user.first_name || 
+                                 (chatMember.user.username ? `@${chatMember.user.username}` : null) || 
+                                 member.name;
+                  }
+                } catch (error) {
+                  // Use database name as fallback
+                }
+              }
+            }
+            
+            payerButtons.push([{ 
+              text: displayName, 
+              callback_data: `manual_payer_${member.id}` 
+            }]);
+          }
+          payerButtons.push([{ text: '❌ Cancel', callback_data: 'manual_cancel' }]);
+          
           await ctx.reply(
-            `Amount: SGD $${amount.toFixed(2)}\n\n` +
-            'Select a Category:',
+            `Amount: SGD $${amount.toFixed(2)}\n\nWho paid?`,
             {
               reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: '🍔 Food', callback_data: 'manual_category_Food' },
-                    { text: '🚗 Transport', callback_data: 'manual_category_Transport' },
-                  ],
-                  [
-                    { text: '🛒 Groceries', callback_data: 'manual_category_Groceries' },
-                    { text: '🏠 Utilities', callback_data: 'manual_category_Utilities' },
-                  ],
-                  [
-                    { text: '🎬 Entertainment', callback_data: 'manual_category_Entertainment' },
-                    { text: '🛍️ Shopping', callback_data: 'manual_category_Shopping' },
-                  ],
-                  [
-                    { text: '🏥 Medical', callback_data: 'manual_category_Medical' },
-                    { text: '✈️ Travel', callback_data: 'manual_category_Travel' },
-                  ],
-                  [
-                    { text: '❌ Cancel', callback_data: 'manual_cancel' },
-                  ],
-                ],
+                inline_keyboard: payerButtons,
               },
             }
           );
@@ -2150,7 +2185,86 @@ export class YBBTallyBot {
         } else if (session.manualAddStep === 'payer') {
           // This is handled by callback query for payer buttons
           return;
+        } else if (session.manualAddStep === 'split') {
+          // This is handled by callback query for split buttons
+          return;
+        } else if (session.manualAddStep === 'category') {
+          // This is handled by callback query for category buttons
+          return;
+        } else if (session.manualAddStep === 'description') {
+          // Handle description input
+          if (textLower.includes('cancel') || text === '❌ Cancel') {
+            session.manualAddMode = false;
+            session.manualAddStep = undefined;
+            await this.showMainMenu(ctx, '❌ Operation cancelled.');
+            return;
+          }
+          
+          session.manualDescription = text;
+          
+          // Now create the expense
+          const chatId = ctx.chat?.id;
+          const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
+          
+          if (!group) {
+            await ctx.reply('Error: Group not found.');
+            session.manualAddMode = false;
+            return;
+          }
+          
+          if (!session.manualAmount || !session.manualPayerId || !session.manualSplitMembers) {
+            await ctx.reply('Error: Missing required data. Please start over.');
+            session.manualAddMode = false;
+            return;
+          }
+          
+          const selectedMembers = session.manualSplitMembers.filter((m) => m.isSelected);
+          if (selectedMembers.length === 0) {
+            await ctx.reply('Error: No members selected for split. Please start over.');
+            session.manualAddMode = false;
+            return;
+          }
+          
+          // Store values before clearing
+          const amount = session.manualAmount!;
+          const description = session.manualDescription!;
+          const category = session.manualCategory || null;
+          
+          // Create expense with splits
+          const expenseId = await this.splitService.createExpenseWithSplits(
+            group.id,
+            amount,
+            description,
+            category,
+            session.manualPayerId!,
+            'real',
+            selectedMembers.map(m => ({ id: m.id, type: m.type }))
+          );
+          
+          // Clear manual add mode
+          session.manualAddMode = false;
+          session.manualAddStep = undefined;
+          session.manualAmount = undefined;
+          session.manualAmountString = undefined;
+          session.manualCategory = undefined;
+          session.manualDescription = undefined;
+          session.manualPayerId = undefined;
+          session.manualSplitMembers = undefined;
+          
+          await ctx.reply(
+            `✅ Expense recorded!\n\n` +
+            `Amount: SGD $${amount.toFixed(2)}\n` +
+            `Description: ${description}\n` +
+            `Category: ${category || 'Other'}\n` +
+            `Split with: ${selectedMembers.length} person${selectedMembers.length !== 1 ? 's' : ''}`,
+            { reply_markup: { remove_keyboard: true } }
+          );
+          return;
         } else if (session.manualAddStep === 'split_count') {
+          // Deprecated: This step is no longer used
+          // Split selection is now handled via callback queries
+          return;
+        }
           const count = parseInt(textLower.replace(/[^0-9]/g, ''));
           if (isNaN(count) || count < 1 || count > 20) {
             await ctx.reply('Please enter a valid number between 1 and 20:', this.getNumericKeyboard());
@@ -2237,7 +2351,7 @@ export class YBBTallyBot {
         return;
       }
 
-      // Handle receipt split count (after confirming amount from receipt)
+      // Handle receipt split count (after confirming amount and payer from receipt)
       if (session.receiptSplitCount && session.pendingReceiptExpense) {
         const count = parseInt(textLower.replace(/[^0-9]/g, ''));
         if (isNaN(count) || count < 1 || count > 20) {
@@ -2245,7 +2359,7 @@ export class YBBTallyBot {
           return;
         }
         
-        // Create Person A, B, C, D... members
+        // Create Person A, B, C, D... members (all selected by default for equal split)
         const members: SplitMember[] = [];
         for (let i = 0; i < count; i++) {
           const personName = String.fromCharCode(65 + i); // A, B, C, D...
@@ -2253,7 +2367,7 @@ export class YBBTallyBot {
             id: BigInt(i + 1),
             name: `Person ${personName}`,
             type: 'real',
-            isSelected: true, // All selected by default
+            isSelected: true, // All selected by default for equal split
           });
         }
         
@@ -2271,7 +2385,10 @@ export class YBBTallyBot {
           isManual: false, // This is from receipt
         };
         
-        // Show preview with Person A, B, C, D
+        // Clear receipt split count mode
+        session.receiptSplitCount = false;
+        
+        // Show preview with Person A, B, C, D (all selected, equal split)
         const preview = this.splitService.formatSplitPreview(
           session.pendingReceiptExpense.amount,
           members,
@@ -2299,6 +2416,7 @@ export class YBBTallyBot {
           }
         });
         
+        keyboard.push([Markup.button.callback('⚖️ Equally', 'split_equally')]);
         keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
         
         await ctx.reply(preview, {
@@ -2307,10 +2425,73 @@ export class YBBTallyBot {
             inline_keyboard: keyboard,
           },
         });
+        return;
+      }
+
+      // Handle receipt flow steps (category and description)
+      if (session.receiptFlowStep === 'category') {
+        // This is handled by callback query for receipt category buttons
+        return;
+      } else if (session.receiptFlowStep === 'description') {
+        // Handle description input for receipt
+        if (textLower.includes('cancel') || text === '❌ Cancel') {
+          session.pendingReceiptExpense = undefined;
+          session.pendingExpense = undefined;
+          session.receiptFlowStep = undefined;
+          await this.showMainMenu(ctx, '❌ Receipt processing cancelled.');
+          return;
+        }
         
-        // Clear receipt split count mode
-        session.receiptSplitCount = false;
+        if (!session.pendingExpense || !session.pendingReceiptExpense) {
+          await ctx.reply('Session expired. Please try again.');
+          session.pendingReceiptExpense = undefined;
+          session.pendingExpense = undefined;
+          session.receiptFlowStep = undefined;
+          return;
+        }
+        
+        // Update description
+        session.pendingExpense.description = text;
+        
+        // Now create the expense
+        const selectedMembers = session.pendingExpense.members.filter((m) => m.isSelected);
+        if (selectedMembers.length === 0) {
+          await ctx.reply('Error: No members selected for split. Please start over.');
+          session.pendingReceiptExpense = undefined;
+          session.pendingExpense = undefined;
+          session.receiptFlowStep = undefined;
+          return;
+        }
+        
+        // Create expense with splits
+        const expenseId = await this.splitService.createExpenseWithSplits(
+          session.pendingExpense.groupId,
+          session.pendingExpense.amount,
+          session.pendingExpense.description,
+          session.pendingExpense.category,
+          session.pendingExpense.payerId,
+          session.pendingExpense.payerType,
+          selectedMembers.map(m => ({ id: m.id, type: m.type }))
+        );
+        
+        // Store values before clearing
+        const amount = session.pendingExpense.amount;
+        const description = session.pendingExpense.description;
+        const category = session.pendingExpense.category || 'Other';
+        
+        // Clear receipt flow
         session.pendingReceiptExpense = undefined;
+        session.pendingExpense = undefined;
+        session.receiptFlowStep = undefined;
+        
+        await ctx.reply(
+          `✅ Expense recorded!\n\n` +
+          `Amount: SGD $${amount.toFixed(2)}\n` +
+          `Description: ${description}\n` +
+          `Category: ${category}\n` +
+          `Split with: ${selectedMembers.length} person${selectedMembers.length !== 1 ? 's' : ''}`,
+          { reply_markup: { remove_keyboard: true } }
+        );
         return;
       }
 
@@ -2413,7 +2594,14 @@ export class YBBTallyBot {
         await ctx.answerCbQuery();
         if (!ctx.session) ctx.session = {};
         const session = ctx.session;
-        if (!session.pendingExpense) {
+        
+        // Check if we're in manual flow (using manualSplitMembers) or receipt flow (using pendingExpense)
+        let members: SplitMember[] | undefined;
+        if (session.manualAddMode && session.manualSplitMembers) {
+          members = session.manualSplitMembers;
+        } else if (session.pendingExpense) {
+          members = session.pendingExpense.members;
+        } else {
           await ctx.reply('Session expired. Please start over. Use /menu to begin again.');
           return;
         }
@@ -2423,7 +2611,7 @@ export class YBBTallyBot {
         const memberType = parts[1] as 'real' | 'virtual';
 
         // Toggle member selection
-        const member = session.pendingExpense.members.find(
+        const member = members.find(
           (m) => m.id === memberId && m.type === memberType
         );
         if (member) {
@@ -2441,7 +2629,7 @@ export class YBBTallyBot {
 
         const keyboard: any[] = [];
         const rows: any[] = [];
-        session.pendingExpense.members.forEach((member, index) => {
+        members.forEach((member, index) => {
           const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
           rows.push(
             Markup.button.callback(
@@ -2449,13 +2637,15 @@ export class YBBTallyBot {
               `split_toggle_${member.id}_${member.type}`
             )
           );
-          if (rows.length === 2 || index === session.pendingExpense!.members.length - 1) {
+          if (rows.length === 2 || index === members.length - 1) {
             keyboard.push(rows.slice());
             rows.length = 0;
           }
         });
-        keyboard.push([Markup.button.callback('➕ Add Person', 'split_add_person')]);
-        keyboard.push([Markup.button.callback('✅ Confirm', 'split_confirm')]);
+        
+        // Add "Equally" button and "Done" button
+        keyboard.push([Markup.button.callback('⚖️ Equally', 'split_equally')]);
+        keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
 
         await ctx.editMessageText(preview, {
           parse_mode: 'Markdown',
@@ -2478,16 +2668,181 @@ export class YBBTallyBot {
         return;
       }
 
+      // Handle split equally button
+      if (callbackData === 'split_equally') {
+        await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
+        
+        // Get members from appropriate source
+        let members: SplitMember[] | undefined;
+        if (session.manualAddMode && session.manualSplitMembers) {
+          members = session.manualSplitMembers;
+        } else if (session.pendingExpense) {
+          members = session.pendingExpense.members;
+        } else {
+          await ctx.reply('Session expired. Please start over.');
+          return;
+        }
+        
+        // Select all members
+        members.forEach(m => m.isSelected = true);
+        
+        // Update the message
+        let amount: number;
+        let isManual: boolean;
+        if (session.manualAddMode && session.manualSplitMembers) {
+          amount = session.manualAmount || 0;
+          isManual = true;
+        } else if (session.pendingExpense) {
+          amount = session.pendingExpense.amount;
+          isManual = session.pendingExpense.isManual || false;
+        } else {
+          return;
+        }
+        
+        const preview = this.splitService.formatSplitPreview(
+          amount,
+          members,
+          undefined,
+          ctx.from?.id,
+          isManual
+        );
+        
+        const keyboard: any[] = [];
+        const rows: any[] = [];
+        members.forEach((member, index) => {
+          const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+          rows.push(
+            Markup.button.callback(
+              buttonText,
+              `split_toggle_${member.id}_${member.type}`
+            )
+          );
+          if (rows.length === 2 || index === members.length - 1) {
+            keyboard.push(rows.slice());
+            rows.length = 0;
+          }
+        });
+        keyboard.push([Markup.button.callback('⚖️ Equally', 'split_equally')]);
+        keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
+        
+        await ctx.editMessageText(preview, {
+          parse_mode: 'Markdown',
+          reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+        });
+        return;
+      }
+
       // Handle split confirm
       if (callbackData === 'split_confirm') {
         await ctx.answerCbQuery();
         if (!ctx.session) ctx.session = {};
         const session = ctx.session;
+        
+        // Check if we're in manual flow
+        if (session.manualAddMode && session.manualSplitMembers) {
+          const selectedMembers = session.manualSplitMembers.filter((m) => m.isSelected);
+          if (selectedMembers.length === 0) {
+            await ctx.reply('Please select at least one person to split with.');
+            return;
+          }
+          
+          // Store selected members and move to category step
+          session.manualSplitMembers = selectedMembers;
+          session.manualAddStep = 'category';
+          
+          await ctx.reply(
+            `Amount: SGD $${session.manualAmount!.toFixed(2)}\n` +
+            `Paid by: ${session.manualPayerId ? (await prisma.user.findUnique({ where: { id: session.manualPayerId } }))?.name || 'Unknown' : 'Unknown'}\n` +
+            `Split with: ${selectedMembers.length} person${selectedMembers.length !== 1 ? 's' : ''}\n\n` +
+            'Select a Category:',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '🍔 Food', callback_data: 'manual_category_Food' },
+                    { text: '🚗 Transport', callback_data: 'manual_category_Transport' },
+                  ],
+                  [
+                    { text: '🛒 Groceries', callback_data: 'manual_category_Groceries' },
+                    { text: '🏠 Utilities', callback_data: 'manual_category_Utilities' },
+                  ],
+                  [
+                    { text: '🎬 Entertainment', callback_data: 'manual_category_Entertainment' },
+                    { text: '🛍️ Shopping', callback_data: 'manual_category_Shopping' },
+                  ],
+                  [
+                    { text: '🏥 Medical', callback_data: 'manual_category_Medical' },
+                    { text: '✈️ Travel', callback_data: 'manual_category_Travel' },
+                  ],
+                  [
+                    { text: '❌ Cancel', callback_data: 'manual_cancel' },
+                  ],
+                ],
+              },
+            }
+          );
+          return;
+        }
+        
+        // Receipt flow - check pendingExpense
         if (!session.pendingExpense) {
           await ctx.reply('Session expired. Please start over. Use /menu to begin again.');
           return;
         }
-
+        
+        // Check if this is a receipt flow (has pendingReceiptExpense)
+        if (session.pendingReceiptExpense) {
+          const selectedMembers = session.pendingExpense.members.filter((m) => m.isSelected);
+          if (selectedMembers.length === 0) {
+            await ctx.reply('Please select at least one person to split with.');
+            return;
+          }
+          
+          // Store selected members and move to category step
+          session.pendingExpense.members = selectedMembers;
+          session.receiptFlowStep = 'category';
+          
+          // Pre-fill category from receipt if available
+          const prefillCategory = session.pendingReceiptExpense.category;
+          
+          await ctx.reply(
+            `Amount: SGD $${session.pendingExpense.amount.toFixed(2)}\n` +
+            `Paid by: ${session.pendingExpense.payerId ? (await prisma.user.findUnique({ where: { id: session.pendingExpense.payerId } }))?.name || 'Unknown' : 'Unknown'}\n` +
+            `Split with: ${selectedMembers.length} person${selectedMembers.length !== 1 ? 's' : ''}\n` +
+            (prefillCategory ? `Suggested Category: ${prefillCategory}\n` : '') +
+            `\nSelect a Category:`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '🍔 Food', callback_data: 'receipt_category_Food' },
+                    { text: '🚗 Transport', callback_data: 'receipt_category_Transport' },
+                  ],
+                  [
+                    { text: '🛒 Groceries', callback_data: 'receipt_category_Groceries' },
+                    { text: '🏠 Utilities', callback_data: 'receipt_category_Utilities' },
+                  ],
+                  [
+                    { text: '🎬 Entertainment', callback_data: 'receipt_category_Entertainment' },
+                    { text: '🛍️ Shopping', callback_data: 'receipt_category_Shopping' },
+                  ],
+                  [
+                    { text: '🏥 Medical', callback_data: 'receipt_category_Medical' },
+                    { text: '✈️ Travel', callback_data: 'receipt_category_Travel' },
+                  ],
+                  [
+                    { text: '❌ Cancel', callback_data: 'receipt_cancel' },
+                  ],
+                ],
+              },
+            }
+          );
+          return;
+        }
+        
+        // Old flow (non-receipt, non-manual) - create expense immediately
         const selectedMembers = session.pendingExpense.members.filter((m) => m.isSelected);
         if (selectedMembers.length === 0) {
           await ctx.reply('Please select at least one person to split with.');
@@ -2545,15 +2900,12 @@ export class YBBTallyBot {
           this.getMainMenuKeyboard()
         );
 
-        // Clear session and delete receipt data if it was from a receipt
-        if (session.pendingExpense.receiptId) {
-          this.pendingReceipts.delete(session.pendingExpense.receiptId);
-        }
+        // Clear session
         session.pendingExpense = undefined;
         return;
       }
 
-      // Handle confirm amount (from receipt processing) - ask how many people
+      // Handle confirm amount (from receipt processing) - go to payer selection
       if (callbackData.startsWith('confirm_amount_')) {
         await ctx.answerCbQuery();
         const receiptId = callbackData.replace('confirm_amount_', '');
@@ -2571,14 +2923,14 @@ export class YBBTallyBot {
           return;
         }
 
-        // Get or create payer user (assume sender is paying)
-        const payerId = await this.groupService.getOrCreateUser(
+        // Ensure sender is added to group
+        const senderId = await this.groupService.getOrCreateUser(
           ctx.from.id,
           ctx.from
         );
-        await this.groupService.addMemberToGroup(group.id, payerId);
+        await this.groupService.addMemberToGroup(group.id, senderId);
 
-        // Store receipt data in session for split flow
+        // Store receipt data in session for payer selection flow
         if (!ctx.session) ctx.session = {};
         ctx.session.pendingReceiptExpense = {
           receiptId,
@@ -2586,60 +2938,15 @@ export class YBBTallyBot {
           amount: receiptData.receiptData.amount,
           description: receiptData.receiptData.merchant || 'Expense',
           category: receiptData.receiptData.category || null,
-          payerId,
+          payerId: BigInt(0), // Will be set after payer selection
           payerType: 'real' as const,
         };
-        ctx.session.receiptSplitCount = true; // Flag that we're waiting for split count
+        ctx.session.awaitingReceiptPayer = true;
 
-        // Ask how many people to split with (like manual flow)
-        await ctx.reply(
-          `✅ Amount confirmed: SGD $${receiptData.receiptData.amount.toFixed(2)}\n` +
-          `Description: ${receiptData.receiptData.merchant || 'Expense'}\n` +
-          `Category: ${receiptData.receiptData.category || 'Other'}\n` +
-          `Paid by: ${ctx.from.first_name || ctx.from.username || 'You'}\n\n` +
-          `How many people to split with? (Including yourself)`,
-          this.getNumericKeyboard()
-        );
-        
-        // Don't delete receipt data yet - we'll use it in split_count handler
-
-        this.pendingReceipts.delete(receiptId);
-        return;
-      }
-
-      // Handle manual category selection
-      if (callbackData.startsWith('manual_category_')) {
-        await ctx.answerCbQuery();
-        const category = this.stripEmoji(callbackData.replace('manual_category_', ''));
-        session.manualCategory = category;
-        
-        // Verify amount is set before proceeding
-        if (!session.manualAmount || session.manualAmount <= 0) {
-          await ctx.reply(
-            'Error: Amount not set. Please enter the amount first.',
-            this.getNumericKeyboard()
-          );
-          session.manualAddStep = 'amount';
-          return;
-        }
-        
-        session.manualAddStep = 'payer';
-        
-        // Get group members for payer selection
-        const chatId = ctx.chat?.id;
-        const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
-        
-        if (!group) {
-          await ctx.reply('Error: Group not found. Please use this in a group chat.');
-          session.manualAddMode = false;
-          return;
-        }
-        
-        // Build payer buttons from group members
-        // Get Telegram user info for each member to show first_name instead of database name
+        // Show payer selection (same as manual flow)
         const payerButtons: any[] = [];
         
-        // First, try to get all chat administrators to match with members
+        // Get Telegram user info for each member
         let adminMap = new Map<number, any>();
         if (chatId) {
           try {
@@ -2657,18 +2964,15 @@ export class YBBTallyBot {
         for (const member of group.members) {
           let displayName = member.name;
           
-          // Try to get Telegram user info if we have telegramId
           if (member.telegramId) {
             const telegramIdNum = Number(member.telegramId);
             
-            // First check if they're in the admin map (faster)
             if (adminMap.has(telegramIdNum)) {
               const telegramUser = adminMap.get(telegramIdNum);
               displayName = telegramUser.first_name || 
                            (telegramUser.username ? `@${telegramUser.username}` : null) || 
                            member.name;
             } else if (chatId) {
-              // Try getChatMember as fallback (requires permissions)
               try {
                 const chatMember = await this.bot.telegram.getChatMember(
                   chatId,
@@ -2680,30 +2984,165 @@ export class YBBTallyBot {
                                member.name;
                 }
               } catch (error) {
-                // If we can't get Telegram info, use database name
-                // But try to clean up "User 123456" format if possible
-                if (member.name && member.name.startsWith('User ')) {
-                  // Keep the database name as-is for now
-                  displayName = member.name;
-                }
+                displayName = member.name;
               }
             }
           }
           
           payerButtons.push([{ 
             text: displayName, 
-            callback_data: `manual_payer_${member.id}` 
+            callback_data: `receipt_payer_${member.id}` 
           }]);
         }
-        payerButtons.push([{ text: '❌ Cancel', callback_data: 'manual_cancel' }]);
+        payerButtons.push([{ text: '❌ Cancel', callback_data: 'receipt_cancel' }]);
         
         await ctx.reply(
-          `Category: ${category}\n\nWho paid?`,
+          `✅ Amount confirmed: SGD $${receiptData.receiptData.amount.toFixed(2)}\n\nWho paid?`,
           {
             reply_markup: {
               inline_keyboard: payerButtons,
             },
           }
+        );
+
+        this.pendingReceipts.delete(receiptId);
+        return;
+      }
+
+      // Handle receipt payer selection
+      if (callbackData.startsWith('receipt_payer_')) {
+        await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
+        
+        if (!session.pendingReceiptExpense) {
+          await ctx.reply('Session expired. Please try again.');
+          return;
+        }
+        
+        const payerIdStr = callbackData.replace('receipt_payer_', '');
+        const payerId = BigInt(payerIdStr);
+        
+        const user = await prisma.user.findUnique({
+          where: { id: payerId },
+        });
+
+        if (!user) {
+          await ctx.reply('Error: User not found.');
+          session.pendingReceiptExpense = undefined;
+          session.awaitingReceiptPayer = false;
+          return;
+        }
+        
+        // Update payer in pending receipt expense
+        session.pendingReceiptExpense.payerId = payerId;
+        session.awaitingReceiptPayer = false;
+        session.receiptSplitCount = true; // Flag that we're waiting for split count
+        
+        // Get payer display name
+        const chatId = ctx.chat?.id;
+        let payerName = user.name;
+        if (chatId && user.telegramId) {
+          try {
+            const chatMember = await this.bot.telegram.getChatMember(
+              chatId,
+              Number(user.telegramId)
+            );
+            if (chatMember.user) {
+              payerName = chatMember.user.first_name || 
+                         (chatMember.user.username ? `@${chatMember.user.username}` : null) || 
+                         user.name;
+            }
+          } catch (error) {
+            // Use database name if we can't get Telegram info
+          }
+        }
+        
+        // Ask how many people to split with
+        await ctx.reply(
+          `✅ Amount confirmed: SGD $${session.pendingReceiptExpense.amount.toFixed(2)}\n` +
+          `Description: ${session.pendingReceiptExpense.description || 'Expense'}\n` +
+          `Category: ${session.pendingReceiptExpense.category || 'Other'}\n` +
+          `Paid by: ${payerName}\n\n` +
+          `How many people to split with? (Including yourself)`,
+          this.getNumericKeyboard()
+        );
+        return;
+      }
+      
+      // Handle receipt cancel
+      if (callbackData === 'receipt_cancel') {
+        await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        ctx.session.pendingReceiptExpense = undefined;
+        ctx.session.pendingExpense = undefined;
+        ctx.session.receiptFlowStep = undefined;
+        await ctx.reply('❌ Receipt processing cancelled.');
+        return;
+      }
+      
+      // Handle receipt category selection
+      if (callbackData.startsWith('receipt_category_')) {
+        await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
+        
+        if (!session.pendingExpense || !session.pendingReceiptExpense) {
+          await ctx.reply('Session expired. Please try again.');
+          return;
+        }
+        
+        const category = this.stripEmoji(callbackData.replace('receipt_category_', ''));
+        session.pendingExpense.category = category;
+        
+        // Move to description step
+        session.receiptFlowStep = 'description';
+        
+        // Pre-fill description from receipt if available
+        const prefillDescription = session.pendingReceiptExpense.description;
+        
+        await ctx.reply(
+          `Category: ${category}\n` +
+          (prefillDescription ? `Suggested Description: ${prefillDescription}\n` : '') +
+          `\nWhat is the description?`,
+          Markup.keyboard([['❌ Cancel']]).resize()
+        );
+        return;
+      }
+
+      // Handle manual category selection
+      if (callbackData.startsWith('manual_category_')) {
+        await ctx.answerCbQuery();
+        const category = this.stripEmoji(callbackData.replace('manual_category_', ''));
+        session.manualCategory = category;
+        
+        // Verify we have all required data
+        if (!session.manualAmount || session.manualAmount <= 0) {
+          await ctx.reply(
+            'Error: Amount not set. Please enter the amount first.',
+            this.getNumericKeyboard()
+          );
+          session.manualAddStep = 'amount';
+          return;
+        }
+        
+        if (!session.manualPayerId) {
+          await ctx.reply('Error: Payer not selected. Please start over.');
+          session.manualAddMode = false;
+          return;
+        }
+        
+        if (!session.manualSplitMembers || session.manualSplitMembers.length === 0) {
+          await ctx.reply('Error: Split members not selected. Please start over.');
+          session.manualAddMode = false;
+          return;
+        }
+        
+        // Move to description step
+        session.manualAddStep = 'description';
+        await ctx.reply(
+          `Category: ${category}\n\nWhat is the description?`,
+          Markup.keyboard([['❌ Cancel']]).resize()
         );
         return;
       }
@@ -2752,24 +3191,26 @@ export class YBBTallyBot {
 
         // Check if amount is valid
         if (!session.manualAmount || session.manualAmount <= 0) {
-        await ctx.reply(
+          await ctx.reply(
             `Error: Invalid amount (${session.manualAmount}). Please enter the amount again.`,
             this.getNumericKeyboard()
           );
           session.manualAddStep = 'amount';
-          // Don't clear manualAddMode, just go back to amount step
           return;
         }
 
-        // For manual expenses, ask how many people to split with
+        // Store payer and move to split selection
         session.manualPayerId = user.id;
-        session.manualAddStep = 'split_count';
-        await ctx.reply(
-          `Amount: SGD $${session.manualAmount.toFixed(2)}\n` +
-          `Category: ${session.manualCategory || 'Other'}\n` +
-          `Paid by: ${user.name}\n\n` +
-          `How many people to split with? (Including yourself)`,
-          this.getNumericKeyboard()
+        session.manualAddStep = 'split';
+        
+        // Show split selection UI
+        await this.showSplitSelectionUI(
+          ctx,
+          group.id,
+          session.manualAmount,
+          user.id,
+          'real',
+          true // isManual
         );
         return;
       }
@@ -3994,6 +4435,99 @@ export class YBBTallyBot {
       }
     } catch (error: any) {
       console.error('Error handling new chat members:', error);
+    }
+  }
+
+  /**
+   * Show split selection UI (for manual/receipt flows)
+   */
+  private async showSplitSelectionUI(
+    ctx: any,
+    groupId: bigint,
+    amount: number,
+    payerId: bigint,
+    payerType: 'real' | 'virtual',
+    isManual: boolean = false
+  ): Promise<void> {
+    try {
+      const chatId = ctx.chat?.id;
+      const payerTelegramId = ctx.from?.id;
+      
+      // Get all group members (real + virtual)
+      const { realUsers, virtualUsers } = await this.groupService.getAllGroupMembers(groupId);
+      
+      // Build members list (all selected by default)
+      const members: SplitMember[] = [
+        ...realUsers.map((u) => ({
+          id: u.id,
+          name: u.name,
+          type: 'real' as const,
+          isSelected: true,
+        })),
+        ...virtualUsers.map((v) => ({
+          id: v.id,
+          name: v.name,
+          type: 'virtual' as const,
+          isSelected: true,
+        })),
+      ];
+      
+      // Store in session for manual flow
+      if (!ctx.session) ctx.session = {};
+      if (isManual) {
+        ctx.session.manualSplitMembers = members;
+      } else {
+        // For receipt flow, store in pendingExpense
+        ctx.session.pendingExpense = {
+          groupId,
+          amount,
+          description: '', // Will be filled later
+          category: null, // Will be filled later
+          payerId,
+          payerType,
+          members,
+        };
+      }
+      
+      const preview = this.splitService.formatSplitPreview(
+        amount,
+        members,
+        undefined, // No description yet
+        payerTelegramId,
+        isManual
+      );
+      
+      // Build inline keyboard with member toggles
+      const keyboard: any[] = [];
+      const rows: any[] = [];
+      
+      members.forEach((member, index) => {
+        const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+        rows.push(
+          Markup.button.callback(
+            buttonText,
+            `split_toggle_${member.id}_${member.type}`
+          )
+        );
+        
+        // Add row every 2 buttons or at end
+        if (rows.length === 2 || index === members.length - 1) {
+          keyboard.push(rows.slice());
+          rows.length = 0;
+        }
+      });
+      
+      // Add "Equally" button and "Done" button
+      keyboard.push([Markup.button.callback('⚖️ Equally', 'split_equally')]);
+      keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
+      
+      await ctx.reply(preview, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+      });
+    } catch (error: any) {
+      console.error('Error showing split selection UI:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
     }
   }
 
