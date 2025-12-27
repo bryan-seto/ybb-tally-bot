@@ -194,16 +194,30 @@ export class YBBTallyBot {
   }
 
   /**
-   * Get main menu keyboard
+   * Get main menu keyboard (inline keyboard for groups)
    */
   private getMainMenuKeyboard() {
-    return Markup.keyboard([
-      ['✅ Settle Up', '💰 Check Balance'],
-      ['🧾 View Unsettled', '➕ Add Manual Expense'],
-      ['✏️ Edit Last', '🔍 Search'],
-      ['🔄 Recurring', '📊 Reports'],
-      ['❓ User Guide'],
-    ]).resize().persistent();
+    return Markup.inlineKeyboard([
+      [
+        { text: '✅ Settle Up', callback_data: 'menu_settle' },
+        { text: '💰 Check Balance', callback_data: 'menu_balance' },
+      ],
+      [
+        { text: '🧾 View Unsettled', callback_data: 'menu_unsettled' },
+        { text: '➕ Add Manual Expense', callback_data: 'menu_add' },
+      ],
+      [
+        { text: '✏️ Edit Last', callback_data: 'menu_edit_last' },
+        { text: '🔍 Search', callback_data: 'menu_search' },
+      ],
+      [
+        { text: '🔄 Recurring', callback_data: 'menu_recurring' },
+        { text: '📊 Reports', callback_data: 'menu_reports' },
+      ],
+      [
+        { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
+      ],
+    ]);
   }
 
   /**
@@ -217,23 +231,11 @@ export class YBBTallyBot {
       `👇 Or tap a button below:`;
     
     const keyboard = this.getMainMenuKeyboard();
-    console.log('Sending main menu with keyboard:', JSON.stringify(keyboard, null, 2));
-    console.log('Chat type:', ctx.chat?.type);
-    console.log('Chat ID:', ctx.chat?.id);
-    console.log('User ID:', ctx.from?.id);
     
     try {
-      // Use sendMessage directly to ensure keyboard is sent
-      const result = await ctx.telegram.sendMessage(
-        ctx.chat.id,
-        menuMessage,
-        keyboard
-      );
-      console.log('Main menu sent successfully, message ID:', result?.message_id);
+      await ctx.reply(menuMessage, keyboard);
     } catch (error: any) {
       console.error('Error sending main menu:', error);
-      console.error('Error details:', error.response || error.message);
-      // Fallback: send without keyboard
       await ctx.reply(menuMessage);
     }
   }
@@ -1090,39 +1092,30 @@ export class YBBTallyBot {
       const session = ctx.session;
       const chatId = ctx.chat.id;
 
-      // Handle main menu buttons
-      if (text === '✅ Settle Up') {
+      // Handle main menu buttons (for backward compatibility with reply keyboards)
+      if (text === '✅ Settle Up' || text === 'Settle Up') {
         await this.handleSettleUp(ctx);
         return;
-      } else if (text === '💰 Check Balance') {
+      } else if (text === '💰 Check Balance' || text === 'Check Balance') {
         await this.handleCheckBalance(ctx);
         return;
-      } else if (text === '🧾 View Unsettled') {
+      } else if (text === '🧾 View Unsettled' || text === 'View Unsettled') {
         await this.handleViewUnsettled(ctx);
         return;
-      } else if (text === '➕ Add Manual Expense') {
+      } else if (text === '➕ Add Manual Expense' || text === 'Add Manual Expense') {
         await this.startManualAdd(ctx);
         return;
-      } else if (text === '🔄 Recurring') {
+      } else if (text === '🔄 Recurring' || text === 'Recurring') {
         await this.showRecurringMenu(ctx);
         return;
-      } else if (text === '📊 Reports') {
+      } else if (text === '📊 Reports' || text === 'Reports') {
         await this.handleReports(ctx);
         return;
-      } else if (text === '✏️ Edit Last') {
+      } else if (text === '✏️ Edit Last' || text === 'Edit Last') {
         await this.handleEditLast(ctx);
         return;
-      } else if (text === '🔍 Search') {
+      } else if (text === '🔍 Search' || text === 'Search') {
         await this.startSearch(ctx);
-        return;
-      } else if (text === '❓ User Guide') {
-        await ctx.reply('📖 User Guide', {
-          reply_markup: {
-            inline_keyboard: [[
-              { text: 'Open User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' }
-            ]]
-          }
-        });
         return;
       } else if (text === '❌ Cancel') {
         // Cancel any active flow
@@ -1879,6 +1872,31 @@ export class YBBTallyBot {
           session.editLastAction = undefined;
         }
         await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle main menu button clicks (inline keyboard)
+      if (callbackData.startsWith('menu_')) {
+        await ctx.answerCbQuery();
+        const action = callbackData.replace('menu_', '');
+        
+        if (action === 'settle') {
+          await this.handleSettleUp(ctx);
+        } else if (action === 'balance') {
+          await this.handleCheckBalance(ctx);
+        } else if (action === 'unsettled') {
+          await this.handleViewUnsettled(ctx);
+        } else if (action === 'add') {
+          await this.startManualAdd(ctx);
+        } else if (action === 'edit_last') {
+          await this.handleEditLast(ctx);
+        } else if (action === 'search') {
+          await this.startSearch(ctx);
+        } else if (action === 'recurring') {
+          await this.showRecurringMenu(ctx);
+        } else if (action === 'reports') {
+          await this.handleReports(ctx);
+        }
         return;
       }
 
