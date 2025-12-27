@@ -1334,18 +1334,39 @@ export class YBBTallyBot {
         return;
       }
 
-      // Build the list message
-      const lines = ['📜 **Expense History**\n'];
-      
-      for (const tx of transactions) {
-        const line = this.historyService.formatTransactionListItem(tx);
-        lines.push(line);
-      }
+      // Build message header
+      const message = '📜 **Expense History**\n\nTap an item to view details:';
 
-      const message = lines.join('\n');
+      // Build clickable buttons for each transaction
+      const keyboard: any[] = [];
+      
+      // Add transaction buttons (2 per row)
+      const transactionRows: any[] = [];
+      transactions.forEach((tx, index) => {
+        const statusEmoji = this.historyService.getStatusEmoji(tx.status);
+        const amountStr = tx.currency === 'SGD' 
+          ? `$${tx.amount.toFixed(2)}`
+          : `${tx.currency} ${tx.amount.toFixed(2)}`;
+        
+        // Escape merchant name
+        const merchant = tx.merchant.replace(/([_*\[\]()~`>#+=|{}.!-])/g, '\\$1');
+        const buttonText = `${statusEmoji} ${merchant} - ${amountStr}`;
+        
+        transactionRows.push(
+          Markup.button.callback(
+            buttonText,
+            `tx_detail_${tx.id}`
+          )
+        );
+        
+        // Add row every 2 buttons or at end
+        if (transactionRows.length === 2 || index === transactions.length - 1) {
+          keyboard.push(transactionRows.slice());
+          transactionRows.length = 0;
+        }
+      });
 
       // Add pagination and menu buttons
-      const keyboard: any[] = [];
       if (offset + 20 < totalCount) {
         keyboard.push([
           Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
@@ -2795,6 +2816,14 @@ export class YBBTallyBot {
           session.editLastAction = undefined;
         }
         await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle transaction detail from history (clickable items)
+      if (callbackData.startsWith('tx_detail_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('tx_detail_', ''));
+        await this.showTransactionDetail(ctx, transactionId);
         return;
       }
 
