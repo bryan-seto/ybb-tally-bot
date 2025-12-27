@@ -45,6 +45,14 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+// Add request logging middleware for debugging
+app.use((req: Request, res: Response, next) => {
+  if (req.path !== '/health' && req.path !== '/') {
+    console.log(`📥 Incoming request: ${req.method} ${req.path}`);
+  }
+  next();
+});
+
 // Start the web server immediately (non-blocking)
 app.listen(Number(webServerPort), '0.0.0.0', () => {
   console.log(`Dummy web server listening on port ${webServerPort} (Render keep-alive)`);
@@ -131,7 +139,14 @@ process.on('unhandledRejection', async (reason, promise) => {
  */
 async function initializeDatabase(): Promise<void> {
   try {
+    console.log('🔌 Testing database connection...');
+    
+    // Test database connection first
+    await prisma.$connect();
+    console.log('✅ Database connected successfully');
+    
     // Check if users exist
+    console.log('👥 Checking for existing users...');
     const bryan = await prisma.user.findFirst({ where: { role: 'Bryan' } });
     const hweiYeen = await prisma.user.findFirst({ where: { role: 'HweiYeen' } });
 
@@ -143,7 +158,9 @@ async function initializeDatabase(): Promise<void> {
           role: 'Bryan',
         },
       });
-      console.log('Created user: Bryan');
+      console.log('✅ Created user: Bryan');
+    } else {
+      console.log('✅ User Bryan already exists');
     }
 
     if (!hweiYeen) {
@@ -154,10 +171,22 @@ async function initializeDatabase(): Promise<void> {
           role: 'HweiYeen',
         },
       });
-      console.log('Created user: Hwei Yeen');
+      console.log('✅ Created user: Hwei Yeen');
+    } else {
+      console.log('✅ User Hwei Yeen already exists');
     }
-  } catch (error) {
-    console.error('Error initializing database:', error);
+    
+    console.log('✅ Database initialization complete');
+  } catch (error: any) {
+    console.error('❌ Error initializing database:', error.message);
+    console.error('📋 Error details:', {
+      code: error.code,
+      message: error.message,
+      meta: error.meta,
+    });
+    
+    // Don't exit - let the error propagate so we can see it in logs
+    throw new Error(`Database initialization failed: ${error.message}`);
   }
 }
 
@@ -287,6 +316,10 @@ cron.schedule('0 1 1 * *', sendMonthlyReport);
 // Start bot
 async function main() {
   try {
+    console.log('🚀 Starting YBB Tally Bot...');
+    console.log('📊 Environment:', process.env.NODE_ENV || 'development');
+    console.log('🔧 Port:', process.env.PORT || 10000);
+    
     await initializeDatabase();
     
     // Use webhooks in production (Render), long polling in development
@@ -295,38 +328,96 @@ async function main() {
     const port = process.env.PORT || 10000;
     
     if (isProduction && webhookUrl) {
+      console.log('🌐 Running in PRODUCTION mode with WEBHOOKS');
+      
       // Webhook mode for Render
-      const webhookPath = `/webhook/${process.env.TELEGRAM_BOT_TOKEN}`;
+      // Use a simple path - Telegram will verify the token automatically
+      const webhookPath = '/webhook';
       const fullWebhookUrl = `${webhookUrl}${webhookPath}`;
+      
+      // Add webhook endpoint to Express app BEFORE setting up webhook
+      // This ensures the route is ready when Telegram sends updates
+      app.use(express.json());
+      
+      // Register webhook callback
+      // Telegraf's webhookCallback() returns an Express middleware
+      app.use(webhookPath, bot.getBot().webhookCallback());
+      
+      // Add error handling middleware (must be after routes)
+      app.use((err: any, req: Request, res: Response, next: any) => {
+        console.error('❌ Express error:', err.message || err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      });
       
       // Delete any existing webhook first to prevent conflicts
       console.log('🔄 Removing any existing webhook...');
-      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
+      try {
+        const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+        console.log('📡 Current webhook:', webhookInfo.url || 'None');
+        
+        await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
+        console.log('✅ Old webhook removed');
+      } catch (error: any) {
+        console.log('⚠️  No existing webhook to remove:', error.message);
+      }
       
       console.log(`📡 Setting up webhook: ${fullWebhookUrl}`);
-      await bot.getBot().telegram.setWebhook(fullWebhookUrl);
+      await bot.getBot().telegram.setWebhook(fullWebhookUrl, {
+        drop_pending_updates: true,
+      });
       
-      // Add webhook endpoint to existing Express app
-      app.use(express.json());
-      app.use(bot.getBot().webhookCallback(webhookPath));
+      // Verify webhook was set
+      const newWebhookInfo = await bot.getBot().telegram.getWebhookInfo();
+      console.log('✅ Webhook verified:', newWebhookInfo.url);
+      console.log('📊 Webhook status:', {
+        url: newWebhookInfo.url,
+        has_custom_certificate: newWebhookInfo.has_custom_certificate,
+        pending_update_count: newWebhookInfo.pending_update_count,
+      });
       
       console.log('✅ YBB Tally Bot is running with webhooks...');
       global.isBooting = false;
     } else {
+      console.log('💻 Running in DEVELOPMENT mode with LONG POLLING');
+      
       // Long polling mode for development
       // Check if bot is already running
-      const me = await bot.getBot().telegram.getMe();
-      console.log(`🤖 Bot username: @${me.username}`);
-      
-      // Delete webhook to enable polling
-      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
-      
-      await bot.launch();
-      console.log('✅ YBB Tally Bot is running with long polling...');
-      global.isBooting = false;
+      try {
+        const me = await bot.getBot().telegram.getMe();
+        console.log(`🤖 Bot username: @${me.username}`);
+        console.log(`🆔 Bot ID: ${me.id}`);
+        
+        // Delete webhook to enable polling
+        console.log('🔄 Removing webhook to enable polling...');
+        await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
+        console.log('✅ Webhook removed, polling enabled');
+        
+        await bot.launch();
+        console.log('✅ YBB Tally Bot is running with long polling...');
+        global.isBooting = false;
+      } catch (error: any) {
+        if (error.message?.includes('409')) {
+          console.error('❌ 409 CONFLICT: Another bot instance is already running!');
+          console.error('💡 Solution: Stop the other instance first, or wait 1 minute and try again.');
+          throw new Error('Bot conflict detected. Another instance is running.');
+        }
+        throw error;
+      }
     }
-  } catch (error) {
-    console.error('Error starting bot:', error);
+  } catch (error: any) {
+    console.error('💥 Error starting bot:', error.message);
+    console.error('📋 Error stack:', error.stack);
+    
+    // Attempt cleanup before exit
+    try {
+      await prisma.$disconnect();
+    } catch (e) {
+      console.error('Error disconnecting Prisma:', e);
+    }
+    
+    global.isBooting = false;
     process.exit(1);
   }
 }
