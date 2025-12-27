@@ -535,6 +535,13 @@ async function main() {
         drop_pending_updates: true,
       });
       
+      // Verify bot identity
+      const botInfo = await bot.getBot().telegram.getMe();
+      console.log(`🤖 Bot identity verified:`);
+      console.log(`   Username: @${botInfo.username}`);
+      console.log(`   ID: ${botInfo.id}`);
+      console.log(`   Name: ${botInfo.first_name}`);
+      
       // Verify webhook was set
       const newWebhookInfo = await bot.getBot().telegram.getWebhookInfo();
       console.log('✅ Webhook verified:', newWebhookInfo.url);
