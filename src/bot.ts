@@ -850,8 +850,9 @@ export class YBBTallyBot {
       const bryanShare = totalSpending * 0.7;
       const hweiYeenShare = totalSpending * 0.3;
       
-      const bryanOwes = bryanPaid - bryanShare;
-      const hweiYeenOwes = hweiYeenPaid - hweiYeenShare;
+      // Calculate net: positive = overpaid (other person owes them), negative = underpaid (they owe)
+      const bryanNet = bryanPaid - bryanShare;
+      const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
       
       let message = `💰 **Balance Summary**\n\n`;
       message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
@@ -861,10 +862,18 @@ export class YBBTallyBot {
       message += `Bryan's share (70%): SGD $${bryanShare.toFixed(2)}\n`;
       message += `Hwei Yeen's share (30%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
       
-      if (bryanOwes > 0) {
-        message += `👉 Bryan owes Hwei Yeen: SGD $${bryanOwes.toFixed(2)}`;
-      } else if (hweiYeenOwes > 0) {
-        message += `👉 Hwei Yeen owes Bryan: SGD $${hweiYeenOwes.toFixed(2)}`;
+      if (bryanNet > 0) {
+        // Bryan overpaid, so Hwei Yeen owes Bryan
+        message += `👉 Hwei Yeen owes Bryan: SGD $${bryanNet.toFixed(2)}`;
+      } else if (hweiYeenNet > 0) {
+        // Hwei Yeen overpaid, so Bryan owes Hwei Yeen
+        message += `👉 Bryan owes Hwei Yeen: SGD $${hweiYeenNet.toFixed(2)}`;
+      } else if (bryanNet < 0) {
+        // Bryan underpaid, so Bryan owes Hwei Yeen
+        message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(bryanNet).toFixed(2)}`;
+      } else if (hweiYeenNet < 0) {
+        // Hwei Yeen underpaid, so Hwei Yeen owes Bryan
+        message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(hweiYeenNet).toFixed(2)}`;
       } else {
         message += `✅ All settled!`;
       }
@@ -1434,7 +1443,6 @@ export class YBBTallyBot {
             await prisma.transaction.update({
               where: { id: transactionId },
               data: { 
-                // @ts-ignore - These fields may need to be added to the schema
                 bryanPercentage: bryanPercentage / 100,
                 hweiYeenPercentage: hweiYeenPercentage / 100,
               },
@@ -1458,7 +1466,6 @@ export class YBBTallyBot {
               await prisma.transaction.update({
                 where: { id: lastTransaction.id },
                 data: { 
-                  // @ts-ignore - These fields may need to be added to the schema
                   bryanPercentage: bryanPercentage / 100,
                   hweiYeenPercentage: hweiYeenPercentage / 100,
                 },
@@ -1599,10 +1606,8 @@ export class YBBTallyBot {
           session.awaitingAmountConfirmation = false;
 
           // Calculate transaction-specific amount owed
-          // @ts-ignore - These fields may need to be added to the schema
-          const bryanPercent = (transaction as any).bryanPercentage;
-          // @ts-ignore
-          const hweiYeenPercent = (transaction as any).hweiYeenPercentage;
+          const bryanPercent = transaction.bryanPercentage;
+          const hweiYeenPercent = transaction.hweiYeenPercentage;
           const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
             transaction.amountSGD,
             payerRole,
