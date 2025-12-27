@@ -2337,6 +2337,17 @@ export class YBBTallyBot {
         await ctx.answerCbQuery();
         const category = this.stripEmoji(callbackData.replace('manual_category_', ''));
         session.manualCategory = category;
+        
+        // Verify amount is set before proceeding
+        if (!session.manualAmount || session.manualAmount <= 0) {
+          await ctx.reply(
+            'Error: Amount not set. Please enter the amount first.',
+            this.getNumericKeyboard()
+          );
+          session.manualAddStep = 'amount';
+          return;
+        }
+        
         session.manualAddStep = 'payer';
         
         // Get group members for payer selection
@@ -2353,24 +2364,54 @@ export class YBBTallyBot {
         // Get Telegram user info for each member to show first_name instead of database name
         const payerButtons: any[] = [];
         
+        // First, try to get all chat administrators to match with members
+        let adminMap = new Map<number, any>();
+        if (chatId) {
+          try {
+            const administrators = await this.bot.telegram.getChatAdministrators(chatId);
+            for (const admin of administrators) {
+              if (!admin.user.is_bot && admin.user.id) {
+                adminMap.set(admin.user.id, admin.user);
+              }
+            }
+          } catch (error) {
+            console.error('Error getting chat administrators:', error);
+          }
+        }
+        
         for (const member of group.members) {
           let displayName = member.name;
           
-          // Try to get Telegram user info if we have telegramId and chatId
-          if (member.telegramId && chatId) {
-            try {
-              const telegramUser = await this.bot.telegram.getChatMember(
-                chatId,
-                Number(member.telegramId)
-              );
-              if (telegramUser.user) {
-                displayName = telegramUser.user.first_name || 
-                             (telegramUser.user.username ? `@${telegramUser.user.username}` : null) || 
-                             member.name;
+          // Try to get Telegram user info if we have telegramId
+          if (member.telegramId) {
+            const telegramIdNum = Number(member.telegramId);
+            
+            // First check if they're in the admin map (faster)
+            if (adminMap.has(telegramIdNum)) {
+              const telegramUser = adminMap.get(telegramIdNum);
+              displayName = telegramUser.first_name || 
+                           (telegramUser.username ? `@${telegramUser.username}` : null) || 
+                           member.name;
+            } else if (chatId) {
+              // Try getChatMember as fallback (requires permissions)
+              try {
+                const chatMember = await this.bot.telegram.getChatMember(
+                  chatId,
+                  telegramIdNum
+                );
+                if (chatMember.user) {
+                  displayName = chatMember.user.first_name || 
+                               (chatMember.user.username ? `@${chatMember.user.username}` : null) || 
+                               member.name;
+                }
+              } catch (error) {
+                // If we can't get Telegram info, use database name
+                // But try to clean up "User 123456" format if possible
+                if (member.name && member.name.startsWith('User ')) {
+                  // Keep the database name as-is for now
+                  displayName = member.name;
+                }
               }
-            } catch (error) {
-              // If we can't get Telegram info, use database name
-              console.error('Error getting Telegram user info:', error);
             }
           }
           
@@ -2436,8 +2477,12 @@ export class YBBTallyBot {
 
         // Check if amount is valid
         if (!session.manualAmount || session.manualAmount <= 0) {
-          await ctx.reply('Error: Invalid amount. Please start over.');
-          session.manualAddMode = false;
+          await ctx.reply(
+            `Error: Invalid amount (${session.manualAmount}). Please enter the amount again.`,
+            this.getNumericKeyboard()
+          );
+          session.manualAddStep = 'amount';
+          // Don't clear manualAddMode, just go back to amount step
           return;
         }
 
