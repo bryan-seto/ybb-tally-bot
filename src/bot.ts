@@ -82,6 +82,51 @@ export class YBBTallyBot {
     this.setupMiddleware();
     this.setupCommands();
     this.setupHandlers();
+    // setupBotCommands will be called after bot is launched
+  }
+
+  /**
+   * Setup Telegram BotCommand menu (shows when user types /)
+   */
+  async setupBotCommands(): Promise<void> {
+    await this.bot.telegram.setMyCommands([
+      {
+        command: 'start',
+        description: 'Register this group for expense tracking',
+      },
+      {
+        command: 'help',
+        description: 'Show all available commands and features',
+      },
+      {
+        command: 'add',
+        description: 'Manually add an expense (amount, category, description, payer)',
+      },
+      {
+        command: 'balance',
+        description: 'Check outstanding balance (who owes whom)',
+      },
+      {
+        command: 'showAllPendingTransactions',
+        description: 'View all pending (unsettled) transactions',
+      },
+      {
+        command: 'settle',
+        description: 'Mark all expenses as settled (clear outstanding balance)',
+      },
+      {
+        command: 'recurring',
+        description: 'Manage recurring expenses (add/list recurring bills)',
+      },
+      {
+        command: 'report',
+        description: 'Generate monthly spending report (use /report 0 for current month)',
+      },
+      {
+        command: 'admin_stats',
+        description: 'View analytics and statistics (admin only)',
+      },
+    ]);
   }
 
   /**
@@ -159,20 +204,12 @@ export class YBBTallyBot {
       }
     });
 
-    // Help command
+    // Help command with inline keyboard buttons
     this.bot.command('help', async (ctx) => {
       const userName = USER_NAMES[ctx.from.id.toString()] || 'User';
       await ctx.reply(
         `At your service, ${userName}!\n\n` +
-        `💰 **Commands:**\n` +
-        `\`/start\` - Register this group\n` +
-        `\`/add\` - Manually add an expense\n` +
-        `\`/balance\` - Check outstanding balance\n` +
-        `\`/showAllPendingTransactions\` - View all pending (unsettled) transactions\n` +
-        `\`/recurring\` - Manage recurring expenses\n` +
-        `\`/report [offset]\` - Generate monthly report\n` +
-        `\`/admin_stats\` - View analytics (admin only)\n` +
-        `\`/help\` - Show this help message\n\n` +
+        `💰 **Quick Commands (Click to run):**\n\n` +
         `📸 **Receipt Processing:**\n` +
         `• Send a receipt photo to automatically extract expense details\n` +
         `• Supports traditional receipts, YouTrip screenshots, and banking apps\n` +
@@ -190,8 +227,31 @@ export class YBBTallyBot {
         `\`/report\` - Current month\n` +
         `\`/report 1\` - Last month\n` +
         `\`/report 2\` - 2 months ago\n` +
-        `Includes spending breakdown, top categories, and visual charts.`,
-        { parse_mode: 'Markdown' }
+        `Includes spending breakdown, top categories, and visual charts.\n\n` +
+        `💸 **Settling Expenses:**\n` +
+        `Use \`/settle\` to mark all expenses as settled and clear the outstanding balance.`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '💰 Balance', callback_data: 'help_cmd_balance' },
+                { text: '📋 Pending', callback_data: 'help_cmd_pending' },
+              ],
+              [
+                { text: '➕ Add Expense', callback_data: 'help_cmd_add' },
+                { text: '✅ Settle All', callback_data: 'help_cmd_settle' },
+              ],
+              [
+                { text: '📊 Report', callback_data: 'help_cmd_report' },
+                { text: '🔄 Recurring', callback_data: 'help_cmd_recurring' },
+              ],
+              [
+                { text: '📈 Analytics', callback_data: 'help_cmd_admin_stats' },
+              ],
+            ],
+          },
+        }
       );
     });
 
@@ -238,6 +298,36 @@ export class YBBTallyBot {
       } catch (error: any) {
         console.error('Error getting pending transactions:', error);
         await ctx.reply('Sorry, I encountered an error retrieving pending transactions. Please try again.');
+      }
+    });
+
+    // Settle all expenses command
+    this.bot.command('settle', async (ctx) => {
+      try {
+        // Mark all unsettled transactions as settled
+        const result = await prisma.transaction.updateMany({
+          where: {
+            isSettled: false,
+          },
+          data: {
+            isSettled: true,
+          },
+        });
+
+        if (result.count === 0) {
+          await ctx.reply('✅ All expenses are already settled! No pending transactions to settle.');
+          return;
+        }
+
+        await ctx.reply(
+          `✅ **All expenses settled!**\n\n` +
+          `Marked ${result.count} transaction${result.count > 1 ? 's' : ''} as settled.\n\n` +
+          `Outstanding balance has been cleared. All expenses are now settled!`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error: any) {
+        console.error('Error settling expenses:', error);
+        await ctx.reply('Sorry, I encountered an error settling expenses. Please try again.');
       }
     });
 
@@ -985,6 +1075,127 @@ export class YBBTallyBot {
       const callbackData = ctx.callbackQuery.data;
       const session = ctx.session;
 
+      // Handle help command buttons
+      if (callbackData.startsWith('help_cmd_')) {
+        await ctx.answerCbQuery();
+        const command = callbackData.replace('help_cmd_', '');
+        
+        // Simulate command execution by sending the command as a message
+        // This will trigger the actual command handler
+        const commandMap: { [key: string]: string } = {
+          'balance': '/balance',
+          'pending': '/showAllPendingTransactions',
+          'add': '/add',
+          'settle': '/settle',
+          'report': '/report',
+          'recurring': '/recurring',
+          'admin_stats': '/admin_stats',
+        };
+        
+        const commandText = commandMap[command];
+        if (commandText) {
+          // Manually trigger the command
+          if (command === 'balance') {
+            const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+            await ctx.reply(balanceMessage, { parse_mode: 'Markdown' });
+          } else if (command === 'pending') {
+            const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+            if (pendingTransactions.length === 0) {
+              await ctx.reply('✅ All expenses are settled! No pending transactions.');
+            } else {
+              let message = `📋 **All Pending Transactions (${pendingTransactions.length}):**\n\n`;
+              pendingTransactions.forEach((t, index) => {
+                const dateStr = formatDate(t.date, 'dd MMM yyyy');
+                message += `${index + 1}. **${t.description}**\n`;
+                message += `   Amount: SGD $${t.amount.toFixed(2)}\n`;
+                message += `   Paid by: ${t.payerName}\n`;
+                message += `   Category: ${t.category}\n`;
+                message += `   Date: ${dateStr}\n`;
+                if (t.bryanOwes > 0) {
+                  message += `   💰 Sir Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
+                } else if (t.hweiYeenOwes > 0) {
+                  message += `   💰 Madam Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
+                }
+                message += '\n';
+              });
+              const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+              message += balanceMessage;
+              await ctx.reply(message, { parse_mode: 'Markdown' });
+            }
+          } else if (command === 'add') {
+            await ctx.reply(
+              'At your service! Let\'s add an expense manually.\n\n' +
+              'Please enter the amount in SGD:'
+            );
+            if (!session) ctx.session = {};
+            ctx.session.manualAddMode = true;
+            ctx.session.manualAddStep = 'amount';
+          } else if (command === 'settle') {
+            const result = await prisma.transaction.updateMany({
+              where: { isSettled: false },
+              data: { isSettled: true },
+            });
+            if (result.count === 0) {
+              await ctx.reply('✅ All expenses are already settled! No pending transactions to settle.');
+            } else {
+              await ctx.reply(
+                `✅ **All expenses settled!**\n\n` +
+                `Marked ${result.count} transaction${result.count > 1 ? 's' : ''} as settled.\n\n` +
+                `Outstanding balance has been cleared. All expenses are now settled!`,
+                { parse_mode: 'Markdown' }
+              );
+            }
+          } else if (command === 'report') {
+            await ctx.reply('Generating monthly report... At your service!');
+            const report = await this.expenseService.getMonthlyReport(0);
+            const reportDate = getMonthsAgo(0);
+            const monthName = formatDate(reportDate, 'MMMM yyyy');
+            const chart = new QuickChart();
+            chart.setConfig({
+              type: 'bar',
+              data: {
+                labels: report.topCategories.map((c) => c.category),
+                datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
+              },
+            });
+            chart.setWidth(800);
+            chart.setHeight(400);
+            const chartUrl = chart.getUrl();
+            const message =
+              `📊 **Monthly Report - ${monthName}**\n\n` +
+              `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
+              `Transactions: ${report.transactionCount}\n\n` +
+              `**Breakdown:**\n` +
+              `Sir Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
+              `Madam Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
+              `**Top Categories:**\n` +
+              (report.topCategories.length > 0
+                ? report.topCategories.map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+                : 'No categories found') +
+              `\n\n[View Chart](${chartUrl})`;
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+          } else if (command === 'recurring') {
+            await ctx.reply(
+              '**Recurring Expense Commands:**\n\n' +
+              'To add a recurring expense:\n' +
+              '`/recurring add <description> <amount> <day_of_month> <payer>`\n\n' +
+              'Example:\n' +
+              '`/recurring add "Internet Bill" 50 15 bryan`\n\n' +
+              'Parameters:\n' +
+              '• Description: Name of the expense (use quotes if it contains spaces)\n' +
+              '• Amount: Amount in SGD\n' +
+              '• Day of month: 1-31 (when to process each month)\n' +
+              '• Payer: "bryan" or "hweiyeen"',
+              { parse_mode: 'Markdown' }
+            );
+          } else if (command === 'admin_stats') {
+            const stats = await this.analyticsService.getAdminStats();
+            await ctx.reply(stats, { parse_mode: 'Markdown' });
+          }
+        }
+        return;
+      }
+
       // Handle amount confirmation button (with or without receiptId)
       if (callbackData === 'confirm_amount' || callbackData.startsWith('confirm_amount_')) {
         await ctx.answerCbQuery();
@@ -1426,6 +1637,7 @@ export class YBBTallyBot {
    */
   async launch(): Promise<void> {
     await this.bot.launch();
+    await this.setupBotCommands();
     console.log('YBB Tally Bot is running...');
   }
 

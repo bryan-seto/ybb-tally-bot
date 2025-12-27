@@ -566,6 +566,10 @@ async function main() {
         console.log(`📬 ${newWebhookInfo.pending_update_count} pending updates queued`);
       }
       
+      // Setup bot commands menu (shows when user types /)
+      await bot.setupBotCommands();
+      console.log('✅ Bot commands menu configured');
+      
       console.log('✅ YBB Tally Bot is running with webhooks...');
       global.isBooting = false;
     } else {
