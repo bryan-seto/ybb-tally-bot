@@ -1341,15 +1341,19 @@ export class YBBTallyBot {
 
       const message = lines.join('\n');
 
-      // Add pagination button if there are more transactions
+      // Add pagination and menu buttons
       const keyboard: any[] = [];
       if (offset + 20 < totalCount) {
         keyboard.push([
           Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
         ]);
       }
+      // Always add back to menu button
+      keyboard.push([
+        Markup.button.callback('🔙 Back to Menu', 'menu_show')
+      ]);
 
-      const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
+      const replyMarkup = Markup.inlineKeyboard(keyboard);
 
       if (ctx.callbackQuery) {
         await ctx.answerCbQuery();
@@ -1358,20 +1362,20 @@ export class YBBTallyBot {
             message,
             {
               parse_mode: 'Markdown',
-              reply_markup: replyMarkup?.reply_markup,
+              reply_markup: replyMarkup.reply_markup,
             }
           );
         } catch (editError: any) {
           console.error('Error editing history message:', editError);
           await ctx.reply(message, {
             parse_mode: 'Markdown',
-            reply_markup: replyMarkup?.reply_markup,
+            reply_markup: replyMarkup.reply_markup,
           });
         }
       } else {
         await ctx.reply(message, {
           parse_mode: 'Markdown',
-          reply_markup: replyMarkup?.reply_markup,
+          reply_markup: replyMarkup.reply_markup,
         });
       }
     } catch (error: any) {
@@ -2897,7 +2901,10 @@ export class YBBTallyBot {
         await ctx.answerCbQuery();
         const action = callbackData.replace('menu_', '');
         
-        if (action === 'settle') {
+        if (action === 'show') {
+          // Show main menu
+          await this.showMainMenu(ctx);
+        } else if (action === 'settle') {
           await this.handleSettleUp(ctx);
         } else if (action === 'balance') {
           await this.handleCheckBalance(ctx);
