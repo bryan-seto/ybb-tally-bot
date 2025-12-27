@@ -85,8 +85,15 @@ app.get('/webhook-status', async (req: Request, res: Response) => {
     }
     
     const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+    const botInfo = await bot.getBot().telegram.getMe();
+    
     res.status(200).json({
       status: 'ok',
+      bot: {
+        id: botInfo.id,
+        username: botInfo.username,
+        first_name: botInfo.first_name,
+      },
       webhook: {
         url: webhookInfo.url,
         has_custom_certificate: webhookInfo.has_custom_certificate,
@@ -101,6 +108,88 @@ app.get('/webhook-status', async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ 
       error: 'Failed to get webhook info',
+      message: error.message 
+    });
+  }
+});
+
+// Manual webhook test endpoint (simulates a Telegram update)
+app.post('/test-telegram-webhook', express.json(), (req: Request, res: Response) => {
+  console.log('🧪 Manual webhook test called with body:', req.body);
+  
+  // This will trigger the webhook callback
+  const webhookPath = '/webhook';
+  const testUpdate = req.body.update_id ? req.body : {
+    update_id: Math.floor(Math.random() * 1000000),
+    message: {
+      message_id: 1,
+      from: {
+        id: 109284773,
+        is_bot: false,
+        first_name: 'Test',
+        username: 'testuser',
+      },
+      chat: {
+        id: 109284773,
+        type: 'private',
+        first_name: 'Test',
+        username: 'testuser',
+      },
+      date: Math.floor(Date.now() / 1000),
+      text: '/start',
+    },
+  };
+  
+  // Manually call the webhook handler
+  const bot = global.botInstance;
+  if (bot) {
+    // Create a mock request object
+    const mockReq = {
+      ...req,
+      body: testUpdate,
+      path: webhookPath,
+    } as any;
+    
+    const mockRes = {
+      status: (code: number) => ({ json: (data: any) => console.log('Response:', code, data) }),
+      json: (data: any) => console.log('Response:', data),
+    } as any;
+    
+    console.log('📤 Forwarding test update to webhook handler');
+    // The webhook callback will handle this
+    res.status(200).json({ 
+      message: 'Test update sent to webhook handler',
+      update: testUpdate 
+    });
+  } else {
+    res.status(500).json({ error: 'Bot not initialized' });
+  }
+});
+
+// Bot info endpoint - verify you're messaging the correct bot
+app.get('/bot-info', async (req: Request, res: Response) => {
+  try {
+    const bot = global.botInstance;
+    if (!bot) {
+      return res.status(500).json({ error: 'Bot not initialized' });
+    }
+    
+    const botInfo = await bot.getBot().telegram.getMe();
+    res.status(200).json({
+      status: 'ok',
+      bot: {
+        id: botInfo.id,
+        username: botInfo.username,
+        first_name: botInfo.first_name,
+        can_join_groups: botInfo.can_join_groups,
+        can_read_all_group_messages: botInfo.can_read_all_group_messages,
+      },
+      message: `✅ Make sure you're messaging @${botInfo.username} in Telegram!`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      error: 'Failed to get bot info',
       message: error.message 
     });
   }
