@@ -8,9 +8,15 @@ import { prisma } from './lib/prisma';
 
 // User ID mappings
 const USER_NAMES: { [key: string]: string } = {
-  '109284773': 'Sir Bryan',
-  '424894363': 'Madam Hwei Yeen',
+  '109284773': 'Bryan',
+  '424894363': 'Hwei Yeen',
 };
+
+// Helper function for dynamic greeting
+function getGreeting(userId: string): string {
+  const name = USER_NAMES[userId] || 'there';
+  return `Hi ${name}!`;
+}
 
 // Session data interface
 interface BotSession {
@@ -22,14 +28,27 @@ interface BotSession {
     category?: string;
     individualAmounts?: number[];
     merchants?: string[];
+    categories?: string[];
   };
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
-  manualAddStep?: 'amount' | 'category' | 'description' | 'payer';
+  manualAddStep?: 'description' | 'amount' | 'category' | 'payer';
   manualAmount?: number;
   manualCategory?: string;
   manualDescription?: string;
+  recurringMode?: boolean;
+  recurringStep?: 'description' | 'amount' | 'day' | 'payer';
+  recurringData?: {
+    description?: string;
+    amount?: number;
+    day?: number;
+    payer?: string;
+  };
+  editLastMode?: boolean;
+  editLastAction?: 'amount' | 'category';
+  editLastTransactionId?: bigint;
+  searchMode?: boolean;
 }
 
 interface PendingReceiptData {
@@ -175,13 +194,44 @@ export class YBBTallyBot {
   }
 
   /**
+   * Get main menu keyboard
+   */
+  private getMainMenuKeyboard() {
+    return Markup.keyboard([
+      ['✅ Settle Up', '💰 Check Balance'],
+      ['🧾 View Unsettled', '➕ Add Manual Expense'],
+      ['✏️ Edit Last', '🔍 Search'],
+      ['🔄 Recurring', '📊 Reports'],
+      ['❓ User Guide'],
+    ]).resize().persistent();
+  }
+
+  /**
+   * Show main menu
+   */
+  private async showMainMenu(ctx: any, message?: string) {
+    const greeting = getGreeting(ctx.from.id.toString());
+    const menuMessage = message || 
+      `👋 ${greeting}! I'm ready to track.\n\n` +
+      `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
+      `👇 Or tap a button below:`;
+    
+    await ctx.reply(menuMessage, this.getMainMenuKeyboard());
+  }
+
+  /**
+   * Strip emoji from category name
+   */
+  private stripEmoji(category: string): string {
+    return category.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
+  }
+
+  /**
    * Setup all bot commands
    */
   private setupCommands(): void {
     // Start command - register group
     this.bot.command('start', async (ctx) => {
-      const userName = USER_NAMES[ctx.from.id.toString()] || 'User';
-      
       if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
         // Save group chat ID
         await prisma.settings.upsert({
@@ -190,69 +240,19 @@ export class YBBTallyBot {
           create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
         });
         
-        await ctx.reply(
-          `At your service, ${userName}!\n\n` +
-          `I am YBB Tally Bot, your expense management assistant.\n` +
-          `This group has been registered as the primary group.\n\n` +
-          `Send me a receipt photo to get started, or use /help for commands.`
-        );
+        await this.showMainMenu(ctx);
       } else {
+        const greeting = getGreeting(ctx.from.id.toString());
         await ctx.reply(
-          `At your service, ${userName}!\n\n` +
-          `I am YBB Tally Bot. Please add me to a group and use /start there to register.`
+          `👋 ${greeting}! I'm ready to track.\n\n` +
+          `Please add me to a group and use /start there to register.`
         );
       }
     });
 
-    // Help command with inline keyboard buttons
+    // Help command - show main menu
     this.bot.command('help', async (ctx) => {
-      const userName = USER_NAMES[ctx.from.id.toString()] || 'User';
-      await ctx.reply(
-        `At your service, ${userName}!\n\n` +
-        `💰 **Quick Commands (Click to run):**\n\n` +
-        `📸 **Receipt Processing:**\n` +
-        `• Send a receipt photo to automatically extract expense details\n` +
-        `• Supports traditional receipts, YouTrip screenshots, and banking apps\n` +
-        `• Automatic 70/30 split (Bryan 70%, Hwei Yeen 30%)\n\n` +
-        `💡 **Pro Tip:** Send multiple receipt photos within 10 seconds! ` +
-        `I'll collect them all and process them together. Perfect for:\n` +
-        `• Multiple parts of one long receipt\n` +
-        `• Multiple receipts from the same shopping trip\n` +
-        `• Batch processing of expenses\n\n` +
-        `📅 **Recurring Expenses:**\n` +
-        `\`/recurring add "Description" <amount> <day> <payer>\`\n` +
-        `Example: \`/recurring add "Internet Bill" 50 15 bryan\`\n` +
-        `Automatically processed on the specified day each month at 09:00 SGT.\n\n` +
-        `📈 **Monthly Reports:**\n` +
-        `\`/report\` - Current month\n` +
-        `\`/report 1\` - Last month\n` +
-        `\`/report 2\` - 2 months ago\n` +
-        `Includes spending breakdown, top categories, and visual charts.\n\n` +
-        `💸 **Settling Expenses:**\n` +
-        `Use \`/settle\` to mark all expenses as settled and clear the outstanding balance.`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '💰 Balance', callback_data: 'help_cmd_balance' },
-                { text: '📋 Pending', callback_data: 'help_cmd_pending' },
-              ],
-              [
-                { text: '➕ Add Expense', callback_data: 'help_cmd_add' },
-                { text: '✅ Settle All', callback_data: 'help_cmd_settle' },
-              ],
-              [
-                { text: '📊 Report', callback_data: 'help_cmd_report' },
-                { text: '🔄 Recurring', callback_data: 'help_cmd_recurring' },
-              ],
-              [
-                { text: '📈 Analytics', callback_data: 'help_cmd_admin_stats' },
-              ],
-            ],
-          },
-        }
-      );
+      await this.showMainMenu(ctx);
     });
 
     // Balance command
@@ -283,9 +283,9 @@ export class YBBTallyBot {
           message += `   Date: ${dateStr}\n`;
           
           if (t.bryanOwes > 0) {
-            message += `   💰 Sir Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
+            message += `   💰 Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
           } else if (t.hweiYeenOwes > 0) {
-            message += `   💰 Madam Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
+            message += `   💰 Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
           }
           
           message += '\n';
@@ -444,8 +444,8 @@ export class YBBTallyBot {
               `Total Spend: SGD $${currentMonthReport.totalSpend.toFixed(2)}\n` +
               `Transactions: ${currentMonthReport.transactionCount}\n\n` +
               `**Breakdown:**\n` +
-              `Sir Bryan paid: SGD $${currentMonthReport.bryanPaid.toFixed(2)}\n` +
-              `Madam Hwei Yeen paid: SGD $${currentMonthReport.hweiYeenPaid.toFixed(2)}\n\n` +
+              `Bryan paid: SGD $${currentMonthReport.bryanPaid.toFixed(2)}\n` +
+              `Hwei Yeen paid: SGD $${currentMonthReport.hweiYeenPaid.toFixed(2)}\n\n` +
               `**Top Categories:**\n` +
               (currentMonthReport.topCategories.length > 0
                 ? currentMonthReport.topCategories
@@ -485,8 +485,8 @@ export class YBBTallyBot {
           `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
           `Transactions: ${report.transactionCount}\n\n` +
           `**Breakdown:**\n` +
-          `Sir Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-          `Madam Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
+          `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
+          `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
           `**Top Categories:**\n` +
           (report.topCategories.length > 0
             ? report.topCategories
@@ -743,6 +743,251 @@ export class YBBTallyBot {
   }
 
   /**
+   * Start manual add flow
+   */
+  private async startManualAdd(ctx: any) {
+    if (!ctx.session) ctx.session = {};
+    ctx.session.manualAddMode = true;
+    ctx.session.manualAddStep = 'description';
+    await ctx.reply(
+      'What is the description?',
+      Markup.keyboard([['❌ Cancel']]).resize()
+    );
+  }
+
+  /**
+   * Handle settle up
+   */
+  private async handleSettleUp(ctx: any) {
+    try {
+      const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+      
+      // Parse balance to get net debt
+      // Format: "Madam Hwei Yeen owes Sir Bryan SGD $XX.XX" or vice versa
+      const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
+      
+      if (match) {
+        const debtor = match[1].replace(/Sir|Madam/gi, '').trim();
+        const creditor = match[2].replace(/Sir|Madam/gi, '').trim();
+        const amount = parseFloat(match[3]);
+        
+        await ctx.reply(
+          `${balanceMessage}\n\n` +
+          `Mark this as paid and reset balance to $0?`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
+                [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
+              ],
+            },
+            parse_mode: 'Markdown',
+          }
+        );
+      } else {
+        // No outstanding balance
+        await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
+      }
+    } catch (error: any) {
+      console.error('Error handling settle up:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+  /**
+   * Handle check balance
+   */
+  private async handleCheckBalance(ctx: any) {
+    try {
+      const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+      
+      let bryanPaid = 0;
+      let hweiYeenPaid = 0;
+      
+      pendingTransactions.forEach(t => {
+        if (t.payerName.includes('Bryan')) {
+          bryanPaid += t.amount;
+        } else {
+          hweiYeenPaid += t.amount;
+        }
+      });
+      
+      const totalSpending = bryanPaid + hweiYeenPaid;
+      const bryanShare = totalSpending * 0.7;
+      const hweiYeenShare = totalSpending * 0.3;
+      
+      const bryanOwes = bryanPaid - bryanShare;
+      const hweiYeenOwes = hweiYeenPaid - hweiYeenShare;
+      
+      let message = `💰 **Balance Summary**\n\n`;
+      message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
+      message += `Total Paid by Hwei Yeen (Unsettled): SGD $${hweiYeenPaid.toFixed(2)}\n`;
+      message += `Total Group Spending: SGD $${totalSpending.toFixed(2)}\n\n`;
+      message += `**Split Calculation (70/30):**\n`;
+      message += `Bryan's share (70%): SGD $${bryanShare.toFixed(2)}\n`;
+      message += `Hwei Yeen's share (30%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
+      
+      if (bryanOwes > 0) {
+        message += `👉 Bryan owes Hwei Yeen: SGD $${bryanOwes.toFixed(2)}`;
+      } else if (hweiYeenOwes > 0) {
+        message += `👉 Hwei Yeen owes Bryan: SGD $${hweiYeenOwes.toFixed(2)}`;
+      } else {
+        message += `✅ All settled!`;
+      }
+      
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      console.error('Error handling check balance:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+  /**
+   * Handle view unsettled
+   */
+  private async handleViewUnsettled(ctx: any) {
+    try {
+      const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+      
+      if (pendingTransactions.length === 0) {
+        await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
+        return;
+      }
+      
+      // Get last 10 transactions
+      const last10 = pendingTransactions.slice(0, 10);
+      
+      let message = `🧾 **Unsettled Transactions**\n\n`;
+      
+      last10.forEach((t, index) => {
+        const dateStr = formatDate(t.date, 'dd MMM yyyy');
+        message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+      });
+      
+      message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
+      
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      console.error('Error handling view unsettled:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+  /**
+   * Handle reports
+   */
+  private async handleReports(ctx: any) {
+    try {
+      await ctx.reply('Generating monthly report...');
+      const report = await this.expenseService.getMonthlyReport(0);
+      const reportDate = getMonthsAgo(0);
+      const monthName = formatDate(reportDate, 'MMMM yyyy');
+      
+      const chart = new QuickChart();
+      chart.setConfig({
+        type: 'bar',
+        data: {
+          labels: report.topCategories.map((c) => c.category),
+          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
+        },
+      });
+      chart.setWidth(800);
+      chart.setHeight(400);
+      const chartUrl = chart.getUrl();
+      
+      const message =
+        `📊 **Monthly Report - ${monthName}**\n\n` +
+        `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
+        `Transactions: ${report.transactionCount}\n\n` +
+        `**Breakdown:**\n` +
+        `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
+        `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
+        `**Top Categories:**\n` +
+        (report.topCategories.length > 0
+          ? report.topCategories.map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+          : 'No categories found') +
+        `\n\n[View Chart](${chartUrl})`;
+      
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      console.error('Error handling reports:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+  /**
+   * Show recurring menu
+   */
+  private async showRecurringMenu(ctx: any) {
+    await ctx.reply(
+      '🔄 **Recurring Expenses**\n\nSelect an option:',
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '➕ Add New', callback_data: 'recurring_add' }],
+            [{ text: '📋 View Active', callback_data: 'recurring_view' }],
+            [{ text: '❌ Remove', callback_data: 'recurring_remove' }],
+            [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
+          ],
+        },
+        parse_mode: 'Markdown',
+      }
+    );
+  }
+
+  /**
+   * Handle edit last transaction
+   */
+  private async handleEditLast(ctx: any) {
+    try {
+      const userId = BigInt(ctx.from.id);
+      const lastTransaction = await prisma.transaction.findFirst({
+        where: { payerId: userId },
+        orderBy: { createdAt: 'desc' },
+        include: { payer: true },
+      });
+
+      if (!lastTransaction) {
+        await ctx.reply('No transactions found. Record an expense first!');
+        return;
+      }
+
+      const dateStr = formatDate(lastTransaction.date, 'dd MMM yyyy');
+      await ctx.reply(
+        `You last recorded: ${lastTransaction.description || 'No description'} - $${lastTransaction.amountSGD.toFixed(2)} - ${lastTransaction.category || 'Other'}\n` +
+        `Date: ${dateStr}\n` +
+        `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
+        `What would you like to edit?`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
+              [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
+              [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
+              [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
+            ],
+          },
+        }
+      );
+    } catch (error: any) {
+      console.error('Error handling edit last:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+  /**
+   * Start search flow
+   */
+  private async startSearch(ctx: any) {
+    if (!ctx.session) ctx.session = {};
+    ctx.session.searchMode = true;
+    await ctx.reply(
+      'Type a keyword (e.g., "Grab" or "Sushi"):',
+      Markup.keyboard([['❌ Cancel']]).resize()
+    );
+  }
+
+  /**
    * Setup message handlers
    */
   private setupHandlers(): void {
@@ -821,9 +1066,161 @@ export class YBBTallyBot {
       if (!ctx.session) {
         ctx.session = {};
       }
-      const text = ctx.message.text.toLowerCase().trim();
+      const text = ctx.message.text.trim();
+      const textLower = text.toLowerCase();
       const session = ctx.session;
       const chatId = ctx.chat.id;
+
+      // Handle main menu buttons
+      if (text === '✅ Settle Up') {
+        await this.handleSettleUp(ctx);
+        return;
+      } else if (text === '💰 Check Balance') {
+        await this.handleCheckBalance(ctx);
+        return;
+      } else if (text === '🧾 View Unsettled') {
+        await this.handleViewUnsettled(ctx);
+        return;
+      } else if (text === '➕ Add Manual Expense') {
+        await this.startManualAdd(ctx);
+        return;
+      } else if (text === '🔄 Recurring') {
+        await this.showRecurringMenu(ctx);
+        return;
+      } else if (text === '📊 Reports') {
+        await this.handleReports(ctx);
+        return;
+      } else if (text === '✏️ Edit Last') {
+        await this.handleEditLast(ctx);
+        return;
+      } else if (text === '🔍 Search') {
+        await this.startSearch(ctx);
+        return;
+      } else if (text === '❓ User Guide') {
+        await ctx.reply('📖 User Guide', {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: 'Open User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' }
+            ]]
+          }
+        });
+        return;
+      } else if (text === '❌ Cancel') {
+        // Cancel any active flow
+        session.manualAddMode = false;
+        session.manualAddStep = undefined;
+        session.recurringMode = false;
+        session.recurringStep = undefined;
+        session.editLastMode = false;
+        session.editLastAction = undefined;
+        session.searchMode = false;
+        session.awaitingAmountConfirmation = false;
+        session.awaitingPayer = false;
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle search flow
+      if (session.searchMode) {
+        const keyword = text.trim();
+        if (keyword.length === 0) {
+          await ctx.reply('Please enter a keyword to search:');
+          return;
+        }
+
+        try {
+          const transactions = await prisma.transaction.findMany({
+            where: {
+              description: {
+                contains: keyword,
+                mode: 'insensitive',
+              },
+            },
+            include: { payer: true },
+            orderBy: { date: 'desc' },
+            take: 5,
+          });
+
+          session.searchMode = false;
+
+          if (transactions.length === 0) {
+            await ctx.reply(
+              `No expenses found matching "${keyword}".`,
+              this.getMainMenuKeyboard()
+            );
+          } else {
+            let message = `🔍 **Search Results for "${keyword}":**\n\n`;
+            transactions.forEach((t, index) => {
+              const dateStr = formatDate(t.date, 'dd MMM yyyy');
+              message += `${index + 1}. ${t.description || 'No description'}\n`;
+              message += `   Amount: SGD $${t.amountSGD.toFixed(2)}\n`;
+              message += `   Category: ${t.category || 'Other'}\n`;
+              message += `   Paid by: ${USER_NAMES[t.payer.id.toString()] || t.payer.role}\n`;
+              message += `   Date: ${dateStr}\n\n`;
+            });
+            await ctx.reply(message, { 
+              parse_mode: 'Markdown',
+              ...this.getMainMenuKeyboard()
+            });
+          }
+        } catch (error: any) {
+          console.error('Error searching transactions:', error);
+          session.searchMode = false;
+          await ctx.reply('Sorry, I encountered an error searching. Please try again.', this.getMainMenuKeyboard());
+        }
+        return;
+      }
+
+      // Handle edit last amount
+      if (session.editLastMode && session.editLastAction === 'amount') {
+        const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
+        if (isNaN(amount) || amount <= 0) {
+          await ctx.reply('Please enter a valid amount in SGD:');
+          return;
+        }
+
+        try {
+          const transactionId = session.editLastTransactionId;
+          if (transactionId) {
+            await prisma.transaction.update({
+              where: { id: transactionId },
+              data: { amountSGD: amount },
+            });
+            session.editLastMode = false;
+            session.editLastAction = undefined;
+            session.editLastTransactionId = undefined;
+            await ctx.reply(`✅ Amount updated to SGD $${amount.toFixed(2)}.`, this.getMainMenuKeyboard());
+          } else {
+            // Fallback: get last transaction
+            const userId = BigInt(ctx.from.id);
+            const lastTransaction = await prisma.transaction.findFirst({
+              where: { payerId: userId },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (lastTransaction) {
+              await prisma.transaction.update({
+                where: { id: lastTransaction.id },
+                data: { amountSGD: amount },
+              });
+              session.editLastMode = false;
+              session.editLastAction = undefined;
+              await ctx.reply(`✅ Amount updated to SGD $${amount.toFixed(2)}.`, this.getMainMenuKeyboard());
+            } else {
+              session.editLastMode = false;
+              session.editLastAction = undefined;
+              await ctx.reply('No transaction found to update.', this.getMainMenuKeyboard());
+            }
+          }
+        } catch (error: any) {
+          console.error('Error updating amount:', error);
+          session.editLastMode = false;
+          session.editLastAction = undefined;
+          session.editLastTransactionId = undefined;
+          await ctx.reply('Sorry, I encountered an error. Please try again.', this.getMainMenuKeyboard());
+        }
+        return;
+      }
 
       // If user sends text during photo collection, clear the collection
       // (they might be sending a correction or canceling)
@@ -945,19 +1342,14 @@ export class YBBTallyBot {
           const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
           
           await ctx.reply(
-            `✅ Expense recorded!\n\n` +
-            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
-            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
-            `Category: ${transaction.category || 'Other'}\n\n` +
-            `${transactionOwedMessage}\n\n` +
-            balanceMessage,
+            `✅ Recorded: ${transaction.description || 'Expense'} ($${transaction.amountSGD.toFixed(2)}) in ${transaction.category || 'Other'}. Paid by ${USER_NAMES[user.id.toString()] || payerRole}.\n\n${transactionOwedMessage}\n\n${balanceMessage}`,
             { parse_mode: 'Markdown' }
           );
         } else {
           await ctx.reply(
             'Please reply with:\n' +
-            '• "bryan" or "1" for Sir Bryan\n' +
-            '• "hwei yeen" or "2" for Madam Hwei Yeen'
+            '• "bryan" or "1" for Bryan\n' +
+            '• "hwei yeen" or "2" for Hwei Yeen'
           );
         }
         return;
@@ -965,8 +1357,17 @@ export class YBBTallyBot {
 
       // Handle manual add flow
       if (session.manualAddMode) {
-        if (session.manualAddStep === 'amount') {
-          const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
+        if (session.manualAddStep === 'description') {
+          session.manualDescription = text;
+          session.manualAddStep = 'amount';
+          await ctx.reply(
+            `Description: ${text}\n\n` +
+            'How much was it? (Enter amount in SGD)',
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
+          return;
+        } else if (session.manualAddStep === 'amount') {
+          const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
           if (isNaN(amount) || amount <= 0) {
             await ctx.reply('Please enter a valid amount in SGD:');
             return;
@@ -976,90 +1377,88 @@ export class YBBTallyBot {
           session.manualAddStep = 'category';
           await ctx.reply(
             `Amount: SGD $${amount.toFixed(2)}\n\n` +
-            'Enter category (Food, Transport, Shopping, Bills, Other):'
+            'Select a Category:',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '🍔 Food', callback_data: 'manual_category_Food' },
+                    { text: '🚗 Transport', callback_data: 'manual_category_Transport' },
+                  ],
+                  [
+                    { text: '🛒 Groceries', callback_data: 'manual_category_Groceries' },
+                    { text: '🏠 Utilities', callback_data: 'manual_category_Utilities' },
+                  ],
+                  [
+                    { text: '🎬 Entertainment', callback_data: 'manual_category_Entertainment' },
+                    { text: '🛍️ Shopping', callback_data: 'manual_category_Shopping' },
+                  ],
+                  [
+                    { text: '🏥 Medical', callback_data: 'manual_category_Medical' },
+                    { text: '✈️ Travel', callback_data: 'manual_category_Travel' },
+                  ],
+                  [
+                    { text: '❌ Cancel', callback_data: 'manual_cancel' },
+                  ],
+                ],
+              },
+            }
           );
           return;
-        } else if (session.manualAddStep === 'category') {
-          session.manualCategory = text || 'Other';
-          session.manualAddStep = 'description';
-          await ctx.reply(
-            `Category: ${session.manualCategory}\n\n` +
-            'Enter description (optional, or send "skip"):'
-          );
-        } else if (session.manualAddStep === 'description') {
-          if (text !== 'skip') {
-            session.manualDescription = text;
-          }
-          session.manualAddStep = 'payer';
-          await ctx.reply(
-            `Description: ${session.manualDescription || 'None'}\n\n` +
-            'Who paid?\n' +
-            '• "bryan" or "1" for Sir Bryan\n' +
-            '• "hwei yeen" or "2" for Madam Hwei Yeen'
-          );
         } else if (session.manualAddStep === 'payer') {
-          let payerRole: 'Bryan' | 'HweiYeen' | null = null;
-          
-          if (text.includes('bryan') || text === '1') {
-            payerRole = 'Bryan';
-          } else if (text.includes('hwei') || text.includes('yeen') || text === '2') {
-            payerRole = 'HweiYeen';
+          // This is handled by callback query for payer buttons
+          return;
+        }
+        return;
+      }
+
+      // Handle recurring flow
+      if (session.recurringMode) {
+        if (session.recurringStep === 'description') {
+          session.recurringData = session.recurringData || {};
+          session.recurringData.description = text;
+          session.recurringStep = 'amount';
+          await ctx.reply(
+            `Description: ${text}\n\nHow much? (Enter amount in SGD)`,
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
+          return;
+        } else if (session.recurringStep === 'amount') {
+          const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
+          if (isNaN(amount) || amount <= 0) {
+            await ctx.reply('Please enter a valid amount in SGD:');
+            return;
           }
-
-          if (payerRole) {
-            const user = await prisma.user.findFirst({
-              where: { role: payerRole },
-            });
-
-            if (!user) {
-              await ctx.reply('Error: User not found. Please ensure users are initialized.');
-              session.manualAddMode = false;
-              return;
-            }
-
-            const transaction = await prisma.transaction.create({
-              data: {
-                amountSGD: session.manualAmount || 0,
-                currency: 'SGD',
-                category: session.manualCategory || 'Other',
-                description: session.manualDescription || '',
-                payerId: user.id,
-                date: getNow(),
-                splitType: 'FULL',
+          session.recurringData = session.recurringData || {};
+          session.recurringData.amount = amount;
+          session.recurringStep = 'day';
+          await ctx.reply(
+            `Amount: SGD $${amount.toFixed(2)}\n\nDay of month (1-31)?`,
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
+          return;
+        } else if (session.recurringStep === 'day') {
+          const day = parseInt(textLower);
+          if (isNaN(day) || day < 1 || day > 31) {
+            await ctx.reply('Please enter a valid day (1-31):');
+            return;
+          }
+          session.recurringData = session.recurringData || {};
+          session.recurringData.day = day;
+          session.recurringStep = 'payer';
+          await ctx.reply(
+            `Day: ${day}\n\nWho pays?`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Bryan', callback_data: 'recurring_payer_bryan' }],
+                  [{ text: 'Hwei Yeen', callback_data: 'recurring_payer_hweiyeen' }],
+                  [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
+                ],
               },
-            });
-
-            // Clear session
-            session.manualAddMode = false;
-            session.manualAddStep = undefined;
-            session.manualAmount = undefined;
-            session.manualCategory = undefined;
-            session.manualDescription = undefined;
-
-            // Calculate transaction-specific amount owed
-            const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
-              transaction.amountSGD,
-              payerRole
-            );
-            
-            const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
-            
-            await ctx.reply(
-              `✅ Expense added!\n\n` +
-              `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
-              `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
-              `Category: ${transaction.category || 'Other'}\n\n` +
-              `${transactionOwedMessage}\n\n` +
-              balanceMessage,
-              { parse_mode: 'Markdown' }
-            );
-          } else {
-            await ctx.reply(
-              'Please reply with:\n' +
-              '• "bryan" or "1" for Sir Bryan\n' +
-              '• "hwei yeen" or "2" for Madam Hwei Yeen'
-            );
-          }
+            }
+          );
+          return;
         }
         return;
       }
@@ -1079,6 +1478,390 @@ export class YBBTallyBot {
       
       const callbackData = ctx.callbackQuery.data;
       const session = ctx.session;
+
+      // Handle manual category selection
+      if (callbackData.startsWith('manual_category_')) {
+        await ctx.answerCbQuery();
+        const category = this.stripEmoji(callbackData.replace('manual_category_', ''));
+        session.manualCategory = category;
+        session.manualAddStep = 'payer';
+        
+        await ctx.reply(
+          `Category: ${category}\n\nWho paid?`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Bryan', callback_data: 'manual_payer_bryan' }],
+                [{ text: 'Hwei Yeen', callback_data: 'manual_payer_hweiyeen' }],
+                [{ text: '❌ Cancel', callback_data: 'manual_cancel' }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      // Handle manual payer selection
+      if (callbackData.startsWith('manual_payer_')) {
+        await ctx.answerCbQuery();
+        const payerRole = callbackData.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+        
+        const user = await prisma.user.findFirst({
+          where: { role: payerRole },
+        });
+
+        if (!user) {
+          await ctx.reply('Error: User not found.');
+          session.manualAddMode = false;
+          return;
+        }
+
+        const transaction = await prisma.transaction.create({
+          data: {
+            amountSGD: session.manualAmount || 0,
+            currency: 'SGD',
+            category: session.manualCategory || 'Other',
+            description: session.manualDescription || '',
+            payerId: user.id,
+            date: getNow(),
+            splitType: 'FULL',
+          },
+        });
+
+        // Clear session
+        session.manualAddMode = false;
+        session.manualAddStep = undefined;
+        session.manualAmount = undefined;
+        session.manualCategory = undefined;
+        session.manualDescription = undefined;
+
+        await ctx.reply(
+          `✅ Recorded: ${transaction.description} ($${transaction.amountSGD.toFixed(2)}) in ${transaction.category}. Paid by ${USER_NAMES[user.id.toString()] || payerRole}.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔀 Adjust Split', callback_data: `adjust_split_${transaction.id}` }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      // Handle manual cancel
+      if (callbackData === 'manual_cancel') {
+        await ctx.answerCbQuery();
+        session.manualAddMode = false;
+        session.manualAddStep = undefined;
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle settle confirm
+      if (callbackData === 'settle_confirm') {
+        await ctx.answerCbQuery();
+        const result = await prisma.transaction.updateMany({
+          where: { isSettled: false },
+          data: { isSettled: true },
+        });
+
+        if (result.count > 0) {
+          // Get balance to determine who owes whom
+          const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+          const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
+          
+          let settleMessage = '🤝 All Settled! Balance reset.';
+          if (match) {
+            const debtor = match[1].replace(/Sir|Madam/gi, '').trim();
+            const creditor = match[2].replace(/Sir|Madam/gi, '').trim();
+            const amount = match[3];
+            settleMessage += ` @${creditor}, payment of $${amount} recorded from @${debtor}.`;
+          }
+          
+          await ctx.reply(settleMessage, this.getMainMenuKeyboard());
+        } else {
+          await ctx.reply('✅ All expenses are already settled!', this.getMainMenuKeyboard());
+        }
+        return;
+      }
+
+      // Handle settle cancel
+      if (callbackData === 'settle_cancel') {
+        await ctx.answerCbQuery();
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle recurring menu
+      if (callbackData === 'recurring_add') {
+        await ctx.answerCbQuery();
+        if (!session) ctx.session = {};
+        session.recurringMode = true;
+        session.recurringStep = 'description';
+        session.recurringData = {};
+        await ctx.reply(
+          'Enter description:',
+          Markup.keyboard([['❌ Cancel']]).resize()
+        );
+        return;
+      } else if (callbackData === 'recurring_view') {
+        await ctx.answerCbQuery();
+        const activeRecurring = await prisma.recurringExpense.findMany({
+          where: { isActive: true },
+          include: { payer: true },
+        });
+        
+        if (activeRecurring.length === 0) {
+          await ctx.reply('No active recurring expenses.');
+        } else {
+          let message = '📋 **Active Recurring Expenses:**\n\n';
+          activeRecurring.forEach((r, index) => {
+            message += `${index + 1}. ${r.description} - SGD $${r.amountOriginal.toFixed(2)} on day ${r.dayOfMonth} - ${USER_NAMES[r.payer.id.toString()] || 'Unknown'}\n`;
+          });
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+        return;
+      } else if (callbackData === 'recurring_remove') {
+        await ctx.answerCbQuery();
+        const activeRecurring = await prisma.recurringExpense.findMany({
+          where: { isActive: true },
+          include: { payer: true },
+        });
+        
+        if (activeRecurring.length === 0) {
+          await ctx.reply('No active recurring expenses to remove.');
+        } else {
+          const buttons = activeRecurring.map((r, index) => [
+            { text: `${index + 1}. ${r.description}`, callback_data: `recurring_delete_${r.id}` }
+          ]);
+          buttons.push([{ text: '❌ Cancel', callback_data: 'recurring_cancel' }]);
+          
+          await ctx.reply(
+            'Select recurring expense to remove:',
+            { reply_markup: { inline_keyboard: buttons } }
+          );
+        }
+        return;
+      } else if (callbackData.startsWith('recurring_delete_')) {
+        await ctx.answerCbQuery();
+        const id = BigInt(callbackData.replace('recurring_delete_', ''));
+        await prisma.recurringExpense.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        await ctx.reply('✅ Recurring expense removed.', this.getMainMenuKeyboard());
+        return;
+      } else if (callbackData.startsWith('recurring_payer_')) {
+        await ctx.answerCbQuery();
+        const payerRole = callbackData.replace('recurring_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+        const user = await prisma.user.findFirst({
+          where: { role: payerRole },
+        });
+
+        if (!user || !session.recurringData) {
+          await ctx.reply('Error: Missing data. Please try again.');
+          session.recurringMode = false;
+          return;
+        }
+
+        const recurringExpense = await prisma.recurringExpense.create({
+          data: {
+            description: session.recurringData.description || '',
+            amountOriginal: session.recurringData.amount || 0,
+            payerId: user.id,
+            dayOfMonth: session.recurringData.day || 1,
+            isActive: true,
+          },
+        });
+
+        session.recurringMode = false;
+        session.recurringStep = undefined;
+        session.recurringData = undefined;
+
+        await ctx.reply(
+          `✅ Recurring expense added!\n\n` +
+          `Description: ${recurringExpense.description}\n` +
+          `Amount: SGD $${recurringExpense.amountOriginal.toFixed(2)}\n` +
+          `Day of month: ${recurringExpense.dayOfMonth}\n` +
+          `Payer: ${USER_NAMES[user.id.toString()] || payerRole}\n\n` +
+          `This expense will be automatically processed on the ${recurringExpense.dayOfMonth}${this.getOrdinalSuffix(recurringExpense.dayOfMonth)} of each month at 09:00 SGT.`,
+          this.getMainMenuKeyboard()
+        );
+        return;
+      } else if (callbackData === 'recurring_cancel') {
+        await ctx.answerCbQuery();
+        session.recurringMode = false;
+        session.recurringStep = undefined;
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle adjust split
+      if (callbackData.startsWith('adjust_split_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('adjust_split_', ''));
+        
+        await ctx.reply(
+          'How should this expense be split?',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '⚖️ 50/50', callback_data: `split_50_50_${transactionId}` }],
+                [{ text: '👤 100% Payer Only', callback_data: `split_payer_only_${transactionId}` }],
+                [{ text: '🔙 Cancel', callback_data: `split_cancel_${transactionId}` }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      // Handle split selection
+      if (callbackData.startsWith('split_50_50_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('split_50_50_', ''));
+        await prisma.transaction.update({
+          where: { id: transactionId },
+          data: { splitType: 'FIFTY_FIFTY' as any },
+        });
+        await ctx.reply('✅ Split updated to 50/50.', this.getMainMenuKeyboard());
+        return;
+      } else if (callbackData.startsWith('split_payer_only_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('split_payer_only_', ''));
+        await prisma.transaction.update({
+          where: { id: transactionId },
+          data: { splitType: 'PAYER_ONLY' as any },
+        });
+        await ctx.reply('✅ Split updated to 100% Payer Only.', this.getMainMenuKeyboard());
+        return;
+      } else if (callbackData.startsWith('split_cancel_')) {
+        await ctx.answerCbQuery();
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
+
+      // Handle edit last
+      if (callbackData.startsWith('edit_last_')) {
+        await ctx.answerCbQuery();
+        const parts = callbackData.replace('edit_last_', '').split('_');
+        const action = parts[0];
+        const transactionId = parts.length > 1 ? BigInt(parts.slice(1).join('_')) : null;
+        
+        if (action === 'amount') {
+          if (!session) ctx.session = {};
+          session.editLastMode = true;
+          session.editLastAction = 'amount';
+          if (transactionId) {
+            session.editLastTransactionId = transactionId;
+          }
+          await ctx.reply(
+            'Enter new amount:',
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
+        } else if (action === 'category') {
+          if (transactionId) {
+            session.editLastTransactionId = transactionId;
+          }
+          await ctx.reply(
+            'Select new category:',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '🍔 Food', callback_data: `edit_category_Food_${transactionId || ''}` },
+                    { text: '🚗 Transport', callback_data: `edit_category_Transport_${transactionId || ''}` },
+                  ],
+                  [
+                    { text: '🛒 Groceries', callback_data: `edit_category_Groceries_${transactionId || ''}` },
+                    { text: '🏠 Utilities', callback_data: `edit_category_Utilities_${transactionId || ''}` },
+                  ],
+                  [
+                    { text: '🎬 Entertainment', callback_data: `edit_category_Entertainment_${transactionId || ''}` },
+                    { text: '🛍️ Shopping', callback_data: `edit_category_Shopping_${transactionId || ''}` },
+                  ],
+                  [
+                    { text: '🏥 Medical', callback_data: `edit_category_Medical_${transactionId || ''}` },
+                    { text: '✈️ Travel', callback_data: `edit_category_Travel_${transactionId || ''}` },
+                  ],
+                  [
+                    { text: '🔙 Cancel', callback_data: 'edit_cancel' },
+                  ],
+                ],
+              },
+            }
+          );
+        } else if (action === 'delete') {
+          if (transactionId) {
+            await prisma.transaction.delete({
+              where: { id: transactionId },
+            });
+            await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+          } else {
+            // Fallback: get last transaction
+            const lastTransaction = await prisma.transaction.findFirst({
+              where: { payerId: BigInt(ctx.from.id) },
+              orderBy: { createdAt: 'desc' },
+            });
+            
+            if (lastTransaction) {
+              await prisma.transaction.delete({
+                where: { id: lastTransaction.id },
+              });
+              await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+            } else {
+              await ctx.reply('No transaction found to delete.');
+            }
+          }
+        } else if (action === 'cancel') {
+          await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        }
+        return;
+      }
+
+      // Handle edit category
+      if (callbackData.startsWith('edit_category_')) {
+        await ctx.answerCbQuery();
+        const parts = callbackData.replace('edit_category_', '').split('_');
+        const category = this.stripEmoji(parts[0]);
+        const transactionId = parts.length > 1 ? BigInt(parts.slice(1).join('_')) : null;
+        
+        if (transactionId) {
+          await prisma.transaction.update({
+            where: { id: transactionId },
+            data: { category },
+          });
+          await ctx.reply(`✅ Category updated to ${category}.`, this.getMainMenuKeyboard());
+        } else {
+          // Fallback: get last transaction
+          const lastTransaction = await prisma.transaction.findFirst({
+            where: { payerId: BigInt(ctx.from.id) },
+            orderBy: { createdAt: 'desc' },
+          });
+          
+          if (lastTransaction) {
+            await prisma.transaction.update({
+              where: { id: lastTransaction.id },
+              data: { category },
+            });
+            await ctx.reply(`✅ Category updated to ${category}.`, this.getMainMenuKeyboard());
+          } else {
+            await ctx.reply('No transaction found to update.');
+          }
+        }
+        return;
+      }
+
+      // Handle edit cancel
+      if (callbackData === 'edit_cancel') {
+        await ctx.answerCbQuery();
+        if (session) {
+          session.editLastMode = false;
+          session.editLastAction = undefined;
+        }
+        await this.showMainMenu(ctx, '❌ Operation cancelled.');
+        return;
+      }
 
       // Handle help command buttons
       if (callbackData.startsWith('help_cmd_')) {
@@ -1103,9 +1886,9 @@ export class YBBTallyBot {
               message += `   Category: ${t.category}\n`;
               message += `   Date: ${dateStr}\n`;
               if (t.bryanOwes > 0) {
-                message += `   💰 Sir Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
+                message += `   💰 Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
               } else if (t.hweiYeenOwes > 0) {
-                message += `   💰 Madam Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
+                message += `   💰 Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
               }
               message += '\n';
             });
@@ -1157,8 +1940,8 @@ export class YBBTallyBot {
             `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
             `Transactions: ${report.transactionCount}\n\n` +
             `**Breakdown:**\n` +
-            `Sir Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-            `Madam Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
+            `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
+            `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
             `**Top Categories:**\n` +
             (report.topCategories.length > 0
               ? report.topCategories.map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
@@ -1377,19 +2160,19 @@ export class YBBTallyBot {
 
         // Build confirmation message
         let message = '';
+        let transactionIds: bigint[] = [];
+        
         if (transactions.length > 1) {
           message = `✅ ${transactions.length} expenses recorded!\n\n`;
           transactions.forEach((t, index) => {
-            message += `${index + 1}. ${t.description}: SGD $${t.amountSGD.toFixed(2)} (${t.category})\n`;
+            message += `${index + 1}. ${t.description}: $${t.amountSGD.toFixed(2)}\n`;
+            transactionIds.push(t.id);
           });
-          message += `\n**Total: SGD $${totalAmount.toFixed(2)}**\n`;
-          message += `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n\n`;
+          message += `Total: $${totalAmount.toFixed(2)} | Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n\n`;
         } else {
           const transaction = transactions[0];
-          message = `✅ Expense recorded!\n\n` +
-            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
-            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
-            `Category: ${transaction.category || 'Other'}\n\n`;
+          message = `✅ Recorded: ${transaction.description} ($${transaction.amountSGD.toFixed(2)}) in ${transaction.category || 'Other'}. Paid by ${USER_NAMES[user.id.toString()] || payerRole}.\n\n`;
+          transactionIds.push(transaction.id);
         }
 
         // Calculate transaction-specific amount owed (from total)
@@ -1403,11 +2186,26 @@ export class YBBTallyBot {
         
         message += `${transactionOwedMessage}\n\n${balanceMessage}`;
         
+        // Add Adjust Split button for single transaction only
+        const keyboard = transactions.length === 1 
+          ? {
+              inline_keyboard: [
+                [{ text: '🔀 Adjust Split', callback_data: `adjust_split_${transactionIds[0]}` }],
+              ],
+            }
+          : undefined;
+        
         try {
-          await ctx.editMessageText(message, { parse_mode: 'Markdown' });
+          await ctx.editMessageText(message, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
         } catch (error) {
           // If editing fails, send a new message
-          await ctx.reply(message, { parse_mode: 'Markdown' });
+          await ctx.reply(message, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard,
+          });
         }
       }
     });

@@ -174,9 +174,9 @@ export class ExpenseService {
     const owed = this.calculateTransactionOwed(amount, payerRole);
     
     if (owed.bryanOwes > 0) {
-      return `From this transaction: Sir Bryan owes Madam Hwei Yeen SGD $${owed.bryanOwes.toFixed(2)}`;
+      return `From this transaction: Bryan owes Hwei Yeen SGD $${owed.bryanOwes.toFixed(2)}`;
     } else if (owed.hweiYeenOwes > 0) {
-      return `From this transaction: Madam Hwei Yeen owes Sir Bryan SGD $${owed.hweiYeenOwes.toFixed(2)}`;
+      return `From this transaction: Hwei Yeen owes Bryan SGD $${owed.hweiYeenOwes.toFixed(2)}`;
     }
     
     return '';
@@ -240,12 +240,12 @@ export class ExpenseService {
     
     if (balance.bryanOwes > 0 && balance.hweiYeenOwes > 0) {
       // Both owe each other (shouldn't happen with 70/30 split, but handle it)
-      message += `Sir Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n`;
-      message += `Madam Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+      message += `Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n`;
+      message += `Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     } else if (balance.bryanOwes > 0) {
-      message += `Sir Bryan owes Madam Hwei Yeen SGD $${balance.bryanOwes.toFixed(2)}\n`;
+      message += `Bryan owes Hwei Yeen SGD $${balance.bryanOwes.toFixed(2)}\n`;
     } else if (balance.hweiYeenOwes > 0) {
-      message += `Madam Hwei Yeen owes Sir Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+      message += `Hwei Yeen owes Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     }
 
     return message;
