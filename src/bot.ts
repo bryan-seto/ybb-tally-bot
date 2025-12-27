@@ -41,6 +41,7 @@ interface BotSession {
   manualAmount?: number;
   manualCategory?: string;
   manualDescription?: string;
+  manualPayerId?: bigint;
   recurringMode?: boolean;
   recurringStep?: 'description' | 'amount' | 'day' | 'payer';
   recurringData?: {
@@ -1547,7 +1548,7 @@ export class YBBTallyBot {
             // Get or create payer user
             const payerId = await this.groupService.getOrCreateUser(
               ctx.from.id,
-              ctx.from.first_name || `User ${ctx.from.id}`
+              ctx.from
             );
             await this.groupService.addMemberToGroup(group.id, payerId);
 
@@ -2103,7 +2104,7 @@ export class YBBTallyBot {
         // Get or create payer user
         const payerId = await this.groupService.getOrCreateUser(
           Number(receiptData.userId),
-          ctx.from?.first_name || `User ${receiptData.userId}`
+          ctx.from
         );
         await this.groupService.addMemberToGroup(group.id, payerId);
 
@@ -2130,15 +2131,31 @@ export class YBBTallyBot {
         session.manualCategory = category;
         session.manualAddStep = 'payer';
         
+        // Get group members for payer selection
+        const chatId = ctx.chat?.id;
+        const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
+        
+        if (!group) {
+          await ctx.reply('Error: Group not found. Please use this in a group chat.');
+          session.manualAddMode = false;
+          return;
+        }
+        
+        // Build payer buttons from group members
+        const payerButtons: any[] = [];
+        group.members.forEach((member) => {
+          payerButtons.push([{ 
+            text: member.name, 
+            callback_data: `manual_payer_${member.id}` 
+          }]);
+        });
+        payerButtons.push([{ text: '❌ Cancel', callback_data: 'manual_cancel' }]);
+        
         await ctx.reply(
           `Category: ${category}\n\nWho paid?`,
           {
             reply_markup: {
-              inline_keyboard: [
-                [{ text: 'Bryan', callback_data: 'manual_payer_bryan' }],
-                [{ text: 'Hwei Yeen', callback_data: 'manual_payer_hweiyeen' }],
-                [{ text: '❌ Cancel', callback_data: 'manual_cancel' }],
-              ],
+              inline_keyboard: payerButtons,
             },
           }
         );
@@ -2148,10 +2165,27 @@ export class YBBTallyBot {
       // Handle manual payer selection
       if (callbackData.startsWith('manual_payer_')) {
         await ctx.answerCbQuery();
-        const payerRole = callbackData.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+        const payerIdStr = callbackData.replace('manual_payer_', '');
         
-        const user = await prisma.user.findFirst({
-          where: { role: payerRole },
+        // Check if it's legacy format (bryan/hweiyeen)
+        if (payerIdStr === 'bryan' || payerIdStr === 'hweiyeen') {
+          const payerRole = payerIdStr === 'bryan' ? 'Bryan' : 'HweiYeen';
+          const user = await prisma.user.findFirst({
+            where: { role: payerRole },
+          });
+          if (!user) {
+            await ctx.reply('Error: User not found.');
+            session.manualAddMode = false;
+            return;
+          }
+          session.manualPayerId = user.id;
+        } else {
+          // New format: use user ID
+          session.manualPayerId = BigInt(payerIdStr);
+        }
+        
+        const user = await prisma.user.findUnique({
+          where: { id: session.manualPayerId },
         });
 
         if (!user) {
@@ -2160,17 +2194,37 @@ export class YBBTallyBot {
           return;
         }
 
-        const transaction = await prisma.transaction.create({
-          data: {
-            amountSGD: session.manualAmount || 0,
-            currency: 'SGD',
-            category: session.manualCategory || 'Other',
-            description: session.manualDescription || '',
-            payerId: user.id,
-            date: getNow(),
-            splitType: 'FULL',
-          },
-        });
+        // Get group for expense creation
+        const chatId = ctx.chat?.id;
+        const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
+        
+        if (!group) {
+          await ctx.reply('Error: Group not found.');
+          session.manualAddMode = false;
+          return;
+        }
+        
+        // Get all group members for split
+        const { realUsers, virtualUsers } = await this.groupService.getAllGroupMembers(group.id);
+        const allMemberIds = [
+          ...realUsers.map(u => u.id),
+          ...virtualUsers.map(v => v.id)
+        ];
+        
+        // Create expense with splits using new system
+        const expenseId = await this.splitService.createExpenseWithSplits(
+          group.id,
+          session.manualAmount || 0,
+          session.manualDescription || '',
+          session.manualCategory || null,
+          user.id,
+          'real',
+          allMemberIds,
+          new Map(allMemberIds.map(id => {
+            const isVirtual = virtualUsers.some(v => v.id === id);
+            return [id, isVirtual ? 'virtual' : 'real'];
+          }))
+        );
 
         // Clear session
         session.manualAddMode = false;
@@ -2178,16 +2232,11 @@ export class YBBTallyBot {
         session.manualAmount = undefined;
         session.manualCategory = undefined;
         session.manualDescription = undefined;
+        session.manualPayerId = undefined;
 
         await ctx.reply(
-          `✅ Recorded: ${transaction.description} ($${transaction.amountSGD.toFixed(2)}) in ${transaction.category}. Paid by ${USER_NAMES[user.id.toString()] || payerRole}.`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔀 Adjust Split', callback_data: `adjust_split_${transaction.id}` }],
-              ],
-            },
-          }
+          `✅ Recorded: ${session.manualDescription || 'Expense'} (SGD $${(session.manualAmount || 0).toFixed(2)}) in ${session.manualCategory || 'Other'}. Paid by ${user.name}.`,
+          this.getMainMenuKeyboard()
         );
         return;
       }
@@ -3094,40 +3143,33 @@ export class YBBTallyBot {
         ? `SGD $${receiptData.total.toFixed(2)}`
         : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
       
-      // Build transaction breakdown
-      let transactionInfo = '';
-      if (collection.photos.length > 1) {
-        transactionInfo = `Processed ${collection.photos.length} receipt${collection.photos.length > 1 ? 's' : ''}.\n\n`;
-      }
+      // Get payer name from collection userId
+      const payerUser = await prisma.user.findUnique({
+        where: { id: collection.userId },
+      });
+      const payerName = payerUser?.name || 'You';
       
-      if (receiptData.merchants && receiptData.merchants.length > 0) {
-        transactionInfo += '**Merchants:**\n';
-        receiptData.merchants.forEach((merchant, index) => {
-          transactionInfo += `${index + 1}. ${merchant}\n`;
-        });
-        transactionInfo += '\n';
-      }
-      
-      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0) {
-        transactionInfo += '**Breakdown:**\n';
-        receiptData.individualAmounts.forEach((amt, index) => {
-          transactionInfo += `${index + 1}. SGD $${amt.toFixed(2)}\n`;
-        });
-        transactionInfo += `\n**Total: ${amountStr}**\n\n`;
-      } else {
-        transactionInfo += `**Total: ${amountStr}**\n\n`;
-      }
+      // Get group to count members
+      const group = await this.groupService.getGroupByChatId(chatId);
+      const memberCount = group ? (group.members.length + group.virtualUsers.length) : 1;
+      const memberNames = group ? [
+        ...group.members.map(m => m.name),
+        ...group.virtualUsers.map(v => v.name)
+      ].slice(0, 4).join(', ') : payerName;
       
       await this.bot.telegram.sendMessage(
         chatId,
-        `${transactionInfo}Is ${amountStr} correct?\n\n` +
-        `Merchant: ${receiptData.merchant || 'Multiple'}\n` +
-        `Category: ${receiptData.category || 'Other'}`,
+        `🧾 **Receipt Scanned:** ${amountStr}\n` +
+        `**Payer:** ${payerName}\n` +
+        `**Split:** All ${memberCount} Member${memberCount > 1 ? 's' : ''} (${memberCount > 4 ? `${memberNames}...` : memberNames})\n\n` +
+        `Is this correct?`,
         {
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
-              [{ text: 'Yes', callback_data: `confirm_amount_${receiptId}` }],
+              [{ text: '✅ Confirm', callback_data: `confirm_amount_${receiptId}` }],
+              [{ text: '✏️ Edit People', callback_data: `edit_split_${receiptId}` }],
+              [{ text: '🔁 Wrong Payer', callback_data: `wrong_payer_${receiptId}` }],
             ],
           },
         }
@@ -3186,7 +3228,12 @@ export class YBBTallyBot {
             where: { id: group.installerUserId || BigInt(0) },
           });
           
-          const installerName = installer?.name || ctx.message.from?.first_name || 'there';
+          // Get name from Telegram user object
+          const installerTelegramUser = ctx.message.from;
+          const installerName = installerTelegramUser?.first_name || 
+                               (installerTelegramUser?.username ? `@${installerTelegramUser.username}` : null) || 
+                               installer?.name || 
+                               'there';
           const isVIP = this.subscriptionService.isVIP(installerId);
           const isEligible = await this.subscriptionService.checkTrialEligibility(installerId);
           
@@ -3259,7 +3306,7 @@ export class YBBTallyBot {
       for (const member of newMembers) {
         if (member.is_bot) continue;
 
-        const userId = await this.groupService.getOrCreateUser(member.id, member.first_name || `User ${member.id}`);
+        const userId = await this.groupService.getOrCreateUser(member.id, member);
         await this.groupService.addMemberToGroup(group.id, userId);
 
         // Show identity merge prompt if there are virtual users

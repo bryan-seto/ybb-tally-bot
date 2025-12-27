@@ -3,21 +3,32 @@ import { prisma } from '../lib/prisma';
 export class GroupService {
   /**
    * Get or create user by Telegram ID
+   * Uses Telegram user object to get proper name (first_name, username, or fallback)
    */
-  async getOrCreateUser(telegramId: number, name?: string): Promise<bigint> {
+  async getOrCreateUser(telegramId: number, telegramUser?: any): Promise<bigint> {
     let user = await prisma.user.findUnique({
       where: { telegramId: BigInt(telegramId) },
     });
+
+    // Get name from Telegram user object (prefer first_name, then username, then fallback)
+    let name: string;
+    if (telegramUser) {
+      name = telegramUser.first_name || 
+             (telegramUser.username ? `@${telegramUser.username}` : null) || 
+             `User ${telegramId}`;
+    } else {
+      name = `User ${telegramId}`;
+    }
 
     if (!user) {
       user = await prisma.user.create({
         data: {
           telegramId: BigInt(telegramId),
-          name: name || `User ${telegramId}`,
+          name: name,
         },
       });
-    } else if (name && user.name !== name) {
-      // Update name if provided and different
+    } else if (name && user.name !== name && name !== `User ${telegramId}`) {
+      // Update name if provided and different (but don't update if it's just the fallback)
       user = await prisma.user.update({
         where: { id: user.id },
         data: { name },
