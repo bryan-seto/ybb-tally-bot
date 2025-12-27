@@ -197,13 +197,19 @@ export class YBBTallyBot {
    * Get main menu keyboard
    */
   private getMainMenuKeyboard() {
-    return Markup.keyboard([
-      ['✅ Settle Up', '💰 Check Balance'],
-      ['🧾 View Unsettled', '➕ Add Manual Expense'],
-      ['✏️ Edit Last', '🔍 Search'],
-      ['🔄 Recurring', '📊 Reports'],
-      ['❓ User Guide'],
-    ]).resize().persistent();
+    return {
+      reply_markup: {
+        keyboard: [
+          ['✅ Settle Up', '💰 Check Balance'],
+          ['🧾 View Unsettled', '➕ Add Manual Expense'],
+          ['✏️ Edit Last', '🔍 Search'],
+          ['🔄 Recurring', '📊 Reports'],
+          ['❓ User Guide'],
+        ],
+        resize_keyboard: true,
+        persistent: true,
+      },
+    };
   }
 
   /**
@@ -216,7 +222,8 @@ export class YBBTallyBot {
       `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
       `👇 Or tap a button below:`;
     
-    await ctx.reply(menuMessage, this.getMainMenuKeyboard());
+    const keyboard = this.getMainMenuKeyboard();
+    await ctx.reply(menuMessage, keyboard);
   }
 
   /**
