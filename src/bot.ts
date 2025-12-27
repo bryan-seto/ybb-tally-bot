@@ -3530,10 +3530,27 @@ export class YBBTallyBot {
           const daysLeft = Math.ceil((trialEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
           
           if (daysLeft > 0) {
+            // Get installer name from Telegram user object
+            const installerTelegramUser = ctx.message.from;
+            const installerName = installerTelegramUser?.first_name || 
+                                 (installerTelegramUser?.username ? `@${installerTelegramUser.username}` : null) || 
+                                 installer?.name || 
+                                 'there';
+            
+            // Count how many groups this user has on trial
+            const trialGroups = await prisma.group.findMany({
+              where: {
+                installerUserId: group.installerUserId,
+                subscriptionStatus: 'trial',
+              },
+            });
+            const groupCount = trialGroups.length;
+            
             // Scenario B: Power User (still on trial, adding to another group)
+            const groupText = groupCount === 1 ? 'this group' : `all ${groupCount} groups`;
             await ctx.reply(
-              `👋 Welcome back, ${installer.name}! Since you are still on your trial (${daysLeft} days left), I've activated this group for free too!\n\n` +
-              `Note: Both groups will require a subscription on ${trialEndDate.toLocaleDateString()}.`,
+              `👋 Welcome back, ${installerName}! Since you are still on your trial (${daysLeft} days left), I've activated this group for free too!\n\n` +
+              `Note: ${groupCount === 1 ? 'This group' : `All ${groupCount} groups`} will require a subscription on ${trialEndDate.toLocaleDateString()}.`,
               { parse_mode: 'Markdown' }
             );
           }
