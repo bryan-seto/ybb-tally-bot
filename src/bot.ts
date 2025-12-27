@@ -255,6 +255,18 @@ export class YBBTallyBot {
   }
 
   /**
+   * Get numeric keyboard for amount input
+   */
+  private getNumericKeyboard() {
+    return Markup.keyboard([
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      ['.', '0', '❌ Cancel']
+    ]).resize().oneTime();
+  }
+
+  /**
    * Get main menu keyboard (inline keyboard for groups)
    */
   private getMainMenuKeyboard() {
@@ -624,7 +636,8 @@ export class YBBTallyBot {
       }
       await ctx.reply(
         'At your service! Let\'s add an expense manually.\n\n' +
-        'Please enter the amount in SGD:'
+        'Please enter the amount in SGD: (Tap numbers or type amount)',
+        this.getNumericKeyboard()
       );
       
       // Store that we're in manual add mode
@@ -1766,7 +1779,7 @@ export class YBBTallyBot {
       if (session.editLastMode && session.editLastAction === 'amount') {
         const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
         if (isNaN(amount) || amount <= 0) {
-          await ctx.reply('Please enter a valid amount in SGD:');
+          await ctx.reply('Please enter a valid amount in SGD:', this.getNumericKeyboard());
           return;
         }
 
@@ -2029,14 +2042,14 @@ export class YBBTallyBot {
           session.manualAddStep = 'amount';
           await ctx.reply(
             `Description: ${text}\n\n` +
-            'How much was it? (Enter amount in SGD)',
-            Markup.keyboard([['❌ Cancel']]).resize()
+            'How much was it? (Tap numbers or type amount)',
+            this.getNumericKeyboard()
           );
           return;
         } else if (session.manualAddStep === 'amount') {
           const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
           if (isNaN(amount) || amount <= 0) {
-            await ctx.reply('Please enter a valid amount in SGD:');
+            await ctx.reply('Please enter a valid amount in SGD:', this.getNumericKeyboard());
             return;
           }
           
@@ -2086,14 +2099,14 @@ export class YBBTallyBot {
           session.recurringData.description = text;
           session.recurringStep = 'amount';
           await ctx.reply(
-            `Description: ${text}\n\nHow much? (Enter amount in SGD)`,
-            Markup.keyboard([['❌ Cancel']]).resize()
+            `Description: ${text}\n\nHow much? (Tap numbers or type amount)`,
+            this.getNumericKeyboard()
           );
           return;
         } else if (session.recurringStep === 'amount') {
           const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
           if (isNaN(amount) || amount <= 0) {
-            await ctx.reply('Please enter a valid amount in SGD:');
+            await ctx.reply('Please enter a valid amount in SGD:', this.getNumericKeyboard());
             return;
           }
           session.recurringData = session.recurringData || {};
@@ -2696,8 +2709,8 @@ export class YBBTallyBot {
             session.editLastTransactionId = transactionId;
           }
           await ctx.reply(
-            'Enter new amount:',
-            Markup.keyboard([['❌ Cancel']]).resize()
+            'Enter new amount: (Tap numbers or type amount)',
+            this.getNumericKeyboard()
           );
         } else if (action === 'category') {
           if (transactionId) {
@@ -2988,7 +3001,8 @@ export class YBBTallyBot {
         } else if (command === 'add') {
           await ctx.reply(
             'At your service! Let\'s add an expense manually.\n\n' +
-            'Please enter the amount in SGD:'
+            'Please enter the amount in SGD: (Tap numbers or type amount)',
+            this.getNumericKeyboard()
           );
           if (!session) ctx.session = {};
           ctx.session.manualAddMode = true;
