@@ -1037,9 +1037,9 @@ export class YBBTallyBot {
       if (transactions.length === 0) {
         const message = '📜 **Transaction History**\n\nNo transactions found.';
         if (ctx.callbackQuery) {
-          await ctx.callbackQuery.answer();
+          await ctx.answerCbQuery();
           try {
-            await ctx.callbackQuery.editMessageText(message, { parse_mode: 'Markdown' });
+            await ctx.editMessageText(message, { parse_mode: 'Markdown' });
           } catch (editError) {
             // If edit fails, send a new message
             await ctx.reply(message, { parse_mode: 'Markdown' });
@@ -1071,9 +1071,9 @@ export class YBBTallyBot {
       const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
 
       if (ctx.callbackQuery) {
-        await ctx.callbackQuery.answer();
+        await ctx.answerCbQuery();
         try {
-          await ctx.callbackQuery.editMessageText(
+          await ctx.editMessageText(
             message,
             {
               parse_mode: 'Markdown',
@@ -1102,9 +1102,9 @@ export class YBBTallyBot {
         : 'Sorry, I encountered an error retrieving history. Please try again.';
       
       if (ctx.callbackQuery) {
-        await ctx.callbackQuery.answer('Error retrieving history', { show_alert: true });
+        await ctx.answerCbQuery('Error retrieving history', { show_alert: true });
         try {
-          await ctx.callbackQuery.editMessageText(errorMessage);
+          await ctx.editMessageText(errorMessage);
         } catch {
           await ctx.reply(errorMessage);
         }
@@ -1126,7 +1126,7 @@ export class YBBTallyBot {
         if (ctx.message) {
           await ctx.reply(message, { parse_mode: 'Markdown' });
         } else if (ctx.callbackQuery) {
-          await ctx.callbackQuery.answer('Transaction not found', { show_alert: true });
+          await ctx.answerCbQuery('Transaction not found', { show_alert: true });
         }
         return;
       }
@@ -1157,8 +1157,8 @@ export class YBBTallyBot {
           reply_markup: replyMarkup.reply_markup,
         });
       } else if (ctx.callbackQuery) {
-        await ctx.callbackQuery.answer();
-        await ctx.callbackQuery.editMessageText(card, {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(card, {
           parse_mode: 'Markdown',
           reply_markup: replyMarkup.reply_markup,
         });
