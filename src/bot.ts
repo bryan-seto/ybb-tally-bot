@@ -1606,8 +1606,9 @@ export class YBBTallyBot {
           session.awaitingAmountConfirmation = false;
 
           // Calculate transaction-specific amount owed
-          const bryanPercent = transaction.bryanPercentage;
-          const hweiYeenPercent = transaction.hweiYeenPercentage;
+          // Convert null to undefined for TypeScript compatibility
+          const bryanPercent = transaction.bryanPercentage ?? undefined;
+          const hweiYeenPercent = transaction.hweiYeenPercentage ?? undefined;
           const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
             transaction.amountSGD,
             payerRole,

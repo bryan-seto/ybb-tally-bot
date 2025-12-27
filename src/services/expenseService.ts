@@ -259,8 +259,9 @@ export class ExpenseService {
     });
 
     return transactions.map(t => {
-      const bryanPercent = t.bryanPercentage;
-      const hweiYeenPercent = t.hweiYeenPercentage;
+      // Convert null to undefined for TypeScript compatibility
+      const bryanPercent = t.bryanPercentage ?? undefined;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? undefined;
       const owed = this.calculateTransactionOwed(
         t.amountSGD, 
         t.payer.role as 'Bryan' | 'HweiYeen',
