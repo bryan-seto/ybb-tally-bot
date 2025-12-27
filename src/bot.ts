@@ -3513,11 +3513,11 @@ export class YBBTallyBot {
             trialEndDate.setDate(trialEndDate.getDate() + 14);
             const daysLeft = Math.ceil((trialEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             
-            await ctx.reply(
+            await this.showMainMenu(
+              ctx,
               `👋 Hi ${installerName}! I've activated your 14-Day Free Trial for this group.\n\n` +
               `Your trial expires on ${trialEndDate.toLocaleDateString()} (${daysLeft} days left).\n\n` +
-              `Send me a receipt photo or type an expense like "Dinner 120" to get started!`,
-              { parse_mode: 'Markdown' }
+              `Send me a receipt photo or type an expense like "Dinner 120" to get started!`
             );
           } else if (status === 'locked' && !isVIP) {
             // Scenario C: Zombie Group (trial expired or user already used trial)
@@ -3575,10 +3575,10 @@ export class YBBTallyBot {
             
             // Scenario B: Power User (still on trial, adding to another group)
             const groupText = groupCount === 1 ? 'this group' : `all ${groupCount} groups`;
-            await ctx.reply(
+            await this.showMainMenu(
+              ctx,
               `👋 Welcome back, ${installerName}! Since you are still on your trial (${daysLeft} days left), I've activated this group for free too!\n\n` +
-              `Note: ${groupCount === 1 ? 'This group' : `All ${groupCount} groups`} will require a subscription on ${trialEndDate.toLocaleDateString()}.`,
-              { parse_mode: 'Markdown' }
+              `Note: ${groupCount === 1 ? 'This group' : `All ${groupCount} groups`} will require a subscription on ${trialEndDate.toLocaleDateString()}.`
             );
           }
         }
