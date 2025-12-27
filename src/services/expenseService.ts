@@ -61,6 +61,8 @@ export class ExpenseService {
     hweiYeenPaid: number;
     transactionCount: number;
     topCategories: { category: string; amount: number }[];
+    bryanCategories: { category: string; amount: number }[];
+    hweiYeenCategories: { category: string; amount: number }[];
   }> {
     const reportDate = getMonthsAgo(monthOffset);
     const start = getStartOfMonth(reportDate);
@@ -113,14 +115,13 @@ export class ExpenseService {
     });
 
     const totalSpend = transactions.reduce((sum, t) => sum + t.amountSGD, 0);
-    const bryanPaid = transactions
-      .filter((t) => t.payer.role === 'Bryan')
-      .reduce((sum, t) => sum + t.amountSGD, 0);
-    const hweiYeenPaid = transactions
-      .filter((t) => t.payer.role === 'HweiYeen')
-      .reduce((sum, t) => sum + t.amountSGD, 0);
+    const bryanTransactions = transactions.filter((t) => t.payer.role === 'Bryan');
+    const hweiYeenTransactions = transactions.filter((t) => t.payer.role === 'HweiYeen');
+    
+    const bryanPaid = bryanTransactions.reduce((sum, t) => sum + t.amountSGD, 0);
+    const hweiYeenPaid = hweiYeenTransactions.reduce((sum, t) => sum + t.amountSGD, 0);
 
-    // Top categories
+    // Top categories (overall)
     const categoryMap: { [key: string]: number } = {};
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
@@ -132,12 +133,38 @@ export class ExpenseService {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
+    // Bryan's categories
+    const bryanCategoryMap: { [key: string]: number } = {};
+    bryanTransactions.forEach((t) => {
+      const cat = t.category || 'Other';
+      bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + t.amountSGD;
+    });
+
+    const bryanCategories = Object.entries(bryanCategoryMap)
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    // Hwei Yeen's categories
+    const hweiYeenCategoryMap: { [key: string]: number } = {};
+    hweiYeenTransactions.forEach((t) => {
+      const cat = t.category || 'Other';
+      hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + t.amountSGD;
+    });
+
+    const hweiYeenCategories = Object.entries(hweiYeenCategoryMap)
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
     return {
       totalSpend,
       bryanPaid,
       hweiYeenPaid,
       transactionCount: transactions.length,
       topCategories,
+      bryanCategories,
+      hweiYeenCategories,
     };
   }
 

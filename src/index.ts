@@ -425,13 +425,28 @@ async function sendMonthlyReport(): Promise<void> {
       `📊 **Monthly Report - ${monthName}**\n\n` +
       `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
       `Transactions: ${report.transactionCount}\n\n` +
-      `**Breakdown:**\n` +
-      `Sir Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-      `Madam Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
-      `**Top Categories:**\n` +
-      report.topCategories
-        .map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`)
-        .join('\n') +
+      `**Top Categories - Bryan:**\n` +
+      (report.bryanCategories.length > 0
+        ? report.bryanCategories
+            .map((c) => {
+              const percentage = report.bryanPaid > 0 
+                ? Math.round((c.amount / report.bryanPaid) * 100) 
+                : 0;
+              return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+            })
+            .join('\n')
+        : 'No categories found') +
+      `\n\n**Top Categories - Hwei Yeen:**\n` +
+      (report.hweiYeenCategories.length > 0
+        ? report.hweiYeenCategories
+            .map((c) => {
+              const percentage = report.hweiYeenPaid > 0 
+                ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                : 0;
+              return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+            })
+            .join('\n')
+        : 'No categories found') +
       `\n\n[View Chart](${chartUrl})`;
 
     await bot.sendToPrimaryGroup(message, { parse_mode: 'Markdown' });

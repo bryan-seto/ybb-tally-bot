@@ -472,13 +472,26 @@ export class YBBTallyBot {
               `📊 **Monthly Report - ${currentMonthName}**\n\n` +
               `Total Spend: SGD $${currentMonthReport.totalSpend.toFixed(2)}\n` +
               `Transactions: ${currentMonthReport.transactionCount}\n\n` +
-              `**Breakdown:**\n` +
-              `Bryan paid: SGD $${currentMonthReport.bryanPaid.toFixed(2)}\n` +
-              `Hwei Yeen paid: SGD $${currentMonthReport.hweiYeenPaid.toFixed(2)}\n\n` +
-              `**Top Categories:**\n` +
-              (currentMonthReport.topCategories.length > 0
-                ? currentMonthReport.topCategories
-                    .map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`)
+              `**Top Categories - Bryan:**\n` +
+              (currentMonthReport.bryanCategories.length > 0
+                ? currentMonthReport.bryanCategories
+                    .map((c) => {
+                      const percentage = currentMonthReport.bryanPaid > 0 
+                        ? Math.round((c.amount / currentMonthReport.bryanPaid) * 100) 
+                        : 0;
+                      return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                    })
+                    .join('\n')
+                : 'No categories found') +
+              `\n\n**Top Categories - Hwei Yeen:**\n` +
+              (currentMonthReport.hweiYeenCategories.length > 0
+                ? currentMonthReport.hweiYeenCategories
+                    .map((c) => {
+                      const percentage = currentMonthReport.hweiYeenPaid > 0 
+                        ? Math.round((c.amount / currentMonthReport.hweiYeenPaid) * 100) 
+                        : 0;
+                      return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                    })
                     .join('\n')
                 : 'No categories found') +
               `\n\n[View Chart](${chartUrl})`;
@@ -513,13 +526,26 @@ export class YBBTallyBot {
           `📊 **Monthly Report - ${monthName}**\n\n` +
           `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
           `Transactions: ${report.transactionCount}\n\n` +
-          `**Breakdown:**\n` +
-          `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-          `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
-          `**Top Categories:**\n` +
-          (report.topCategories.length > 0
-            ? report.topCategories
-                .map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`)
+          `**Top Categories - Bryan:**\n` +
+          (report.bryanCategories.length > 0
+            ? report.bryanCategories
+                .map((c) => {
+                  const percentage = report.bryanPaid > 0 
+                    ? Math.round((c.amount / report.bryanPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
+                .join('\n')
+            : 'No categories found') +
+          `\n\n**Top Categories - Hwei Yeen:**\n` +
+          (report.hweiYeenCategories.length > 0
+            ? report.hweiYeenCategories
+                .map((c) => {
+                  const percentage = report.hweiYeenPaid > 0 
+                    ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
                 .join('\n')
             : 'No categories found') +
           `\n\n[View Chart](${chartUrl})`;
@@ -938,12 +964,27 @@ export class YBBTallyBot {
         `📊 **Monthly Report - ${monthName}**\n\n` +
         `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
         `Transactions: ${report.transactionCount}\n\n` +
-        `**Breakdown:**\n` +
-        `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-        `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
-        `**Top Categories:**\n` +
-        (report.topCategories.length > 0
-          ? report.topCategories.map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+        `**Top Categories - Bryan:**\n` +
+        (report.bryanCategories.length > 0
+          ? report.bryanCategories
+              .map((c) => {
+                const percentage = report.bryanPaid > 0 
+                  ? Math.round((c.amount / report.bryanPaid) * 100) 
+                  : 0;
+                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+              })
+              .join('\n')
+          : 'No categories found') +
+        `\n\n**Top Categories - Hwei Yeen:**\n` +
+        (report.hweiYeenCategories.length > 0
+          ? report.hweiYeenCategories
+              .map((c) => {
+                const percentage = report.hweiYeenPaid > 0 
+                  ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                  : 0;
+                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+              })
+              .join('\n')
           : 'No categories found') +
         `\n\n[View Chart](${chartUrl})`;
       
@@ -2207,12 +2248,27 @@ export class YBBTallyBot {
             `📊 **Monthly Report - ${monthName}**\n\n` +
             `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
             `Transactions: ${report.transactionCount}\n\n` +
-            `**Breakdown:**\n` +
-            `Bryan paid: SGD $${report.bryanPaid.toFixed(2)}\n` +
-            `Hwei Yeen paid: SGD $${report.hweiYeenPaid.toFixed(2)}\n\n` +
-            `**Top Categories:**\n` +
-            (report.topCategories.length > 0
-              ? report.topCategories.map((c, i) => `${i + 1}. ${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+            `**Top Categories - Bryan:**\n` +
+            (report.bryanCategories.length > 0
+              ? report.bryanCategories
+                  .map((c) => {
+                    const percentage = report.bryanPaid > 0 
+                      ? Math.round((c.amount / report.bryanPaid) * 100) 
+                      : 0;
+                    return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                  })
+                  .join('\n')
+              : 'No categories found') +
+            `\n\n**Top Categories - Hwei Yeen:**\n` +
+            (report.hweiYeenCategories.length > 0
+              ? report.hweiYeenCategories
+                  .map((c) => {
+                    const percentage = report.hweiYeenPaid > 0 
+                      ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                      : 0;
+                    return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                  })
+                  .join('\n')
               : 'No categories found') +
             `\n\n[View Chart](${chartUrl})`;
           await ctx.reply(message, { parse_mode: 'Markdown' });
