@@ -2,6 +2,7 @@ import { Telegraf, Context, session, Markup } from 'telegraf';
 import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
+import { HistoryService } from './services/historyService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
@@ -84,6 +85,7 @@ export class YBBTallyBot {
   private aiService: AIService;
   private analyticsService: AnalyticsService;
   private expenseService: ExpenseService;
+  private historyService: HistoryService;
   private allowedUserIds: Set<string>;
   private photoCollections: Map<number, PhotoCollection> = new Map(); // chat_id -> collection
   private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
@@ -93,6 +95,7 @@ export class YBBTallyBot {
     this.aiService = new AIService(geminiApiKey);
     this.analyticsService = new AnalyticsService();
     this.expenseService = new ExpenseService();
+    this.historyService = new HistoryService();
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
@@ -144,6 +147,10 @@ export class YBBTallyBot {
       {
         command: 'admin_stats',
         description: 'View analytics and statistics (admin only)',
+      },
+      {
+        command: 'history',
+        description: 'View transaction history',
       },
     ]);
   }
@@ -536,6 +543,16 @@ export class YBBTallyBot {
       // Store that we're in manual add mode
       ctx.session.manualAddMode = true;
       ctx.session.manualAddStep = 'amount';
+    });
+
+    // History command
+    this.bot.command('history', async (ctx) => {
+      try {
+        await this.showHistory(ctx, 0);
+      } catch (error: any) {
+        console.error('Error showing history:', error);
+        await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
+      }
     });
 
     // Recurring expense command
@@ -1009,6 +1026,121 @@ export class YBBTallyBot {
   }
 
   /**
+   * Show transaction history list
+   */
+  private async showHistory(ctx: any, offset: number = 0) {
+    try {
+      const transactions = await this.historyService.getRecentTransactions(20, offset);
+      const totalCount = await this.historyService.getTotalTransactionCount();
+
+      if (transactions.length === 0) {
+        const message = '📜 **Transaction History**\n\nNo transactions found.';
+        if (ctx.callbackQuery) {
+          await ctx.callbackQuery.answer();
+          await ctx.callbackQuery.editMessageText(message, { parse_mode: 'Markdown' });
+        } else {
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+        return;
+      }
+
+      // Build the list message
+      const lines = ['📜 **Transaction History**\n'];
+      
+      for (const tx of transactions) {
+        const line = this.historyService.formatTransactionListItem(tx);
+        lines.push(line);
+      }
+
+      const message = lines.join('\n');
+
+      // Add pagination button if there are more transactions
+      const keyboard: any[] = [];
+      if (offset + 20 < totalCount) {
+        keyboard.push([
+          Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
+        ]);
+      }
+
+      const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
+
+      if (ctx.callbackQuery) {
+        await ctx.callbackQuery.answer();
+        await ctx.callbackQuery.editMessageText(
+          message,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: replyMarkup?.reply_markup,
+          }
+        );
+      } else {
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup?.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing history:', error);
+      await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
+    }
+  }
+
+  /**
+   * Show transaction detail card
+   */
+  private async showTransactionDetail(ctx: any, transactionId: bigint) {
+    try {
+      const transaction = await this.historyService.getTransactionById(transactionId);
+
+      if (!transaction) {
+        const message = `❌ Transaction \`/${transactionId}\` not found.`;
+        if (ctx.message) {
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } else if (ctx.callbackQuery) {
+          await ctx.callbackQuery.answer('Transaction not found', { show_alert: true });
+        }
+        return;
+      }
+
+      const card = this.historyService.formatTransactionDetail(transaction);
+
+      // Build inline keyboard buttons
+      const keyboard: any[] = [];
+
+      // Only show "Settle Up" if transaction is unsettled
+      if (transaction.status === 'unsettled') {
+        keyboard.push([
+          Markup.button.callback('✅ Settle', `tx_settle_${transactionId}`)
+        ]);
+      }
+
+      // Edit and Delete buttons
+      keyboard.push([
+        Markup.button.callback('✏️ Edit', `tx_edit_${transactionId}`),
+        Markup.button.callback('🗑️ Delete', `tx_delete_${transactionId}`),
+      ]);
+
+      const replyMarkup = Markup.inlineKeyboard(keyboard);
+
+      if (ctx.message) {
+        await ctx.reply(card, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup.reply_markup,
+        });
+      } else if (ctx.callbackQuery) {
+        await ctx.callbackQuery.answer();
+        await ctx.callbackQuery.editMessageText(card, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing transaction detail:', error);
+      await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
+    }
+  }
+
+  /**
    * Setup message handlers
    */
   private setupHandlers(): void {
@@ -1091,6 +1223,15 @@ export class YBBTallyBot {
       const textLower = text.toLowerCase();
       const session = ctx.session;
       const chatId = ctx.chat.id;
+
+      // Handle transaction ID commands (e.g., /101)
+      // Check if text matches pattern /<number> (but not a command like /help)
+      const transactionIdMatch = text.match(/^\/(\d+)$/);
+      if (transactionIdMatch) {
+        const transactionId = BigInt(transactionIdMatch[1]);
+        await this.showTransactionDetail(ctx, transactionId);
+        return;
+      }
 
       // Handle main menu buttons (for backward compatibility with reply keyboards)
       if (text === '✅ Settle Up' || text === 'Settle Up') {
@@ -1875,6 +2016,66 @@ export class YBBTallyBot {
         return;
       }
 
+      // Handle history pagination
+      if (callbackData.startsWith('history_load_')) {
+        await ctx.answerCbQuery();
+        const offset = parseInt(callbackData.replace('history_load_', ''));
+        if (!isNaN(offset)) {
+          await this.showHistory(ctx, offset);
+        }
+        return;
+      }
+
+      // Handle transaction settle (from detail card)
+      if (callbackData.startsWith('tx_settle_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('tx_settle_', ''));
+        await prisma.transaction.update({
+          where: { id: transactionId },
+          data: { isSettled: true },
+        });
+        await ctx.answerCbQuery('✅ Transaction marked as settled!', { show_alert: true });
+        // Refresh the transaction detail card
+        await this.showTransactionDetail(ctx, transactionId);
+        return;
+      }
+
+      // Handle transaction edit (from detail card)
+      if (callbackData.startsWith('tx_edit_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('tx_edit_', ''));
+        // Reuse the edit last flow for editing this transaction
+        if (!session) ctx.session = {};
+        session.editLastMode = true;
+        session.editLastAction = 'amount';
+        session.editLastTransactionId = transactionId;
+        
+        await ctx.reply(
+          'What would you like to edit?',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${transactionId}` }],
+                [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${transactionId}` }],
+                [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${transactionId}` }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      // Handle transaction delete (from detail card)
+      if (callbackData.startsWith('tx_delete_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('tx_delete_', ''));
+        await prisma.transaction.delete({
+          where: { id: transactionId },
+        });
+        await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+        return;
+      }
+
       // Handle main menu button clicks (inline keyboard)
       if (callbackData.startsWith('menu_')) {
         await ctx.answerCbQuery();
@@ -1899,7 +2100,6 @@ export class YBBTallyBot {
         }
         return;
       }
-
       // Handle help command buttons
       if (callbackData.startsWith('help_cmd_')) {
         await ctx.answerCbQuery();
