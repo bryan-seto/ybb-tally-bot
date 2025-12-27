@@ -67,6 +67,16 @@ interface BotSession {
     receiptId?: string;
     isManual?: boolean; // Flag to know this is from manual add
   };
+  pendingReceiptExpense?: {
+    receiptId: string;
+    groupId: bigint;
+    amount: number;
+    description: string;
+    category: string | null;
+    payerId: bigint;
+    payerType: 'real' | 'virtual';
+  };
+  receiptSplitCount?: boolean; // Flag to know we're waiting for receipt split count
   awaitingVirtualUserName?: boolean;
   // Identity merging
   pendingIdentityMerge?: {
@@ -2154,8 +2164,8 @@ export class YBBTallyBot {
           const count = parseInt(textLower.replace(/[^0-9]/g, ''));
           if (isNaN(count) || count < 1 || count > 20) {
             await ctx.reply('Please enter a valid number between 1 and 20:', this.getNumericKeyboard());
-            return;
-          }
+          return;
+        }
           
           // Create Person A, B, C, D... members
           const members: SplitMember[] = [];
@@ -2234,6 +2244,83 @@ export class YBBTallyBot {
           session.manualAddStep = undefined;
           return;
         }
+        return;
+      }
+
+      // Handle receipt split count (after confirming amount from receipt)
+      if (session.receiptSplitCount && session.pendingReceiptExpense) {
+        const count = parseInt(textLower.replace(/[^0-9]/g, ''));
+        if (isNaN(count) || count < 1 || count > 20) {
+          await ctx.reply('Please enter a valid number between 1 and 20:', this.getNumericKeyboard());
+          return;
+        }
+        
+        // Create Person A, B, C, D... members
+        const members: SplitMember[] = [];
+        for (let i = 0; i < count; i++) {
+          const personName = String.fromCharCode(65 + i); // A, B, C, D...
+          members.push({
+            id: BigInt(i + 1),
+            name: `Person ${personName}`,
+            type: 'real',
+            isSelected: true, // All selected by default
+          });
+        }
+        
+        // Store in pending expense
+        if (!ctx.session) ctx.session = {};
+        ctx.session.pendingExpense = {
+          groupId: session.pendingReceiptExpense.groupId,
+          amount: session.pendingReceiptExpense.amount,
+          description: session.pendingReceiptExpense.description,
+          category: session.pendingReceiptExpense.category,
+          payerId: session.pendingReceiptExpense.payerId,
+          payerType: session.pendingReceiptExpense.payerType,
+          members: members,
+          receiptId: session.pendingReceiptExpense.receiptId,
+          isManual: false, // This is from receipt
+        };
+        
+        // Show preview with Person A, B, C, D
+        const preview = this.splitService.formatSplitPreview(
+          session.pendingReceiptExpense.amount,
+          members,
+          session.pendingReceiptExpense.description,
+          ctx.from?.id,
+          false // isManual - receipts are not manual
+        );
+        
+        // Build keyboard with Person toggles
+        const keyboard: any[] = [];
+        const rows: any[] = [];
+        
+        members.forEach((member, index) => {
+          const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+          rows.push(
+            Markup.button.callback(
+              buttonText,
+              `split_toggle_${member.id}_${member.type}`
+            )
+          );
+          
+          if (rows.length === 2 || index === members.length - 1) {
+            keyboard.push(rows.slice());
+            rows.length = 0;
+          }
+        });
+        
+        keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
+        
+        await ctx.reply(preview, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        });
+        
+        // Clear receipt split count mode
+        session.receiptSplitCount = false;
+        session.pendingReceiptExpense = undefined;
         return;
       }
 
@@ -2417,11 +2504,14 @@ export class YBBTallyBot {
           return;
         }
 
-        // For manual expenses with Person A/B/C/D, create virtual users
+        // For expenses with Person A/B/C/D (manual or receipt), create virtual users
         const memberTypes = new Map<bigint, 'real' | 'virtual'>();
         const virtualUserIds: bigint[] = [];
         
-        if (session.pendingExpense.isManual) {
+        // Check if any members are Person A/B/C/D (need virtual users)
+        const hasPersonMembers = selectedMembers.some(m => m.name.startsWith('Person '));
+        
+        if (hasPersonMembers) {
           // Create virtual users for each Person A, B, C, D
           for (const member of selectedMembers) {
             if (member.name.startsWith('Person ')) {
@@ -2437,12 +2527,12 @@ export class YBBTallyBot {
             }
           }
         } else {
-          // For receipt-based expenses, use existing members
+          // For expenses with real users, use existing members
           selectedMembers.forEach((m) => memberTypes.set(m.id, m.type));
         }
 
         // Use virtual user IDs if created, otherwise use original IDs
-        const memberIdsToUse = session.pendingExpense.isManual && virtualUserIds.length > 0
+        const memberIdsToUse = hasPersonMembers && virtualUserIds.length > 0
           ? virtualUserIds
           : selectedMembers.map((m) => m.id);
 
@@ -2465,12 +2555,15 @@ export class YBBTallyBot {
           this.getMainMenuKeyboard()
         );
 
-        // Clear session
+        // Clear session and delete receipt data if it was from a receipt
+        if (session.pendingExpense.receiptId) {
+          this.pendingReceipts.delete(session.pendingExpense.receiptId);
+        }
         session.pendingExpense = undefined;
         return;
       }
 
-      // Handle confirm amount (from receipt processing) - trigger smart split
+      // Handle confirm amount (from receipt processing) - ask how many people
       if (callbackData.startsWith('confirm_amount_')) {
         await ctx.answerCbQuery();
         const receiptId = callbackData.replace('confirm_amount_', '');
@@ -2495,17 +2588,30 @@ export class YBBTallyBot {
         );
         await this.groupService.addMemberToGroup(group.id, payerId);
 
-        // Show smart split UI (old flow - after confirmation)
-        await this.showSmartSplitUI(
-          ctx,
-          group.id,
-          receiptData.receiptData.amount,
-          receiptData.receiptData.merchant || 'Expense',
-          receiptData.receiptData.category || null,
+        // Store receipt data in session for split flow
+        if (!ctx.session) ctx.session = {};
+        ctx.session.pendingReceiptExpense = {
+          receiptId,
+          groupId: group.id,
+          amount: receiptData.receiptData.amount,
+          description: receiptData.receiptData.merchant || 'Expense',
+          category: receiptData.receiptData.category || null,
           payerId,
-          'real',
-          receiptId
+          payerType: 'real' as const,
+        };
+        ctx.session.receiptSplitCount = true; // Flag that we're waiting for split count
+
+        // Ask how many people to split with (like manual flow)
+        await ctx.reply(
+          `✅ Amount confirmed: SGD $${receiptData.receiptData.amount.toFixed(2)}\n` +
+          `Description: ${receiptData.receiptData.merchant || 'Expense'}\n` +
+          `Category: ${receiptData.receiptData.category || 'Other'}\n` +
+          `Paid by: ${ctx.from.first_name || ctx.from.username || 'You'}\n\n` +
+          `How many people to split with? (Including yourself)`,
+          this.getNumericKeyboard()
         );
+        
+        // Don't delete receipt data yet - we'll use it in split_count handler
 
         this.pendingReceipts.delete(receiptId);
         return;
