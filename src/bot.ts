@@ -210,18 +210,19 @@ export class YBBTallyBot {
         { text: '💰 Check Balance', callback_data: 'menu_balance' },
       ],
       [
+        { text: '📜 History', callback_data: 'menu_history' },
         { text: '🧾 View Unsettled', callback_data: 'menu_unsettled' },
+      ],
+      [
         { text: '➕ Add Manual Expense', callback_data: 'menu_add' },
-      ],
-      [
         { text: '✏️ Edit Last', callback_data: 'menu_edit_last' },
+      ],
+      [
         { text: '🔍 Search', callback_data: 'menu_search' },
-      ],
-      [
         { text: '🔄 Recurring', callback_data: 'menu_recurring' },
-        { text: '📊 Reports', callback_data: 'menu_reports' },
       ],
       [
+        { text: '📊 Reports', callback_data: 'menu_reports' },
         { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
       ],
     ]);
@@ -2085,6 +2086,8 @@ export class YBBTallyBot {
           await this.handleSettleUp(ctx);
         } else if (action === 'balance') {
           await this.handleCheckBalance(ctx);
+        } else if (action === 'history') {
+          await this.showHistory(ctx, 0);
         } else if (action === 'unsettled') {
           await this.handleViewUnsettled(ctx);
         } else if (action === 'add') {

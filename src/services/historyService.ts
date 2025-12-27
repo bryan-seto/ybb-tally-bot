@@ -28,7 +28,7 @@ export class HistoryService {
         payer: true,
       },
       orderBy: {
-        date: 'desc',
+        createdAt: 'desc', // Sort by when it was recorded, not transaction date
       },
       take: limit,
       skip: offset,
