@@ -64,6 +64,7 @@ interface BotSession {
     payerType: 'real' | 'virtual';
     members: SplitMember[];
     receiptId?: string;
+    isManual?: boolean; // Flag to know this is from manual add
   };
   awaitingVirtualUserName?: boolean;
   // Identity merging
@@ -1039,20 +1040,20 @@ export class YBBTallyBot {
       if (isVIP) {
         // Use legacy method for VIP users
         const pendingTransactions = await this.expenseService.getAllPendingTransactions();
-        if (pendingTransactions.length === 0) {
-          await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
-          return;
-        }
-        
-        const last10 = pendingTransactions.slice(0, 10);
-        let message = `🧾 **Unsettled Transactions**\n\n`;
-        
-        last10.forEach((t, index) => {
-          const dateStr = formatDate(t.date, 'dd MMM yyyy');
-          message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
-        });
-        
-        message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
+      if (pendingTransactions.length === 0) {
+        await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
+        return;
+      }
+      
+      const last10 = pendingTransactions.slice(0, 10);
+      let message = `🧾 **Unsettled Transactions**\n\n`;
+      
+      last10.forEach((t, index) => {
+        const dateStr = formatDate(t.date, 'dd MMM yyyy');
+        message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+      });
+      
+      message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
         await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
       }
@@ -1099,27 +1100,27 @@ export class YBBTallyBot {
 
       if (isVIP) {
         // Use legacy method for VIP users
-        await ctx.reply('Generating monthly report...');
-        const report = await this.expenseService.getMonthlyReport(0);
-        const reportDate = getMonthsAgo(0);
-        const monthName = formatDate(reportDate, 'MMMM yyyy');
-        
-        const chart = new QuickChart();
-        chart.setConfig({
-          type: 'bar',
-          data: {
-            labels: report.topCategories.map((c) => c.category),
-            datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-          },
-        });
-        chart.setWidth(800);
-        chart.setHeight(400);
-        const chartUrl = chart.getUrl();
-        
-        const message =
-          `📊 **Monthly Report - ${monthName}**\n\n` +
-          `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
-          `Transactions: ${report.transactionCount}\n\n` +
+      await ctx.reply('Generating monthly report...');
+      const report = await this.expenseService.getMonthlyReport(0);
+      const reportDate = getMonthsAgo(0);
+      const monthName = formatDate(reportDate, 'MMMM yyyy');
+      
+      const chart = new QuickChart();
+      chart.setConfig({
+        type: 'bar',
+        data: {
+          labels: report.topCategories.map((c) => c.category),
+          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
+        },
+      });
+      chart.setWidth(800);
+      chart.setHeight(400);
+      const chartUrl = chart.getUrl();
+      
+      const message =
+        `📊 **Monthly Report - ${monthName}**\n\n` +
+        `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
+        `Transactions: ${report.transactionCount}\n\n` +
           `**Top Categories - Bryan:**\n` +
           (report.bryanCategories.length > 0
             ? report.bryanCategories
@@ -1141,8 +1142,8 @@ export class YBBTallyBot {
                   return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
                 })
                 .join('\n')
-            : 'No categories found') +
-          `\n\n[View Chart](${chartUrl})`;
+          : 'No categories found') +
+        `\n\n[View Chart](${chartUrl})`;
 
         await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
@@ -1252,15 +1253,15 @@ export class YBBTallyBot {
         `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
         `What would you like to edit?`,
         {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
-                [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
+              [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
                 [{ text: '📊 Edit Split %', callback_data: `edit_last_split_${lastTransaction.id}` }],
-                [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
-                [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
-              ],
-            },
+              [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
+              [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
+            ],
+          },
         }
       );
     } catch (error: any) {
@@ -1421,7 +1422,7 @@ export class YBBTallyBot {
         transaction = await this.historyService.getExpenseById(transactionId);
         
         // Fallback to transaction if not found
-        if (!transaction) {
+      if (!transaction) {
           transaction = await this.historyService.getTransactionById(transactionId);
         }
       }
@@ -2343,13 +2344,13 @@ export class YBBTallyBot {
         // Check if it's legacy format (bryan/hweiyeen)
         if (payerIdStr === 'bryan' || payerIdStr === 'hweiyeen') {
           const payerRole = payerIdStr === 'bryan' ? 'Bryan' : 'HweiYeen';
-          const user = await prisma.user.findFirst({
-            where: { role: payerRole },
-          });
-          if (!user) {
-            await ctx.reply('Error: User not found.');
-            session.manualAddMode = false;
-            return;
+        const user = await prisma.user.findFirst({
+          where: { role: payerRole },
+        });
+        if (!user) {
+          await ctx.reply('Error: User not found.');
+          session.manualAddMode = false;
+          return;
           }
           session.manualPayerId = user.id;
         } else {
@@ -2363,11 +2364,11 @@ export class YBBTallyBot {
 
         if (!user) {
           await ctx.reply('Error: User not found.');
-          session.manualAddMode = false;
+        session.manualAddMode = false;
           return;
         }
 
-        // Get group for expense creation
+        // Get group for split UI
         const chatId = ctx.chat?.id;
         const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
         
@@ -2376,41 +2377,34 @@ export class YBBTallyBot {
           session.manualAddMode = false;
           return;
         }
-        
-        // Get all group members for split
-        const { realUsers, virtualUsers } = await this.groupService.getAllGroupMembers(group.id);
-        const allMemberIds = [
-          ...realUsers.map(u => u.id),
-          ...virtualUsers.map(v => v.id)
-        ];
-        
-        // Create expense with splits using new system
-        const expenseId = await this.splitService.createExpenseWithSplits(
+
+        // Check if amount is valid
+        if (!session.manualAmount || session.manualAmount <= 0) {
+          await ctx.reply('Error: Invalid amount. Please start over.');
+          session.manualAddMode = false;
+          return;
+        }
+
+        // Show smart split UI (like old flow - ask who to split with)
+        // The showSmartSplitUI will set up pendingExpense properly
+        await this.showSmartSplitUI(
+          ctx,
           group.id,
-          session.manualAmount || 0,
-          session.manualDescription || '',
+          session.manualAmount,
+          session.manualDescription || 'Manual Expense',
           session.manualCategory || null,
           user.id,
-          'real',
-          allMemberIds,
-          new Map(allMemberIds.map(id => {
-            const isVirtual = virtualUsers.some(v => v.id === id);
-            return [id, isVirtual ? 'virtual' : 'real'];
-          }))
+          'real'
         );
 
-        // Clear session
+        // Mark as manual expense (after showSmartSplitUI sets it up)
+        if (ctx.session.pendingExpense) {
+          ctx.session.pendingExpense.isManual = true;
+        }
+
+        // Clear manual add mode (split UI will handle the rest)
         session.manualAddMode = false;
         session.manualAddStep = undefined;
-        session.manualAmount = undefined;
-        session.manualCategory = undefined;
-        session.manualDescription = undefined;
-        session.manualPayerId = undefined;
-
-        await ctx.reply(
-          `✅ Recorded: ${session.manualDescription || 'Expense'} (SGD $${(session.manualAmount || 0).toFixed(2)}) in ${session.manualCategory || 'Other'}. Paid by ${user.name}.`,
-          this.getMainMenuKeyboard()
-        );
         return;
       }
 
@@ -2437,24 +2431,24 @@ export class YBBTallyBot {
 
         if (isVIP) {
           // Legacy: settle all transactions
-          const result = await prisma.transaction.updateMany({
-            where: { isSettled: false },
-            data: { isSettled: true },
-          });
+        const result = await prisma.transaction.updateMany({
+          where: { isSettled: false },
+          data: { isSettled: true },
+        });
 
-          if (result.count > 0) {
-            const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
-            const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
-            
-            let settleMessage = '🤝 All Settled! Balance reset.';
-            if (match) {
+        if (result.count > 0) {
+          const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+          const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
+          
+          let settleMessage = '🤝 All Settled! Balance reset.';
+          if (match) {
               const debtor = match[1].trim();
               const creditor = match[2].trim();
-              const amount = match[3];
+            const amount = match[3];
               settleMessage += ` Payment of $${amount} recorded from ${debtor} to ${creditor}.`;
-            }
-            
-            await ctx.reply(settleMessage, this.getMainMenuKeyboard());
+          }
+          
+          await ctx.reply(settleMessage, this.getMainMenuKeyboard());
           } else {
             await ctx.reply('✅ All expenses are already settled!', this.getMainMenuKeyboard());
           }
@@ -2829,11 +2823,11 @@ export class YBBTallyBot {
         } catch {
           // Fallback to transaction (legacy)
           try {
-            await prisma.transaction.update({
+        await prisma.transaction.update({
               where: { id: expenseId },
-              data: { isSettled: true },
-            });
-            await ctx.answerCbQuery('✅ Transaction marked as settled!', { show_alert: true });
+          data: { isSettled: true },
+        });
+        await ctx.answerCbQuery('✅ Transaction marked as settled!', { show_alert: true });
           } catch {
             await ctx.answerCbQuery('❌ Expense not found', { show_alert: true });
             return;
@@ -2889,10 +2883,10 @@ export class YBBTallyBot {
         } catch {
           // Fallback to transaction (legacy)
           try {
-            await prisma.transaction.delete({
+        await prisma.transaction.delete({
               where: { id: expenseId },
-            });
-            await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+        });
+        await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
           } catch {
             await ctx.reply('❌ Expense not found.', this.getMainMenuKeyboard());
           }
