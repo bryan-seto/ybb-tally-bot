@@ -113,44 +113,8 @@ export class YBBTallyBot {
   async setupBotCommands(): Promise<void> {
     await this.bot.telegram.setMyCommands([
       {
-        command: 'start',
-        description: 'Register this group for expense tracking',
-      },
-      {
-        command: 'help',
-        description: 'Show all available commands and features',
-      },
-      {
-        command: 'add',
-        description: 'Manually add an expense (amount, category, description, payer)',
-      },
-      {
-        command: 'balance',
-        description: 'Check outstanding balance (who owes whom)',
-      },
-      {
-        command: 'pending',
-        description: 'View all pending (unsettled) transactions',
-      },
-      {
-        command: 'settle',
-        description: 'Mark all expenses as settled (clear outstanding balance)',
-      },
-      {
-        command: 'recurring',
-        description: 'Manage recurring expenses (add/list recurring bills)',
-      },
-      {
-        command: 'report',
-        description: 'Generate monthly spending report (use /report 0 for current month)',
-      },
-      {
-        command: 'admin_stats',
-        description: 'View analytics and statistics (admin only)',
-      },
-      {
-        command: 'history',
-        description: 'View transaction history',
+        command: 'menu',
+        description: 'Show main menu',
       },
     ]);
   }
@@ -281,6 +245,11 @@ export class YBBTallyBot {
 
     // Help command - show main menu
     this.bot.command('help', async (ctx) => {
+      await this.showMainMenu(ctx);
+    });
+
+    // Menu command
+    this.bot.command('menu', async (ctx) => {
       await this.showMainMenu(ctx);
     });
 
