@@ -2350,13 +2350,35 @@ export class YBBTallyBot {
         }
         
         // Build payer buttons from group members
+        // Get Telegram user info for each member to show first_name instead of database name
         const payerButtons: any[] = [];
-        group.members.forEach((member) => {
+        
+        for (const member of group.members) {
+          let displayName = member.name;
+          
+          // Try to get Telegram user info if we have telegramId and chatId
+          if (member.telegramId && chatId) {
+            try {
+              const telegramUser = await this.bot.telegram.getChatMember(
+                chatId,
+                Number(member.telegramId)
+              );
+              if (telegramUser.user) {
+                displayName = telegramUser.user.first_name || 
+                             (telegramUser.user.username ? `@${telegramUser.user.username}` : null) || 
+                             member.name;
+              }
+            } catch (error) {
+              // If we can't get Telegram info, use database name
+              console.error('Error getting Telegram user info:', error);
+            }
+          }
+          
           payerButtons.push([{ 
-            text: member.name, 
+            text: displayName, 
             callback_data: `manual_payer_${member.id}` 
           }]);
-        });
+        }
         payerButtons.push([{ text: '❌ Cancel', callback_data: 'manual_cancel' }]);
         
         await ctx.reply(
