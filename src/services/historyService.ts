@@ -20,15 +20,104 @@ export interface TransactionDetail extends TransactionListItem {
 
 export class HistoryService {
   /**
-   * Get recent transactions with pagination
+   * Get recent expenses for a group with pagination
    */
+  async getGroupExpenses(groupId: bigint, limit: number = 20, offset: number = 0): Promise<TransactionListItem[]> {
+    const expenses = await prisma.expense.findMany({
+      where: { groupId },
+      include: {
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit,
+      skip: offset,
+    });
+
+    return expenses.map(e => {
+      // Get payer name
+      let payerName = 'Unknown';
+      if (e.payerType === 'real') {
+        const payer = e.group.members.find(m => m.id === e.payerId);
+        payerName = payer?.name || 'Unknown';
+      }
+
+      return {
+        id: e.id,
+        date: e.date,
+        merchant: e.description || 'No description',
+        amount: e.amountSGD,
+        currency: e.currency,
+        status: e.isSettled ? 'settled' : 'unsettled',
+        category: e.category || 'Other',
+        description: e.description || 'No description',
+        paidBy: payerName,
+      };
+    });
+  }
+
+  /**
+   * Get total count of expenses for a group
+   */
+  async getGroupExpenseCount(groupId: bigint): Promise<number> {
+    return await prisma.expense.count({
+      where: { groupId },
+    });
+  }
+
+  /**
+   * Get expense by ID
+   */
+  async getExpenseById(id: bigint): Promise<TransactionDetail | null> {
+    const expense = await prisma.expense.findUnique({
+      where: { id },
+      include: {
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
+    });
+
+    if (!expense) {
+      return null;
+    }
+
+    let payerName = 'Unknown';
+    if (expense.payerType === 'real') {
+      const payer = expense.group.members.find(m => m.id === expense.payerId);
+      payerName = payer?.name || 'Unknown';
+    }
+
+    return {
+      id: expense.id,
+      date: expense.date,
+      merchant: expense.description || 'No description',
+      amount: expense.amountSGD,
+      currency: expense.currency,
+      status: expense.isSettled ? 'settled' : 'unsettled',
+      category: expense.category || 'Other',
+      description: expense.description || 'No description',
+      paidBy: payerName,
+      payerId: expense.payerId,
+      payerRole: 'Unknown', // Not applicable for new system
+    };
+  }
+
+  // Legacy methods for backward compatibility
   async getRecentTransactions(limit: number = 20, offset: number = 0): Promise<TransactionListItem[]> {
     const transactions = await prisma.transaction.findMany({
       include: {
         payer: true,
       },
       orderBy: {
-        createdAt: 'desc', // Sort by when it was recorded, not transaction date
+        createdAt: 'desc',
       },
       take: limit,
       skip: offset,
@@ -47,16 +136,10 @@ export class HistoryService {
     }));
   }
 
-  /**
-   * Get total count of transactions
-   */
   async getTotalTransactionCount(): Promise<number> {
     return await prisma.transaction.count();
   }
 
-  /**
-   * Get transaction by ID
-   */
   async getTransactionById(id: bigint): Promise<TransactionDetail | null> {
     const transaction = await prisma.transaction.findUnique({
       where: { id },

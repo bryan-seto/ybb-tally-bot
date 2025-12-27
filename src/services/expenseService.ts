@@ -3,9 +3,369 @@ import { prisma } from '../lib/prisma';
 
 export class ExpenseService {
   /**
-   * Calculate outstanding balance between users
-   * Returns: { bryanOwes: number, hweiYeenOwes: number }
+   * Calculate outstanding balance for a group
+   * Returns balances for all members showing who owes whom
    */
+  async calculateGroupBalance(groupId: bigint): Promise<{
+    memberBalances: Array<{
+      userId: bigint;
+      userName: string;
+      paid: number;
+      owes: number;
+      isOwed: number;
+      netBalance: number; // positive = others owe them, negative = they owe others
+    }>;
+    totalSpending: number;
+  }> {
+    // Get all unsettled expenses for this group
+    const expenses = await prisma.expense.findMany({
+      where: {
+        groupId,
+        isSettled: false,
+      },
+      include: {
+        splits: {
+          include: {
+            debtor: true,
+            virtualDebtor: true,
+          },
+        },
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
+    });
+
+    // Initialize balance tracking for all members
+    const memberMap = new Map<bigint, {
+      userId: bigint;
+      userName: string;
+      paid: number;
+      owes: number;
+      isOwed: number;
+    }>();
+
+    // Initialize all group members
+    const group = expenses[0]?.group;
+    if (group) {
+      group.members.forEach(member => {
+        memberMap.set(member.id, {
+          userId: member.id,
+          userName: member.name,
+          paid: 0,
+          owes: 0,
+          isOwed: 0,
+        });
+      });
+    }
+
+    // Calculate balances
+    expenses.forEach(expense => {
+      // Track what the payer paid
+      if (expense.payerType === 'real') {
+        const payer = memberMap.get(expense.payerId);
+        if (payer) {
+          payer.paid += expense.amountSGD;
+        }
+      }
+
+      // Track what each debtor owes
+      expense.splits.forEach(split => {
+        const debtorId = split.debtorId || split.virtualDebtorId;
+        if (!debtorId) return;
+
+        const debtor = memberMap.get(debtorId);
+        if (debtor) {
+          // If this debtor is the payer, they don't owe themselves
+          if (expense.payerType === 'real' && expense.payerId === debtorId) {
+            // Payer doesn't owe their own share
+            // But others owe the payer
+            // This is handled below
+          } else {
+            // This debtor owes their share
+            debtor.owes += split.amount;
+            
+            // The payer is owed this amount
+            if (expense.payerType === 'real') {
+              const payer = memberMap.get(expense.payerId);
+              if (payer) {
+                payer.isOwed += split.amount;
+              }
+            }
+          }
+        }
+      });
+    });
+
+    // Calculate net balance and format
+    const memberBalances = Array.from(memberMap.values()).map(member => ({
+      ...member,
+      netBalance: member.isOwed - member.owes, // positive = others owe them
+    }));
+
+    const totalSpending = expenses.reduce((sum, e) => sum + e.amountSGD, 0);
+
+    return {
+      memberBalances: memberBalances.sort((a, b) => b.netBalance - a.netBalance),
+      totalSpending,
+    };
+  }
+
+  /**
+   * Get monthly report for a group
+   */
+  async getGroupMonthlyReport(groupId: bigint, monthOffset: number = 1): Promise<{
+    totalSpend: number;
+    expenseCount: number;
+    topCategories: { category: string; amount: number }[];
+    memberSpending: Array<{
+      userId: bigint;
+      userName: string;
+      paid: number;
+      share: number;
+      categories: { category: string; amount: number }[];
+    }>;
+  }> {
+    const reportDate = getMonthsAgo(monthOffset);
+    const start = getStartOfMonth(reportDate);
+    const end = getEndOfMonth(reportDate);
+    end.setHours(23, 59, 59, 999);
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        groupId,
+        date: {
+          gte: start,
+          lte: end,
+        },
+      },
+      include: {
+        splits: {
+          include: {
+            debtor: true,
+            virtualDebtor: true,
+          },
+        },
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
+    });
+
+    const totalSpend = expenses.reduce((sum, e) => sum + e.amountSGD, 0);
+
+    // Top categories (overall)
+    const categoryMap: { [key: string]: number } = {};
+    expenses.forEach((e) => {
+      const cat = e.category || 'Other';
+      categoryMap[cat] = (categoryMap[cat] || 0) + e.amountSGD;
+    });
+
+    const topCategories = Object.entries(categoryMap)
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    // Member spending breakdown
+    const memberMap = new Map<bigint, {
+      userId: bigint;
+      userName: string;
+      paid: number;
+      share: number;
+      categoryMap: { [key: string]: number };
+    }>();
+
+    // Initialize all group members
+    const group = expenses[0]?.group;
+    if (group) {
+      group.members.forEach(member => {
+        memberMap.set(member.id, {
+          userId: member.id,
+          userName: member.name,
+          paid: 0,
+          share: 0,
+          categoryMap: {},
+        });
+      });
+    }
+
+    // Calculate member spending
+    expenses.forEach(expense => {
+      // Track what payer paid
+      if (expense.payerType === 'real') {
+        const payer = memberMap.get(expense.payerId);
+        if (payer) {
+          payer.paid += expense.amountSGD;
+          const cat = expense.category || 'Other';
+          payer.categoryMap[cat] = (payer.categoryMap[cat] || 0) + expense.amountSGD;
+        }
+      }
+
+      // Track each member's share
+      expense.splits.forEach(split => {
+        const debtorId = split.debtorId || split.virtualDebtorId;
+        if (!debtorId) return;
+
+        const debtor = memberMap.get(debtorId);
+        if (debtor) {
+          debtor.share += split.amount;
+          const cat = expense.category || 'Other';
+          debtor.categoryMap[cat] = (debtor.categoryMap[cat] || 0) + split.amount;
+        }
+      });
+    });
+
+    const memberSpending = Array.from(memberMap.values()).map(member => ({
+      userId: member.userId,
+      userName: member.userName,
+      paid: member.paid,
+      share: member.share,
+      categories: Object.entries(member.categoryMap)
+        .map(([category, amount]) => ({ category, amount }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5),
+    }));
+
+    return {
+      totalSpend,
+      expenseCount: expenses.length,
+      topCategories,
+      memberSpending,
+    };
+  }
+
+  /**
+   * Get all pending (unsettled) expenses for a group
+   */
+  async getGroupPendingExpenses(groupId: bigint): Promise<Array<{
+    id: bigint;
+    amount: number;
+    currency: string;
+    category: string;
+    description: string;
+    date: Date;
+    payerName: string;
+    splitCount: number;
+  }>> {
+    const expenses = await prisma.expense.findMany({
+      where: {
+        groupId,
+        isSettled: false,
+      },
+      include: {
+        splits: true,
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
+      orderBy: {
+        date: 'desc',
+      },
+    });
+
+    return expenses.map(e => {
+      // Get payer name
+      let payerName = 'Unknown';
+      if (e.payerType === 'real') {
+        const payer = e.group.members.find(m => m.id === e.payerId);
+        payerName = payer?.name || 'Unknown';
+      }
+
+      return {
+        id: e.id,
+        amount: e.amountSGD,
+        currency: e.currency,
+        category: e.category || 'Other',
+        description: e.description || 'No description',
+        date: e.date,
+        payerName,
+        splitCount: e.splits.length,
+      };
+    });
+  }
+
+  /**
+   * Format group balance message
+   */
+  async getGroupBalanceMessage(groupId: bigint): Promise<string> {
+    const balance = await this.calculateGroupBalance(groupId);
+
+    if (balance.memberBalances.length === 0) {
+      return '✅ No expenses recorded yet.';
+    }
+
+    let message = `💰 **Balance Summary**\n\n`;
+    message += `Total Group Spending: SGD $${balance.totalSpending.toFixed(2)}\n\n`;
+
+    // Show individual balances
+    message += `**Individual Balances:**\n`;
+    balance.memberBalances.forEach(member => {
+      if (Math.abs(member.netBalance) > 0.01) {
+        if (member.netBalance > 0) {
+          message += `• ${member.userName}: Owed SGD $${member.netBalance.toFixed(2)}\n`;
+        } else {
+          message += `• ${member.userName}: Owes SGD $${Math.abs(member.netBalance).toFixed(2)}\n`;
+        }
+      } else {
+        message += `• ${member.userName}: Settled ✅\n`;
+      }
+    });
+
+    message += `\n**Who owes whom:**\n\n`;
+
+    // Show who owes whom (simplified - show net balances)
+    const debtors = balance.memberBalances.filter(m => m.netBalance < -0.01);
+    const creditors = balance.memberBalances.filter(m => m.netBalance > 0.01);
+
+    if (debtors.length === 0 && creditors.length === 0) {
+      message += `✅ All settled!`;
+      return message;
+    }
+
+    // Match debtors to creditors
+    const sortedDebtors = [...debtors].sort((a, b) => a.netBalance - b.netBalance); // Most negative first
+    const sortedCreditors = [...creditors].sort((a, b) => b.netBalance - a.netBalance); // Most positive first
+
+    let debtorIndex = 0;
+    let creditorIndex = 0;
+    const debtorBalances = sortedDebtors.map(d => ({ ...d, remaining: Math.abs(d.netBalance) }));
+    const creditorBalances = sortedCreditors.map(c => ({ ...c, remaining: c.netBalance }));
+
+    while (debtorIndex < debtorBalances.length && creditorIndex < creditorBalances.length) {
+      const debtor = debtorBalances[debtorIndex];
+      const creditor = creditorBalances[creditorIndex];
+      
+      if (debtor.remaining < 0.01) {
+        debtorIndex++;
+        continue;
+      }
+      if (creditor.remaining < 0.01) {
+        creditorIndex++;
+        continue;
+      }
+      
+      const amount = Math.min(debtor.remaining, creditor.remaining);
+      
+      if (amount > 0.01) {
+        message += `👉 ${debtor.userName} owes ${creditor.userName}: SGD $${amount.toFixed(2)}\n`;
+        
+        debtor.remaining -= amount;
+        creditor.remaining -= amount;
+      } else {
+        break;
+      }
+    }
+
+    return message;
+  }
+
+  // Legacy methods for backward compatibility (VIP users)
   async calculateOutstandingBalance(): Promise<{
     bryanOwes: number;
     hweiYeenOwes: number;
@@ -55,9 +415,6 @@ export class ExpenseService {
     return { bryanOwes, hweiYeenOwes };
   }
 
-  /**
-   * Get monthly report data
-   */
   async getMonthlyReport(monthOffset: number = 1): Promise<{
     totalSpend: number;
     bryanPaid: number;
@@ -71,29 +428,8 @@ export class ExpenseService {
     const start = getStartOfMonth(reportDate);
     const end = getEndOfMonth(reportDate);
 
-    // Query all transactions first to debug
-    const allTransactions = await prisma.transaction.findMany({
-      include: {
-        payer: true,
-      },
-      orderBy: {
-        date: 'desc',
-      },
-      take: 10, // Get last 10 for debugging
-    });
-
-    console.log('Sample transactions:', allTransactions.map(t => ({
-      id: t.id.toString(),
-      date: t.date.toISOString(),
-      amount: t.amountSGD,
-    })));
-
-    // Query transactions - use a more flexible date range to handle timezone issues
-    // Convert dates to UTC for comparison since Prisma stores dates in UTC
     const startUTC = new Date(start.getTime());
     const endUTC = new Date(end.getTime());
-    
-    // Add a small buffer to handle timezone edge cases
     endUTC.setHours(23, 59, 59, 999);
 
     const transactions = await prisma.transaction.findMany({
@@ -106,15 +442,6 @@ export class ExpenseService {
       include: {
         payer: true,
       },
-    });
-
-    console.log('Monthly report query:', {
-      monthOffset,
-      reportDate: reportDate.toISOString(),
-      start: startUTC.toISOString(),
-      end: endUTC.toISOString(),
-      foundTransactions: transactions.length,
-      transactionDates: transactions.map(t => t.date.toISOString()),
     });
 
     const totalSpend = transactions.reduce((sum, t) => sum + t.amountSGD, 0);
@@ -136,11 +463,10 @@ export class ExpenseService {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    // Bryan's categories - calculate his share of all transactions by category
+    // Bryan's categories
     const bryanCategoryMap: { [key: string]: number } = {};
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      // Use custom split if available, otherwise default to 70%
       const bryanPercent = t.bryanPercentage ?? 0.7;
       const bryanShare = t.amountSGD * bryanPercent;
       bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + bryanShare;
@@ -151,11 +477,10 @@ export class ExpenseService {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    // Hwei Yeen's categories - calculate her share of all transactions by category
+    // Hwei Yeen's categories
     const hweiYeenCategoryMap: { [key: string]: number } = {};
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      // Use custom split if available, otherwise default to 30%
       const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
       const hweiYeenShare = t.amountSGD * hweiYeenPercent;
       hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + hweiYeenShare;
@@ -177,10 +502,6 @@ export class ExpenseService {
     };
   }
 
-  /**
-   * Calculate amount owed from a single transaction
-   * Returns: { bryanOwes: number, hweiYeenOwes: number }
-   */
   calculateTransactionOwed(
     amount: number, 
     payerRole: 'Bryan' | 'HweiYeen',
@@ -190,7 +511,6 @@ export class ExpenseService {
     bryanOwes: number;
     hweiYeenOwes: number;
   } {
-    // Use custom split if provided, otherwise default to 70/30
     const bryanPercent = bryanPercentage ?? 0.7;
     const hweiYeenPercent = hweiYeenPercentage ?? 0.3;
     
@@ -201,19 +521,14 @@ export class ExpenseService {
     let hweiYeenOwes = 0;
 
     if (payerRole === 'Bryan') {
-      // Bryan paid, so HweiYeen owes Bryan her share
       hweiYeenOwes = hweiYeenShare;
     } else {
-      // HweiYeen paid, so Bryan owes HweiYeen his share
       bryanOwes = bryanShare;
     }
 
     return { bryanOwes, hweiYeenOwes };
   }
 
-  /**
-   * Format transaction-specific amount owed message
-   */
   getTransactionOwedMessage(
     amount: number, 
     payerRole: 'Bryan' | 'HweiYeen',
@@ -231,9 +546,6 @@ export class ExpenseService {
     return '';
   }
 
-  /**
-   * Get all pending (unsettled) transactions
-   */
   async getAllPendingTransactions(): Promise<Array<{
     id: bigint;
     amount: number;
@@ -259,7 +571,6 @@ export class ExpenseService {
     });
 
     return transactions.map(t => {
-      // Convert null to undefined for TypeScript compatibility
       const bryanPercent = t.bryanPercentage ?? undefined;
       const hweiYeenPercent = t.hweiYeenPercentage ?? undefined;
       const owed = this.calculateTransactionOwed(
@@ -283,9 +594,6 @@ export class ExpenseService {
     });
   }
 
-  /**
-   * Format outstanding balance message
-   */
   async getOutstandingBalanceMessage(): Promise<string> {
     const balance = await this.calculateOutstandingBalance();
 
@@ -296,7 +604,6 @@ export class ExpenseService {
     let message = '💰 **Outstanding (amount owed):**\n';
     
     if (balance.bryanOwes > 0 && balance.hweiYeenOwes > 0) {
-      // Both owe each other (shouldn't happen with 70/30 split, but handle it)
       message += `Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n`;
       message += `Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     } else if (balance.bryanOwes > 0) {
@@ -308,8 +615,3 @@ export class ExpenseService {
     return message;
   }
 }
-
-
-
-
-

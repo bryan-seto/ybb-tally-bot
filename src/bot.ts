@@ -862,28 +862,80 @@ export class YBBTallyBot {
   }
 
   /**
-   * Handle settle up
+   * Handle settle up (group-based)
    */
   private async handleSettleUp(ctx: any) {
     try {
-      const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
       
-      // Parse balance to get net debt
-      // Format: "Madam Hwei Yeen owes Sir Bryan SGD $XX.XX" or vice versa
+      if (!isGroup || !chatId) {
+        await ctx.reply('This command can only be used in a group.');
+        return;
+      }
+
+      // Get group
+      const group = await this.groupService.getGroupByChatId(chatId);
+      if (!group) {
+        await ctx.reply('Group not found. Please add the bot to the group first.');
+        return;
+      }
+
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      let balanceMessage;
+      if (isVIP) {
+        balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+      } else {
+        // Get group balance
+        const balance = await this.expenseService.calculateGroupBalance(group.id);
+        
+        if (balance.memberBalances.length === 0 || balance.memberBalances.every(m => Math.abs(m.netBalance) < 0.01)) {
+          await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
+          return;
+        }
+
+        // Build message showing who owes whom
+        let message = '💰 **Outstanding Balances:**\n\n';
+        const debtors = balance.memberBalances.filter(m => m.netBalance < -0.01);
+        const creditors = balance.memberBalances.filter(m => m.netBalance > 0.01);
+
+        if (debtors.length === 0 && creditors.length === 0) {
+          await ctx.reply('✅ All expenses are already settled!');
+          return;
+        }
+
+        // Show detailed breakdown
+        debtors.forEach(debtor => {
+          const amountOwed = Math.abs(debtor.netBalance);
+          creditors.forEach(creditor => {
+            if (creditor.netBalance > 0.01) {
+              message += `👉 ${debtor.userName} owes ${creditor.userName}: SGD $${amountOwed.toFixed(2)}\n`;
+            }
+          });
+        });
+
+        balanceMessage = message;
+      }
+      
+      // Parse balance to get debts (for both legacy and new format)
       const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
       
       if (match) {
-        const debtor = match[1].replace(/Sir|Madam/gi, '').trim();
-        const creditor = match[2].replace(/Sir|Madam/gi, '').trim();
+        const debtor = match[1].trim();
+        const creditor = match[2].trim();
         const amount = parseFloat(match[3]);
         
         await ctx.reply(
           `${balanceMessage}\n\n` +
-          `Mark this as paid and reset balance to $0?`,
+          `Mark all outstanding balances as settled?`,
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
+                [{ text: '✅ Yes, Settle All', callback_data: `settle_confirm_${group.id}` }],
                 [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
               ],
             },
@@ -891,7 +943,6 @@ export class YBBTallyBot {
           }
         );
       } else {
-        // No outstanding balance
         await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
       }
     } catch (error: any) {
@@ -901,98 +952,40 @@ export class YBBTallyBot {
   }
 
   /**
-   * Handle check balance
+   * Handle check balance (group-based)
    */
   private async handleCheckBalance(ctx: any) {
     try {
-      // Get users
-      const bryan = await prisma.user.findFirst({
-        where: { role: 'Bryan' },
-      });
-      const hweiYeen = await prisma.user.findFirst({
-        where: { role: 'HweiYeen' },
-      });
-
-      if (!bryan || !hweiYeen) {
-        await ctx.reply('Error: Users not found in database.');
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      
+      if (!isGroup || !chatId) {
+        await ctx.reply('This command can only be used in a group.');
         return;
       }
 
-      // Get all unsettled transactions with their split percentages
-      const transactions = await prisma.transaction.findMany({
-        where: {
-          isSettled: false,
-        },
-        include: {
-          payer: true,
-        },
-      });
-
-      let bryanPaid = 0;
-      let hweiYeenPaid = 0;
-      let bryanShare = 0;
-      let hweiYeenShare = 0;
-      
-      // Track split percentages for display
-      let totalAmount = 0;
-      let weightedBryanPercent = 0;
-      let weightedHweiYeenPercent = 0;
-
-      transactions.forEach((t) => {
-        if (t.payerId === bryan.id) {
-          bryanPaid += t.amountSGD;
-        } else if (t.payerId === hweiYeen.id) {
-          hweiYeenPaid += t.amountSGD;
-        }
-        
-        // Use custom split if available, otherwise default to 70/30
-        const bryanPercent = t.bryanPercentage ?? 0.7;
-        const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
-        
-        bryanShare += t.amountSGD * bryanPercent;
-        hweiYeenShare += t.amountSGD * hweiYeenPercent;
-        
-        // Calculate weighted average for display
-        totalAmount += t.amountSGD;
-        weightedBryanPercent += t.amountSGD * bryanPercent;
-        weightedHweiYeenPercent += t.amountSGD * hweiYeenPercent;
-      });
-
-      // Calculate weighted average percentages
-      const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
-      const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
-      
-      const totalSpending = bryanPaid + hweiYeenPaid;
-      
-      // Calculate net: positive = overpaid (other person owes them), negative = underpaid (they owe)
-      const bryanNet = bryanPaid - bryanShare;
-      const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
-      
-      let message = `💰 **Balance Summary**\n\n`;
-      message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
-      message += `Total Paid by Hwei Yeen (Unsettled): SGD $${hweiYeenPaid.toFixed(2)}\n`;
-      message += `Total Group Spending: SGD $${totalSpending.toFixed(2)}\n\n`;
-      message += `**Split Calculation (${avgBryanPercent.toFixed(0)}/${avgHweiYeenPercent.toFixed(0)}):**\n`;
-      message += `Bryan's share (${avgBryanPercent.toFixed(0)}%): SGD $${bryanShare.toFixed(2)}\n`;
-      message += `Hwei Yeen's share (${avgHweiYeenPercent.toFixed(0)}%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
-      
-      if (bryanNet > 0) {
-        // Bryan overpaid, so Hwei Yeen owes Bryan
-        message += `👉 Hwei Yeen owes Bryan: SGD $${bryanNet.toFixed(2)}`;
-      } else if (hweiYeenNet > 0) {
-        // Hwei Yeen overpaid, so Bryan owes Hwei Yeen
-        message += `👉 Bryan owes Hwei Yeen: SGD $${hweiYeenNet.toFixed(2)}`;
-      } else if (bryanNet < 0) {
-        // Bryan underpaid, so Bryan owes Hwei Yeen
-        message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(bryanNet).toFixed(2)}`;
-      } else if (hweiYeenNet < 0) {
-        // Hwei Yeen underpaid, so Hwei Yeen owes Bryan
-        message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(hweiYeenNet).toFixed(2)}`;
-      } else {
-        message += `✅ All settled!`;
+      // Get group
+      const group = await this.groupService.getGroupByChatId(chatId);
+      if (!group) {
+        await ctx.reply('Group not found. Please add the bot to the group first.');
+        return;
       }
-      
-      await ctx.reply(message, { parse_mode: 'Markdown' });
+
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      if (isVIP) {
+        // Use legacy method for VIP users
+        const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+        await ctx.reply(balanceMessage, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Use new group-based method
+      const balanceMessage = await this.expenseService.getGroupBalanceMessage(group.id);
+      await ctx.reply(balanceMessage, { parse_mode: 'Markdown' });
     } catch (error: any) {
       console.error('Error handling check balance:', error);
       await ctx.reply('Sorry, I encountered an error. Please try again.');
@@ -1000,28 +993,71 @@ export class YBBTallyBot {
   }
 
   /**
-   * Handle view unsettled
+   * Handle view unsettled (group-based)
    */
   private async handleViewUnsettled(ctx: any) {
     try {
-      const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
       
-      if (pendingTransactions.length === 0) {
+      if (!isGroup || !chatId) {
+        await ctx.reply('This command can only be used in a group.');
+        return;
+      }
+
+      // Get group
+      const group = await this.groupService.getGroupByChatId(chatId);
+      if (!group) {
+        await ctx.reply('Group not found. Please add the bot to the group first.');
+        return;
+      }
+
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      let pendingExpenses;
+      if (isVIP) {
+        // Use legacy method for VIP users
+        const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+        if (pendingTransactions.length === 0) {
+          await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
+          return;
+        }
+        
+        const last10 = pendingTransactions.slice(0, 10);
+        let message = `🧾 **Unsettled Transactions**\n\n`;
+        
+        last10.forEach((t, index) => {
+          const dateStr = formatDate(t.date, 'dd MMM yyyy');
+          message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+        });
+        
+        message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Use new group-based method
+      pendingExpenses = await this.expenseService.getGroupPendingExpenses(group.id);
+      
+      if (pendingExpenses.length === 0) {
         await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
         return;
       }
       
-      // Get last 10 transactions
-      const last10 = pendingTransactions.slice(0, 10);
+      // Get last 10 expenses
+      const last10 = pendingExpenses.slice(0, 10);
       
-      let message = `🧾 **Unsettled Transactions**\n\n`;
+      let message = `🧾 **Unsettled Expenses**\n\n`;
       
-      last10.forEach((t, index) => {
-        const dateStr = formatDate(t.date, 'dd MMM yyyy');
-        message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+      last10.forEach((e, index) => {
+        const dateStr = formatDate(e.date, 'dd MMM yyyy');
+        message += `${index + 1}. ${dateStr} - ${e.description} (SGD $${e.amount.toFixed(2)}) - ${e.payerName} (${e.splitCount} people)\n`;
       });
       
-      message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
+      message += `\n**Total Unsettled Expenses: ${pendingExpenses.length}**`;
       
       await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error: any) {
@@ -1035,8 +1071,79 @@ export class YBBTallyBot {
    */
   private async handleReports(ctx: any) {
     try {
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      if (isVIP) {
+        // Use legacy method for VIP users
+        await ctx.reply('Generating monthly report...');
+        const report = await this.expenseService.getMonthlyReport(0);
+        const reportDate = getMonthsAgo(0);
+        const monthName = formatDate(reportDate, 'MMMM yyyy');
+        
+        const chart = new QuickChart();
+        chart.setConfig({
+          type: 'bar',
+          data: {
+            labels: report.topCategories.map((c) => c.category),
+            datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
+          },
+        });
+        chart.setWidth(800);
+        chart.setHeight(400);
+        const chartUrl = chart.getUrl();
+        
+        const message =
+          `📊 **Monthly Report - ${monthName}**\n\n` +
+          `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
+          `Transactions: ${report.transactionCount}\n\n` +
+          `**Top Categories - Bryan:**\n` +
+          (report.bryanCategories.length > 0
+            ? report.bryanCategories
+                .map((c) => {
+                  const percentage = report.bryanPaid > 0 
+                    ? Math.round((c.amount / report.bryanPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
+                .join('\n')
+            : 'No categories found') +
+          `\n\n**Top Categories - Hwei Yeen:**\n` +
+          (report.hweiYeenCategories.length > 0
+            ? report.hweiYeenCategories
+                .map((c) => {
+                  const percentage = report.hweiYeenPaid > 0 
+                    ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
+                .join('\n')
+            : 'No categories found') +
+          `\n\n[View Chart](${chartUrl})`;
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Use group-based method
+      if (!isGroup || !chatId) {
+        await ctx.reply('This command can only be used in a group.');
+        return;
+      }
+
+      const group = await this.groupService.getGroupByChatId(chatId);
+      if (!group) {
+        await ctx.reply('Group not found. Please add the bot to the group first.');
+        return;
+      }
+
       await ctx.reply('Generating monthly report...');
-      const report = await this.expenseService.getMonthlyReport(0);
+      const report = await this.expenseService.getGroupMonthlyReport(group.id, 0);
       const reportDate = getMonthsAgo(0);
       const monthName = formatDate(reportDate, 'MMMM yyyy');
       
@@ -1052,33 +1159,29 @@ export class YBBTallyBot {
       chart.setHeight(400);
       const chartUrl = chart.getUrl();
       
-      const message =
-        `📊 **Monthly Report - ${monthName}**\n\n` +
-        `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
-        `Transactions: ${report.transactionCount}\n\n` +
-        `**Top Categories - Bryan:**\n` +
-        (report.bryanCategories.length > 0
-          ? report.bryanCategories
-              .map((c) => {
-                const percentage = report.bryanPaid > 0 
-                  ? Math.round((c.amount / report.bryanPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n**Top Categories - Hwei Yeen:**\n` +
-        (report.hweiYeenCategories.length > 0
-          ? report.hweiYeenCategories
-              .map((c) => {
-                const percentage = report.hweiYeenPaid > 0 
-                  ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n[View Chart](${chartUrl})`;
+      let message = `📊 **Monthly Report - ${monthName}**\n\n`;
+      message += `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n`;
+      message += `Expenses: ${report.expenseCount}\n\n`;
+      
+      // Show spending breakdown by member
+      report.memberSpending.forEach((member) => {
+        if (member.share > 0 || member.paid > 0) {
+          message += `**Top Categories - ${member.userName}:**\n`;
+          if (member.categories.length > 0) {
+            member.categories.forEach((c) => {
+              const percentage = member.share > 0 
+                ? Math.round((c.amount / member.share) * 100) 
+                : 0;
+              message += `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)\n`;
+            });
+          } else {
+            message += 'No categories found\n';
+          }
+          message += '\n';
+        }
+      });
+      
+      message += `[View Chart](${chartUrl})`;
       
       await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error: any) {
@@ -1165,17 +1268,45 @@ export class YBBTallyBot {
    */
   private async showHistory(ctx: any, offset: number = 0) {
     try {
-      const transactions = await this.historyService.getRecentTransactions(20, offset);
-      const totalCount = await this.historyService.getTotalTransactionCount();
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      let transactions;
+      let totalCount;
+
+      if (isVIP) {
+        // Use legacy method for VIP users
+        transactions = await this.historyService.getRecentTransactions(20, offset);
+        totalCount = await this.historyService.getTotalTransactionCount();
+      } else {
+        // Use group-based method
+        if (!isGroup || !chatId) {
+          await ctx.reply('This command can only be used in a group.');
+          return;
+        }
+
+        const group = await this.groupService.getGroupByChatId(chatId);
+        if (!group) {
+          await ctx.reply('Group not found. Please add the bot to the group first.');
+          return;
+        }
+
+        transactions = await this.historyService.getGroupExpenses(group.id, 20, offset);
+        totalCount = await this.historyService.getGroupExpenseCount(group.id);
+      }
 
       if (transactions.length === 0) {
-        const message = '📜 **Transaction History**\n\nNo transactions found.';
+        const message = '📜 **Expense History**\n\nNo expenses found.';
         if (ctx.callbackQuery) {
           await ctx.answerCbQuery();
           try {
             await ctx.editMessageText(message, { parse_mode: 'Markdown' });
           } catch (editError) {
-            // If edit fails, send a new message
             await ctx.reply(message, { parse_mode: 'Markdown' });
           }
         } else {
@@ -1185,7 +1316,7 @@ export class YBBTallyBot {
       }
 
       // Build the list message
-      const lines = ['📜 **Transaction History**\n'];
+      const lines = ['📜 **Expense History**\n'];
       
       for (const tx of transactions) {
         const line = this.historyService.formatTransactionListItem(tx);
@@ -1215,7 +1346,6 @@ export class YBBTallyBot {
             }
           );
         } catch (editError: any) {
-          // If edit fails, send a new message
           console.error('Error editing history message:', editError);
           await ctx.reply(message, {
             parse_mode: 'Markdown',
@@ -1249,18 +1379,37 @@ export class YBBTallyBot {
   }
 
   /**
-   * Show transaction detail card
+   * Show transaction/expense detail card
    */
   private async showTransactionDetail(ctx: any, transactionId: bigint) {
     try {
-      const transaction = await this.historyService.getTransactionById(transactionId);
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      
+      // Check if VIP user (use legacy method)
+      const telegramId = ctx.from?.id;
+      const VIP_IDS = [109284773, 424894363];
+      const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+      let transaction;
+      if (isVIP) {
+        transaction = await this.historyService.getTransactionById(transactionId);
+      } else {
+        // Try expense first (new system)
+        transaction = await this.historyService.getExpenseById(transactionId);
+        
+        // Fallback to transaction if not found
+        if (!transaction) {
+          transaction = await this.historyService.getTransactionById(transactionId);
+        }
+      }
 
       if (!transaction) {
-        const message = `❌ Transaction \`/${transactionId}\` not found.`;
+        const message = `❌ Expense \`/${transactionId}\` not found.`;
         if (ctx.message) {
           await ctx.reply(message, { parse_mode: 'Markdown' });
         } else if (ctx.callbackQuery) {
-          await ctx.answerCbQuery('Transaction not found', { show_alert: true });
+          await ctx.answerCbQuery('Expense not found', { show_alert: true });
         }
         return;
       }
@@ -1299,7 +1448,7 @@ export class YBBTallyBot {
       }
     } catch (error: any) {
       console.error('Error showing transaction detail:', error);
-      await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
+      await ctx.reply('Sorry, I encountered an error retrieving expense details. Please try again.');
     }
   }
 
@@ -2251,27 +2400,86 @@ export class YBBTallyBot {
       }
 
       // Handle settle confirm
-      if (callbackData === 'settle_confirm') {
+      if (callbackData === 'settle_confirm' || callbackData.startsWith('settle_confirm_')) {
         await ctx.answerCbQuery();
-        const result = await prisma.transaction.updateMany({
-          where: { isSettled: false },
+        
+        const chatId = ctx.chat?.id;
+        const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+        
+        // Check if VIP user (use legacy method)
+        const telegramId = ctx.from?.id;
+        const VIP_IDS = [109284773, 424894363];
+        const isVIP = telegramId && VIP_IDS.includes(telegramId);
+
+        if (isVIP) {
+          // Legacy: settle all transactions
+          const result = await prisma.transaction.updateMany({
+            where: { isSettled: false },
+            data: { isSettled: true },
+          });
+
+          if (result.count > 0) {
+            const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+            const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
+            
+            let settleMessage = '🤝 All Settled! Balance reset.';
+            if (match) {
+              const debtor = match[1].trim();
+              const creditor = match[2].trim();
+              const amount = match[3];
+              settleMessage += ` Payment of $${amount} recorded from ${debtor} to ${creditor}.`;
+            }
+            
+            await ctx.reply(settleMessage, this.getMainMenuKeyboard());
+          } else {
+            await ctx.reply('✅ All expenses are already settled!', this.getMainMenuKeyboard());
+          }
+          return;
+        }
+
+        // New: settle group expenses
+        if (!isGroup || !chatId) {
+          await ctx.reply('This command can only be used in a group.');
+          return;
+        }
+
+        const group = await this.groupService.getGroupByChatId(chatId);
+        if (!group) {
+          await ctx.reply('Group not found.');
+          return;
+        }
+
+        // Get balance before settling
+        const balance = await this.expenseService.calculateGroupBalance(group.id);
+        const debtors = balance.memberBalances.filter(m => m.netBalance < -0.01);
+        const creditors = balance.memberBalances.filter(m => m.netBalance > 0.01);
+
+        // Settle all expenses for this group
+        const result = await prisma.expense.updateMany({
+          where: {
+            groupId: group.id,
+            isSettled: false,
+          },
           data: { isSettled: true },
         });
 
         if (result.count > 0) {
-          // Get balance to determine who owes whom
-          const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
-          const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
+          let settleMessage = '🤝 All Settled! Balance reset.\n\n';
+          settleMessage += '**Payments recorded:**\n';
           
-          let settleMessage = '🤝 All Settled! Balance reset.';
-          if (match) {
-            const debtor = match[1].replace(/Sir|Madam/gi, '').trim();
-            const creditor = match[2].replace(/Sir|Madam/gi, '').trim();
-            const amount = match[3];
-            settleMessage += ` @${creditor}, payment of $${amount} recorded from @${debtor}.`;
-          }
+          debtors.forEach(debtor => {
+            const amountOwed = Math.abs(debtor.netBalance);
+            creditors.forEach(creditor => {
+              if (creditor.netBalance > 0.01) {
+                settleMessage += `• ${debtor.userName} → ${creditor.userName}: SGD $${amountOwed.toFixed(2)}\n`;
+              }
+            });
+          });
           
-          await ctx.reply(settleMessage, this.getMainMenuKeyboard());
+          await ctx.reply(settleMessage, { 
+            parse_mode: 'Markdown',
+            ...this.getMainMenuKeyboard() 
+          });
         } else {
           await ctx.reply('✅ All expenses are already settled!', this.getMainMenuKeyboard());
         }
@@ -2582,17 +2790,34 @@ export class YBBTallyBot {
         return;
       }
 
-      // Handle transaction settle (from detail card)
+      // Handle transaction/expense settle (from detail card)
       if (callbackData.startsWith('tx_settle_')) {
         await ctx.answerCbQuery();
-        const transactionId = BigInt(callbackData.replace('tx_settle_', ''));
-        await prisma.transaction.update({
-          where: { id: transactionId },
-          data: { isSettled: true },
-        });
-        await ctx.answerCbQuery('✅ Transaction marked as settled!', { show_alert: true });
+        const expenseId = BigInt(callbackData.replace('tx_settle_', ''));
+        
+        // Try to update as expense first (new system)
+        try {
+          await prisma.expense.update({
+            where: { id: expenseId },
+            data: { isSettled: true },
+          });
+          await ctx.answerCbQuery('✅ Expense marked as settled!', { show_alert: true });
+        } catch {
+          // Fallback to transaction (legacy)
+          try {
+            await prisma.transaction.update({
+              where: { id: expenseId },
+              data: { isSettled: true },
+            });
+            await ctx.answerCbQuery('✅ Transaction marked as settled!', { show_alert: true });
+          } catch {
+            await ctx.answerCbQuery('❌ Expense not found', { show_alert: true });
+            return;
+          }
+        }
+        
         // Refresh the transaction detail card
-        await this.showTransactionDetail(ctx, transactionId);
+        await this.showTransactionDetail(ctx, expenseId);
         return;
       }
 
@@ -2625,11 +2850,29 @@ export class YBBTallyBot {
       // Handle transaction delete (from detail card)
       if (callbackData.startsWith('tx_delete_')) {
         await ctx.answerCbQuery();
-        const transactionId = BigInt(callbackData.replace('tx_delete_', ''));
-        await prisma.transaction.delete({
-          where: { id: transactionId },
-        });
-        await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+        const expenseId = BigInt(callbackData.replace('tx_delete_', ''));
+        
+        // Try to delete as expense first (new system)
+        try {
+          // Delete splits first (foreign key constraint)
+          await prisma.split.deleteMany({
+            where: { expenseId },
+          });
+          await prisma.expense.delete({
+            where: { id: expenseId },
+          });
+          await ctx.reply('✅ Expense deleted.', this.getMainMenuKeyboard());
+        } catch {
+          // Fallback to transaction (legacy)
+          try {
+            await prisma.transaction.delete({
+              where: { id: expenseId },
+            });
+            await ctx.reply('✅ Transaction deleted.', this.getMainMenuKeyboard());
+          } catch {
+            await ctx.reply('❌ Expense not found.', this.getMainMenuKeyboard());
+          }
+        }
         return;
       }
 
@@ -3381,9 +3624,9 @@ export class YBBTallyBot {
         }
       });
 
-      // Add "Add Person" and "Confirm" buttons
+      // Add "Add Person" and "Done" buttons
       keyboard.push([Markup.button.callback('➕ Add Person', 'split_add_person')]);
-      keyboard.push([Markup.button.callback('✅ Confirm', 'split_confirm')]);
+      keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
 
       // Store in session
       if (!ctx.session) ctx.session = {};
