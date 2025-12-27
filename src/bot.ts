@@ -3684,7 +3684,9 @@ export class YBBTallyBot {
             await this.showMainMenu(
               ctx,
               `👋 Welcome back, ${installerName}! Since you are still on your trial (${daysLeft} days left), I've activated this group for free too!\n\n` +
-              `Note: ${groupCount === 1 ? 'This group' : `All ${groupCount} groups`} will require a subscription on ${trialEndDate.toLocaleDateString()}.`
+              `Note: ${groupCount === 1 ? 'This group' : `All ${groupCount} groups`} will require a subscription on ${trialEndDate.toLocaleDateString()}.\n\n` +
+              `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
+              `👇 Or tap a button below:`
             );
           }
         }
