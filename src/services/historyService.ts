@@ -182,7 +182,8 @@ export class HistoryService {
   }
 
   /**
-   * Format transaction list item
+   * Format transaction list item (plain text, no markdown)
+   * Format: /21 🔴 MERCHANT - $12.08
    */
   formatTransactionListItem(tx: TransactionListItem): string {
     const statusEmoji = this.getStatusEmoji(tx.status);
@@ -190,10 +191,13 @@ export class HistoryService {
       ? `$${tx.amount.toFixed(2)}`
       : `${tx.currency} ${tx.amount.toFixed(2)}`;
     
-    // Escape merchant name to prevent Markdown parsing errors
-    const merchant = this.escapeMarkdown(tx.merchant);
+    // Escape special characters for Telegram (parentheses, hyphens, etc.)
+    // Telegram uses backslash escaping for special chars in plain text
+    const merchant = tx.merchant
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/[()\-]/g, '\\$&');  // Escape parentheses and hyphens
     
-    return `/${tx.id} ${statusEmoji} *${merchant}* - ${amountStr}`;
+    return `/${tx.id} ${statusEmoji} ${merchant} - ${amountStr}`;
   }
 
   /**

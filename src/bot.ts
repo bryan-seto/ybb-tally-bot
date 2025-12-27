@@ -1353,54 +1353,47 @@ export class YBBTallyBot {
       }
 
       if (transactions.length === 0) {
-        const message = '📜 **Expense History**\n\nNo expenses found.';
+        const message = '📜 Transaction History\n\nNo expenses found.';
+        const keyboard = [[Markup.button.callback('🔙 Back to Menu', 'menu_show')]];
+        const replyMarkup = Markup.inlineKeyboard(keyboard);
+        
         if (ctx.callbackQuery) {
           await ctx.answerCbQuery();
           try {
-            await ctx.editMessageText(message, { parse_mode: 'Markdown' });
+            await ctx.editMessageText(message, {
+              reply_markup: replyMarkup.reply_markup,
+            });
           } catch (editError) {
-            await ctx.reply(message, { parse_mode: 'Markdown' });
+            await ctx.reply(message, {
+              reply_markup: replyMarkup.reply_markup,
+            });
           }
         } else {
-          await ctx.reply(message, { parse_mode: 'Markdown' });
+          await ctx.reply(message, {
+            reply_markup: replyMarkup.reply_markup,
+          });
         }
         return;
       }
 
-      // Build message header
-      const message = '📜 **Expense History**\n\nTap an item to view details:';
-
-      // Build clickable buttons for each transaction
-      const keyboard: any[] = [];
+      // Build history as text list (not buttons) - format: /21 🔴 MERCHANT - $12.08
+      let message = '📜 Transaction History\n\n';
       
-      // Add transaction buttons (2 per row)
-      const transactionRows: any[] = [];
-      transactions.forEach((tx, index) => {
-        const statusEmoji = this.historyService.getStatusEmoji(tx.status);
-        const amountStr = tx.currency === 'SGD' 
-          ? `$${tx.amount.toFixed(2)}`
-          : `${tx.currency} ${tx.amount.toFixed(2)}`;
-        
-        // Escape merchant name
-        const merchant = tx.merchant.replace(/([_*\[\]()~`>#+=|{}.!-])/g, '\\$1');
-        const buttonText = `${statusEmoji} ${merchant} - ${amountStr}`;
-        
-        transactionRows.push(
-          Markup.button.callback(
-            buttonText,
-            `tx_detail_${tx.id}`
-          )
-        );
-        
-        // Add row every 2 buttons or at end
-        if (transactionRows.length === 2 || index === transactions.length - 1) {
-          keyboard.push(transactionRows.slice());
-          transactionRows.length = 0;
-        }
+      // Add each transaction as a clickable line
+      transactions.forEach((tx) => {
+        message += this.historyService.formatTransactionListItem(tx) + '\n';
       });
 
-      // Add pagination and menu buttons
-      if (offset + 20 < totalCount) {
+      // Add pagination info if needed
+      if (offset + transactions.length < totalCount) {
+        message += `\n_Showing ${offset + 1}-${offset + transactions.length} of ${totalCount}_`;
+      }
+
+      // Build keyboard with only pagination and menu buttons (no transaction buttons)
+      const keyboard: any[] = [];
+      
+      // Add pagination if needed
+      if (offset + transactions.length < totalCount) {
         keyboard.push([
           Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
         ]);
@@ -1418,20 +1411,17 @@ export class YBBTallyBot {
           await ctx.editMessageText(
             message,
             {
-              parse_mode: 'Markdown',
               reply_markup: replyMarkup.reply_markup,
             }
           );
         } catch (editError: any) {
           console.error('Error editing history message:', editError);
           await ctx.reply(message, {
-            parse_mode: 'Markdown',
             reply_markup: replyMarkup.reply_markup,
           });
         }
       } else {
         await ctx.reply(message, {
-          parse_mode: 'Markdown',
           reply_markup: replyMarkup.reply_markup,
         });
       }
