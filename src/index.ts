@@ -48,9 +48,18 @@ app.get('/health', (req: Request, res: Response) => {
 // Add request logging middleware for debugging
 app.use((req: Request, res: Response, next) => {
   if (req.path !== '/health' && req.path !== '/') {
-    console.log(`📥 Incoming request: ${req.method} ${req.path}`);
+    console.log(`📥 Incoming request: ${req.method} ${req.path}`, {
+      headers: req.headers['user-agent'],
+      body: req.body ? 'has body' : 'no body',
+    });
   }
   next();
+});
+
+// Test endpoint to verify Express is working
+app.post('/test-webhook', (req: Request, res: Response) => {
+  console.log('🧪 Test webhook endpoint called:', req.body);
+  res.status(200).json({ message: 'Test endpoint working', body: req.body });
 });
 
 // Start the web server immediately (non-blocking)
@@ -339,6 +348,21 @@ async function main() {
       // This ensures the route is ready when Telegram sends updates
       app.use(express.json());
       
+      // Add specific logging for webhook path
+      app.use(webhookPath, (req: Request, res: Response, next: any) => {
+        console.log('🔔 WEBHOOK REQUEST RECEIVED:', {
+          method: req.method,
+          path: req.path,
+          headers: {
+            'content-type': req.headers['content-type'],
+            'user-agent': req.headers['user-agent'],
+          },
+          bodyKeys: req.body ? Object.keys(req.body) : 'no body',
+          updateId: req.body?.update_id,
+        });
+        next();
+      });
+      
       // Register webhook callback
       // Telegraf's webhookCallback() returns an Express middleware
       app.use(webhookPath, bot.getBot().webhookCallback());
@@ -349,6 +373,16 @@ async function main() {
         if (!res.headersSent) {
           res.status(500).json({ error: 'Internal server error' });
         }
+      });
+      
+      // Catch-all route for debugging (must be last)
+      app.use('*', (req: Request, res: Response) => {
+        console.log('🔍 Catch-all route hit:', req.method, req.originalUrl);
+        res.status(404).json({ 
+          message: 'Route not found', 
+          path: req.originalUrl,
+          method: req.method 
+        });
       });
       
       // Delete any existing webhook first to prevent conflicts
