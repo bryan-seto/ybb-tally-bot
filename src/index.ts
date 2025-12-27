@@ -56,10 +56,54 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Test endpoint to verify Express is working
+// Test endpoint to verify Express is working (GET for browser testing)
+app.get('/test-webhook', (req: Request, res: Response) => {
+  console.log('🧪 Test webhook endpoint called (GET)');
+  res.status(200).json({ 
+    message: 'Test endpoint working',
+    timestamp: new Date().toISOString(),
+    method: 'GET'
+  });
+});
+
+// Test endpoint for POST requests
 app.post('/test-webhook', (req: Request, res: Response) => {
-  console.log('🧪 Test webhook endpoint called:', req.body);
-  res.status(200).json({ message: 'Test endpoint working', body: req.body });
+  console.log('🧪 Test webhook endpoint called (POST):', req.body);
+  res.status(200).json({ 
+    message: 'Test endpoint working',
+    body: req.body,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Webhook status endpoint
+app.get('/webhook-status', async (req: Request, res: Response) => {
+  try {
+    const bot = global.botInstance;
+    if (!bot) {
+      return res.status(500).json({ error: 'Bot not initialized' });
+    }
+    
+    const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+    res.status(200).json({
+      status: 'ok',
+      webhook: {
+        url: webhookInfo.url,
+        has_custom_certificate: webhookInfo.has_custom_certificate,
+        pending_update_count: webhookInfo.pending_update_count,
+        last_error_date: webhookInfo.last_error_date,
+        last_error_message: webhookInfo.last_error_message,
+        max_connections: webhookInfo.max_connections,
+        allowed_updates: webhookInfo.allowed_updates,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      error: 'Failed to get webhook info',
+      message: error.message 
+    });
+  }
 });
 
 // Start the web server immediately (non-blocking)
@@ -409,7 +453,22 @@ async function main() {
         url: newWebhookInfo.url,
         has_custom_certificate: newWebhookInfo.has_custom_certificate,
         pending_update_count: newWebhookInfo.pending_update_count,
+        last_error_date: newWebhookInfo.last_error_date,
+        last_error_message: newWebhookInfo.last_error_message,
+        max_connections: newWebhookInfo.max_connections,
       });
+      
+      // Check for webhook errors
+      if (newWebhookInfo.last_error_message) {
+        console.error('⚠️  WEBHOOK ERROR DETECTED:', {
+          date: newWebhookInfo.last_error_date,
+          message: newWebhookInfo.last_error_message,
+        });
+      }
+      
+      if (newWebhookInfo.pending_update_count > 0) {
+        console.log(`📬 ${newWebhookInfo.pending_update_count} pending updates queued`);
+      }
       
       console.log('✅ YBB Tally Bot is running with webhooks...');
       global.isBooting = false;
