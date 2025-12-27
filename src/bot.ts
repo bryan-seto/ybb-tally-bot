@@ -2631,7 +2631,18 @@ export class YBBTallyBot {
         transactionInfo = `Processed ${collection.photos.length} receipt${collection.photos.length > 1 ? 's' : ''}.\n\n`;
       }
       
-      if (receiptData.merchants && receiptData.merchants.length > 0) {
+      if (receiptData.merchants && receiptData.merchants.length > 0 && 
+          receiptData.individualAmounts && receiptData.individualAmounts.length > 0 &&
+          receiptData.merchants.length === receiptData.individualAmounts.length) {
+        // Combine merchants and amounts on same line
+        transactionInfo += '**Merchants:**\n';
+        receiptData.merchants.forEach((merchant, index) => {
+          const amt = receiptData.individualAmounts![index];
+          transactionInfo += `${index + 1}. ${merchant} - SGD $${amt.toFixed(2)}\n`;
+        });
+        transactionInfo += `\n**Total: ${amountStr}**\n\n`;
+      } else if (receiptData.merchants && receiptData.merchants.length > 0) {
+        // Fallback: show merchants only if amounts don't match
         transactionInfo += '**Merchants:**\n';
         receiptData.merchants.forEach((merchant, index) => {
           transactionInfo += `${index + 1}. ${merchant}\n`;
@@ -2639,13 +2650,16 @@ export class YBBTallyBot {
         transactionInfo += '\n';
       }
       
-      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0) {
+      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0 && 
+          (!receiptData.merchants || receiptData.merchants.length !== receiptData.individualAmounts.length)) {
+        // Show breakdown only if merchants weren't shown or don't match
         transactionInfo += '**Breakdown:**\n';
         receiptData.individualAmounts.forEach((amt, index) => {
           transactionInfo += `${index + 1}. SGD $${amt.toFixed(2)}\n`;
         });
         transactionInfo += `\n**Total: ${amountStr}**\n\n`;
-      } else {
+      } else if (!receiptData.merchants || receiptData.merchants.length === 0) {
+        // No merchants, just show total
         transactionInfo += `**Total: ${amountStr}**\n\n`;
       }
       
