@@ -833,22 +833,64 @@ export class YBBTallyBot {
    */
   private async handleCheckBalance(ctx: any) {
     try {
-      const pendingTransactions = await this.expenseService.getAllPendingTransactions();
-      
+      // Get users
+      const bryan = await prisma.user.findFirst({
+        where: { role: 'Bryan' },
+      });
+      const hweiYeen = await prisma.user.findFirst({
+        where: { role: 'HweiYeen' },
+      });
+
+      if (!bryan || !hweiYeen) {
+        await ctx.reply('Error: Users not found in database.');
+        return;
+      }
+
+      // Get all unsettled transactions with their split percentages
+      const transactions = await prisma.transaction.findMany({
+        where: {
+          isSettled: false,
+        },
+        include: {
+          payer: true,
+        },
+      });
+
       let bryanPaid = 0;
       let hweiYeenPaid = 0;
+      let bryanShare = 0;
+      let hweiYeenShare = 0;
       
-      pendingTransactions.forEach(t => {
-        if (t.payerName.includes('Bryan')) {
-          bryanPaid += t.amount;
-        } else {
-          hweiYeenPaid += t.amount;
+      // Track split percentages for display
+      let totalAmount = 0;
+      let weightedBryanPercent = 0;
+      let weightedHweiYeenPercent = 0;
+
+      transactions.forEach((t) => {
+        if (t.payerId === bryan.id) {
+          bryanPaid += t.amountSGD;
+        } else if (t.payerId === hweiYeen.id) {
+          hweiYeenPaid += t.amountSGD;
         }
+        
+        // Use custom split if available, otherwise default to 70/30
+        const bryanPercent = t.bryanPercentage ?? 0.7;
+        const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
+        
+        bryanShare += t.amountSGD * bryanPercent;
+        hweiYeenShare += t.amountSGD * hweiYeenPercent;
+        
+        // Calculate weighted average for display
+        totalAmount += t.amountSGD;
+        weightedBryanPercent += t.amountSGD * bryanPercent;
+        weightedHweiYeenPercent += t.amountSGD * hweiYeenPercent;
       });
+
+      // Calculate weighted average percentages
+      const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
+      const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
       
       const totalSpending = bryanPaid + hweiYeenPaid;
-      const bryanShare = totalSpending * 0.7;
-      const hweiYeenShare = totalSpending * 0.3;
       
       // Calculate net: positive = overpaid (other person owes them), negative = underpaid (they owe)
       const bryanNet = bryanPaid - bryanShare;
@@ -858,9 +900,9 @@ export class YBBTallyBot {
       message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
       message += `Total Paid by Hwei Yeen (Unsettled): SGD $${hweiYeenPaid.toFixed(2)}\n`;
       message += `Total Group Spending: SGD $${totalSpending.toFixed(2)}\n\n`;
-      message += `**Split Calculation (70/30):**\n`;
-      message += `Bryan's share (70%): SGD $${bryanShare.toFixed(2)}\n`;
-      message += `Hwei Yeen's share (30%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
+      message += `**Split Calculation (${avgBryanPercent.toFixed(0)}/${avgHweiYeenPercent.toFixed(0)}):**\n`;
+      message += `Bryan's share (${avgBryanPercent.toFixed(0)}%): SGD $${bryanShare.toFixed(2)}\n`;
+      message += `Hwei Yeen's share (${avgHweiYeenPercent.toFixed(0)}%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
       
       if (bryanNet > 0) {
         // Bryan overpaid, so Hwei Yeen owes Bryan
