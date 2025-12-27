@@ -295,6 +295,8 @@ export class YBBTallyBot {
   private setupCommands(): void {
     // Start command - register group
     this.bot.command('start', async (ctx) => {
+      const firstName = ctx.from?.first_name || 'there';
+      
       if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
         // Save group chat ID
         await prisma.settings.upsert({
@@ -303,11 +305,10 @@ export class YBBTallyBot {
           create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
         });
         
-        await this.showMainMenu(ctx);
+        await this.showMainMenu(ctx, `Hi ${firstName}! 👋`);
       } else {
-        const greeting = getGreeting(ctx.from.id.toString());
         await ctx.reply(
-          `👋 ${greeting}! I'm ready to track.\n\n` +
+          `Hi ${firstName}! 👋\n\n` +
           `Please add me to a group and use /start there to register.`
         );
       }
@@ -3151,7 +3152,7 @@ export class YBBTallyBot {
   }
 
   /**
-   * Handle new chat members (for identity merging)
+   * Handle new chat members (for identity merging and welcome messages)
    */
   private async handleNewChatMembers(ctx: any): Promise<void> {
     try {
@@ -3162,12 +3163,91 @@ export class YBBTallyBot {
         return;
       }
 
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      if (!isGroup) return;
+
+      // Check if bot was added
+      const botInfo = await this.bot.telegram.getMe();
+      const botWasAdded = newMembers.some((m: any) => m.id === botInfo.id);
+
       // Get or initialize group
       let group = await this.groupService.getGroupByChatId(chatId);
+      let isNewGroup = false;
+      
       if (!group) {
         const installerId = ctx.message.from?.id || newMembers[0].id;
-        const { groupId } = await this.subscriptionService.initializeGroup(chatId, installerId);
+        const { groupId, status } = await this.subscriptionService.initializeGroup(chatId, installerId);
         group = await this.groupService.getGroupByChatId(chatId);
+        isNewGroup = true;
+        
+        // Send welcome message if bot was just added
+        if (botWasAdded && group) {
+          const installer = await prisma.user.findUnique({
+            where: { id: group.installerUserId || BigInt(0) },
+          });
+          
+          const installerName = installer?.name || ctx.message.from?.first_name || 'there';
+          const isVIP = this.subscriptionService.isVIP(installerId);
+          const isEligible = await this.subscriptionService.checkTrialEligibility(installerId);
+          
+          if (status === 'trial') {
+            // Scenario A: Happy Start (new user gets trial)
+            const trialEndDate = group.trialStartDate ? new Date(group.trialStartDate) : new Date();
+            trialEndDate.setDate(trialEndDate.getDate() + 14);
+            const daysLeft = Math.ceil((trialEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            
+            await ctx.reply(
+              `👋 Hi ${installerName}! I've activated your 14-Day Free Trial for this group.\n\n` +
+              `Your trial expires on ${trialEndDate.toLocaleDateString()} (${daysLeft} days left).\n\n` +
+              `Send me a receipt photo or type an expense like "Dinner 120" to get started!`,
+              { parse_mode: 'Markdown' }
+            );
+          } else if (status === 'locked' && !isVIP) {
+            // Scenario C: Zombie Group (trial expired or user already used trial)
+            const checkoutUrl = await this.subscriptionService.createCheckoutSession(group.id, true);
+            
+            let message = `🔒 This group is locked. `;
+            if (!isEligible) {
+              message += `You've already used your free trial.\n\n`;
+            } else {
+              message += `The trial period has ended.\n\n`;
+            }
+            message += `**Option 1:** Subscribe to unlock this group ($50/yr)\n`;
+            message += `**Option 2:** Create a NEW group and add me there to start fresh with a free trial!\n\n`;
+            
+            await ctx.reply(
+              message + `[Subscribe - $50](${checkoutUrl})`,
+              { 
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: 'Subscribe - $50/yr', url: checkoutUrl }]
+                  ]
+                }
+              }
+            );
+          }
+        }
+      } else if (botWasAdded) {
+        // Bot added to existing group - check if installer is still on trial
+        const installer = group.installerUserId ? await prisma.user.findUnique({
+          where: { id: group.installerUserId },
+        }) : null;
+        
+        if (installer && group.subscriptionStatus === 'trial' && group.trialStartDate) {
+          const trialEndDate = new Date(group.trialStartDate);
+          trialEndDate.setDate(trialEndDate.getDate() + 14);
+          const daysLeft = Math.ceil((trialEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          
+          if (daysLeft > 0) {
+            // Scenario B: Power User (still on trial, adding to another group)
+            await ctx.reply(
+              `👋 Welcome back, ${installer.name}! Since you are still on your trial (${daysLeft} days left), I've activated this group for free too!\n\n` +
+              `Note: Both groups will require a subscription on ${trialEndDate.toLocaleDateString()}.`,
+              { parse_mode: 'Markdown' }
+            );
+          }
+        }
       }
 
       if (!group) return;
@@ -3175,25 +3255,21 @@ export class YBBTallyBot {
       // Check for unlinked virtual users with debt
       const unlinkedVirtualUsers = await this.groupService.getUnlinkedVirtualUsersWithDebt(group.id);
 
-      if (unlinkedVirtualUsers.length === 0) {
-        return; // No virtual users to merge
-      }
-
-      // For each new member, check if they match any virtual user
+      // For each new member (excluding bot), check if they match any virtual user
       for (const member of newMembers) {
         if (member.is_bot) continue;
 
         const userId = await this.groupService.getOrCreateUser(member.id, member.first_name || `User ${member.id}`);
         await this.groupService.addMemberToGroup(group.id, userId);
 
-        // Show identity merge prompt
-        const virtualUsersWithDebt = unlinkedVirtualUsers.map((vu) => ({
-          id: vu.id,
-          name: vu.name,
-          debt: vu.outstandingDebt,
-        }));
+        // Show identity merge prompt if there are virtual users
+        if (unlinkedVirtualUsers.length > 0) {
+          const virtualUsersWithDebt = unlinkedVirtualUsers.map((vu: any) => ({
+            id: vu.id,
+            name: vu.name,
+            debt: vu.outstandingDebt,
+          }));
 
-        if (virtualUsersWithDebt.length > 0) {
           const keyboard = virtualUsersWithDebt.map((vu) => [
             Markup.button.callback(
               `${vu.name} ($${vu.debt.toFixed(2)})`,
@@ -3203,7 +3279,8 @@ export class YBBTallyBot {
           keyboard.push([Markup.button.callback('No, I\'m new', `merge_identity_new_${userId}`)]);
 
           await ctx.reply(
-            `Welcome! I found existing expense records for these people. Are you one of them?`,
+            `👋 Welcome ${member.first_name || 'there'}!\n\n` +
+            `I see expenses previously logged for a '${virtualUsersWithDebt[0].name}'. Is this you?`,
             Markup.inlineKeyboard(keyboard)
           );
         }
@@ -3227,8 +3304,15 @@ export class YBBTallyBot {
     receiptId?: string
   ): Promise<void> {
     try {
-      const members = await this.splitService.getSplitMembers(groupId);
-      const preview = this.splitService.formatSplitPreview(amount, members);
+      const chatId = ctx.chat?.id;
+      const payerTelegramId = ctx.from?.id;
+      const members = await this.splitService.getSplitMembers(
+        groupId,
+        chatId,
+        this.bot,
+        payerTelegramId
+      );
+      const preview = this.splitService.formatSplitPreview(amount, members, description, payerTelegramId);
 
       // Build inline keyboard with member toggles
       const keyboard: any[] = [];
