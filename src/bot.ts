@@ -138,12 +138,28 @@ export class YBBTallyBot {
    * Setup Telegram BotCommand menu (shows when user types /)
    */
   async setupBotCommands(): Promise<void> {
+    // Set commands for private chats (default scope)
     await this.bot.telegram.setMyCommands([
       {
         command: 'menu',
         description: 'Show main menu',
       },
     ]);
+
+    // Set commands for groups and supergroups
+    await this.bot.telegram.setMyCommands(
+      [
+        {
+          command: 'menu',
+          description: 'Show main menu',
+        },
+      ],
+      {
+        scope: {
+          type: 'all_group_chats',
+        },
+      }
+    );
   }
 
   /**
