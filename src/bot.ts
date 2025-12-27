@@ -39,6 +39,7 @@ interface BotSession {
   manualAddMode?: boolean;
   manualAddStep?: 'description' | 'amount' | 'category' | 'payer' | 'split_count';
   manualAmount?: number;
+  manualAmountString?: string; // Accumulated amount string while typing
   manualCategory?: string;
   manualDescription?: string;
   manualPayerId?: bigint;
@@ -257,7 +258,16 @@ export class YBBTallyBot {
   /**
    * Get numeric keyboard for amount input
    */
-  private getNumericKeyboard() {
+  private getNumericKeyboard(showConfirm: boolean = false) {
+    if (showConfirm) {
+      return Markup.keyboard([
+        ['1', '2', '3'],
+        ['4', '5', '6'],
+        ['7', '8', '9'],
+        ['.', '0', '✅ Confirm'],
+        ['❌ Cancel']
+      ]).resize().oneTime();
+    }
     return Markup.keyboard([
       ['1', '2', '3'],
       ['4', '5', '6'],
@@ -2040,20 +2050,39 @@ export class YBBTallyBot {
         if (session.manualAddStep === 'description') {
           session.manualDescription = text;
           session.manualAddStep = 'amount';
+          session.manualAmountString = ''; // Initialize amount string
           await ctx.reply(
             `Description: ${text}\n\n` +
-            'How much was it? (Tap numbers or type amount)',
-            this.getNumericKeyboard()
+            'How much was it? (Tap numbers to build amount, then press ✅ Confirm)\n\n' +
+            'Current: $0.00',
+            this.getNumericKeyboard(true)
           );
           return;
         } else if (session.manualAddStep === 'amount') {
-          const amount = parseFloat(textLower.replace(/[^0-9.]/g, ''));
+          // Handle Cancel
+          if (textLower.includes('cancel') || text === '❌ Cancel') {
+            session.manualAddMode = false;
+            session.manualAddStep = undefined;
+            session.manualAmountString = undefined;
+            await this.showMainMenu(ctx, '❌ Operation cancelled.');
+            return;
+          }
+          
+          // Handle Confirm
+          if (textLower.includes('confirm') || text === '✅ Confirm') {
+            if (!session.manualAmountString || session.manualAmountString.trim() === '') {
+              await ctx.reply('Please enter an amount first.', this.getNumericKeyboard(true));
+              return;
+            }
+            
+            const amount = parseFloat(session.manualAmountString.replace(/[^0-9.]/g, ''));
           if (isNaN(amount) || amount <= 0) {
-            await ctx.reply('Please enter a valid amount in SGD:', this.getNumericKeyboard());
+              await ctx.reply('Please enter a valid amount in SGD:', this.getNumericKeyboard(true));
             return;
           }
           
           session.manualAmount = amount;
+            session.manualAmountString = undefined;
           session.manualAddStep = 'category';
           await ctx.reply(
             `Amount: SGD $${amount.toFixed(2)}\n\n` +
@@ -2083,6 +2112,39 @@ export class YBBTallyBot {
                 ],
               },
             }
+          );
+          return;
+          }
+          
+          // Accumulate digits and decimal point
+          const input = text.trim();
+          
+          // Initialize if not set
+          if (session.manualAmountString === undefined) {
+            session.manualAmountString = '';
+          }
+          
+          // Handle backspace/delete (if user types it)
+          if (input.toLowerCase() === 'backspace' || input === '⌫') {
+            session.manualAmountString = session.manualAmountString.slice(0, -1);
+          } else {
+            // Add the input (digit or decimal point)
+            // Only allow one decimal point
+            if (input === '.' && session.manualAmountString.includes('.')) {
+              // Already has decimal, ignore
+            } else if (/^[0-9.]$/.test(input)) {
+              session.manualAmountString += input;
+            }
+          }
+          
+          // Show current amount being built
+          const displayAmount = session.manualAmountString || '0';
+          const parsedAmount = parseFloat(displayAmount.replace(/[^0-9.]/g, '')) || 0;
+          
+          await ctx.reply(
+            `Amount: SGD $${parsedAmount.toFixed(2)}\n\n` +
+            `Tap numbers to build amount, then press ✅ Confirm`,
+            this.getNumericKeyboard(true)
           );
           return;
         } else if (session.manualAddStep === 'payer') {
@@ -2594,7 +2656,7 @@ export class YBBTallyBot {
 
         // Check if amount is valid
         if (!session.manualAmount || session.manualAmount <= 0) {
-          await ctx.reply(
+        await ctx.reply(
             `Error: Invalid amount (${session.manualAmount}). Please enter the amount again.`,
             this.getNumericKeyboard()
           );
