@@ -2296,14 +2296,14 @@ export class YBBTallyBot {
           return;
         }
 
-        // Get or create payer user
+        // Get or create payer user (assume sender is paying)
         const payerId = await this.groupService.getOrCreateUser(
-          Number(receiptData.userId),
+          ctx.from.id,
           ctx.from
         );
         await this.groupService.addMemberToGroup(group.id, payerId);
 
-        // Show smart split UI
+        // Show smart split UI (old flow - after confirmation)
         await this.showSmartSplitUI(
           ctx,
           group.id,
@@ -3431,47 +3431,43 @@ export class YBBTallyBot {
         userId: collection.userId,
       });
 
-      // Ask for confirmation
+      // Ask for confirmation (old flow)
       const amountStr = receiptData.currency === 'SGD' 
         ? `SGD $${receiptData.total.toFixed(2)}`
         : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
       
-      // Simplify: Assume sender is paying, go straight to split UI
-      // Get or create payer user
-      const payerId = await this.groupService.getOrCreateUser(
-        collection.telegramUserId || Number(collection.userId),
-        collection.telegramUser
-      );
-      
-      // Get group
-      const group = await this.groupService.getGroupByChatId(chatId);
-      if (!group) {
-        await this.bot.telegram.sendMessage(chatId, 'Group not found. Please add the bot to the group first.');
-        return;
+      // Get payer name from Telegram user object
+      let payerName = 'You';
+      if (collection.telegramUser) {
+        payerName = collection.telegramUser.first_name || 
+                   (collection.telegramUser.username ? `@${collection.telegramUser.username}` : null) || 
+                   'You';
       }
       
-      await this.groupService.addMemberToGroup(group.id, payerId);
+      // Get group to count members
+      const group = await this.groupService.getGroupByChatId(chatId);
+      const memberCount = group ? (group.members.length + group.virtualUsers.length) : 1;
+      const memberNames = group ? [
+        ...group.members.map(m => m.name),
+        ...group.virtualUsers.map(v => v.name)
+      ].slice(0, 4).join(', ') : payerName;
       
-      // Show smart split UI directly (skip confirmation step)
-      // We need to create a fake ctx object for showSmartSplitUI
-      const fakeCtx = {
-        chat: { id: chatId },
-        from: collection.telegramUser || { id: collection.telegramUserId },
-        reply: async (text: string, options?: any) => {
-          return await this.bot.telegram.sendMessage(chatId, text, options);
-        },
-        session: {},
-      };
-      
-      await this.showSmartSplitUI(
-        fakeCtx as any,
-        group.id,
-        receiptData.total,
-        receiptData.merchant || 'Expense',
-        receiptData.category || null,
-        payerId,
-        'real',
-        receiptId
+      await this.bot.telegram.sendMessage(
+        chatId,
+        `🧾 **Receipt Scanned:** ${amountStr}\n` +
+        `**Payer:** ${payerName}\n` +
+        `**Split:** All ${memberCount} Member${memberCount > 1 ? 's' : ''} (${memberCount > 4 ? `${memberNames}...` : memberNames})\n\n` +
+        `Is this correct?`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ Confirm', callback_data: `confirm_amount_${receiptId}` }],
+              [{ text: '✏️ Edit People', callback_data: `edit_split_${receiptId}` }],
+              [{ text: '🔁 Wrong Payer', callback_data: `wrong_payer_${receiptId}` }],
+            ],
+          },
+        }
       );
 
     } catch (error: any) {
