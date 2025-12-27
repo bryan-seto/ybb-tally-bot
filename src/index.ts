@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import cron from 'node-cron';
-import http from 'http';
+import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
@@ -10,24 +10,29 @@ import QuickChart from 'quickchart-js';
 
 dotenv.config();
 
-// --- RENDER KEEP-ALIVE (START IMMEDIATELY) ---
-// Simple HTTP server that starts immediately so Render sees us
-const port = process.env.PORT || 10000;
-const keepAliveServer = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      status: 'ok', 
-      message: 'Bot is starting...', 
-      timestamp: new Date().toISOString()
-    }));
-    return;
-  }
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot is starting...');
+// --- DUMMY WEB SERVER (RENDER KEEP-ALIVE) ---
+// Minimal Express server to prevent Render from sleeping
+// This starts immediately and runs concurrently with the bot
+const webServerPort = process.env.PORT || 3000;
+const app = express();
+
+// Root route - simple response to keep Render awake
+app.get('/', (req: Request, res: Response) => {
+  res.status(200).send('Bot is alive');
 });
-keepAliveServer.listen(Number(port), '0.0.0.0', () => {
-  console.log(`Keep-alive server listening on port ${port}`);
+
+// Health check endpoint (optional but useful)
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Bot is alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Start the web server immediately (non-blocking)
+app.listen(Number(webServerPort), '0.0.0.0', () => {
+  console.log(`Dummy web server listening on port ${webServerPort} (Render keep-alive)`);
 });
 
 // --- YOUR BOT CODE STARTS BELOW HERE ---
@@ -232,84 +237,19 @@ async function main() {
     
     if (isProduction && webhookUrl) {
       // Webhook mode for Render
-      // Dynamically import express only when needed (for production webhooks)
-      let expressModule: any;
-      try {
-        expressModule = require('express');
-      } catch (error: any) {
-        console.error('Express not found. Please ensure express is installed.');
-        console.error('Run: npm install express');
-        throw new Error('Express module is required for webhook mode. Please install it: npm install express');
-      }
-      
-      const express = expressModule.default || expressModule;
-      
       const webhookPath = `/webhook/${process.env.TELEGRAM_BOT_TOKEN}`;
       const fullWebhookUrl = `${webhookUrl}${webhookPath}`;
       
       console.log(`Setting up webhook: ${fullWebhookUrl}`);
       await bot.getBot().telegram.setWebhook(fullWebhookUrl);
       
-      // Start Express server for webhooks
-      const app = express();
-      
-      // Middleware
+      // Add webhook endpoint to existing Express app
       app.use(express.json());
-      
-      // Health check endpoints
-      app.get('/', (req: any, res: any) => {
-        res.json({ 
-          status: 'ok', 
-          message: 'Bot is running!', 
-          timestamp: new Date().toISOString(),
-          mode: 'webhook'
-        });
-      });
-      
-      app.get('/health', (req: any, res: any) => {
-        res.json({ 
-          status: 'ok', 
-          message: 'Bot is running!', 
-          timestamp: new Date().toISOString(),
-          mode: 'webhook'
-        });
-      });
-      
-      // Webhook endpoint
       app.use(bot.getBot().webhookCallback(webhookPath));
       
-      // Close the simple keep-alive server and use Express instead
-      keepAliveServer.close();
-      
-      app.listen(Number(port), '0.0.0.0', () => {
-        console.log(`Webhook server listening on port ${port}`);
-        console.log('YBB Tally Bot is running with webhooks...');
-      });
+      console.log('YBB Tally Bot is running with webhooks...');
     } else {
       // Long polling mode for development
-      // Start simple HTTP server for health checks
-      const healthServer = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
-        if (req.url === '/' || req.url === '/health') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            status: 'ok', 
-            message: 'Bot is running!', 
-            timestamp: new Date().toISOString(),
-            mode: 'long-polling'
-          }));
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Bot is running!');
-      });
-      
-      // Close the simple keep-alive server and use the health check server instead
-      keepAliveServer.close();
-      
-      healthServer.listen(Number(port), '0.0.0.0', () => {
-        console.log(`Health check server listening on port ${port}`);
-      });
-      
       await bot.launch();
       console.log('YBB Tally Bot is running with long polling...');
     }
