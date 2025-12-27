@@ -142,6 +142,91 @@ export class ExpenseService {
   }
 
   /**
+   * Calculate amount owed from a single transaction (70/30 split)
+   * Returns: { bryanOwes: number, hweiYeenOwes: number }
+   */
+  calculateTransactionOwed(amount: number, payerRole: 'Bryan' | 'HweiYeen'): {
+    bryanOwes: number;
+    hweiYeenOwes: number;
+  } {
+    // 70/30 split: Bryan 70%, HweiYeen 30%
+    const bryanShare = amount * 0.7;
+    const hweiYeenShare = amount * 0.3;
+
+    let bryanOwes = 0;
+    let hweiYeenOwes = 0;
+
+    if (payerRole === 'Bryan') {
+      // Bryan paid, so HweiYeen owes Bryan her share
+      hweiYeenOwes = hweiYeenShare;
+    } else {
+      // HweiYeen paid, so Bryan owes HweiYeen his share
+      bryanOwes = bryanShare;
+    }
+
+    return { bryanOwes, hweiYeenOwes };
+  }
+
+  /**
+   * Format transaction-specific amount owed message
+   */
+  getTransactionOwedMessage(amount: number, payerRole: 'Bryan' | 'HweiYeen'): string {
+    const owed = this.calculateTransactionOwed(amount, payerRole);
+    
+    if (owed.bryanOwes > 0) {
+      return `From this transaction: Sir Bryan owes Madam Hwei Yeen SGD $${owed.bryanOwes.toFixed(2)}`;
+    } else if (owed.hweiYeenOwes > 0) {
+      return `From this transaction: Madam Hwei Yeen owes Sir Bryan SGD $${owed.hweiYeenOwes.toFixed(2)}`;
+    }
+    
+    return '';
+  }
+
+  /**
+   * Get all pending (unsettled) transactions
+   */
+  async getAllPendingTransactions(): Promise<Array<{
+    id: bigint;
+    amount: number;
+    currency: string;
+    category: string;
+    description: string;
+    date: Date;
+    payerName: string;
+    payerRole: string;
+    bryanOwes: number;
+    hweiYeenOwes: number;
+  }>> {
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        isSettled: false,
+      },
+      include: {
+        payer: true,
+      },
+      orderBy: {
+        date: 'desc',
+      },
+    });
+
+    return transactions.map(t => {
+      const owed = this.calculateTransactionOwed(t.amountSGD, t.payer.role as 'Bryan' | 'HweiYeen');
+      return {
+        id: t.id,
+        amount: t.amountSGD,
+        currency: t.currency,
+        category: t.category || 'Other',
+        description: t.description || 'No description',
+        date: t.date,
+        payerName: t.payer.name,
+        payerRole: t.payer.role,
+        bryanOwes: owed.bryanOwes,
+        hweiYeenOwes: owed.hweiYeenOwes,
+      };
+    });
+  }
+
+  /**
    * Format outstanding balance message
    */
   async getOutstandingBalanceMessage(): Promise<string> {

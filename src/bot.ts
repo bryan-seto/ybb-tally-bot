@@ -167,6 +167,7 @@ export class YBBTallyBot {
         `\`/start\` - Register this group\n` +
         `\`/add\` - Manually add an expense\n` +
         `\`/balance\` - Check outstanding balance\n` +
+        `\`/showAllPendingTransactions\` - View all pending (unsettled) transactions\n` +
         `\`/recurring\` - Manage recurring expenses\n` +
         `\`/report [offset]\` - Generate monthly report\n` +
         `\`/admin_stats\` - View analytics (admin only)\n` +
@@ -197,6 +198,46 @@ export class YBBTallyBot {
     this.bot.command('balance', async (ctx) => {
       const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
       await ctx.reply(balanceMessage, { parse_mode: 'Markdown' });
+    });
+
+    // Show all pending transactions command
+    this.bot.command('showAllPendingTransactions', async (ctx) => {
+      try {
+        const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+        
+        if (pendingTransactions.length === 0) {
+          await ctx.reply('✅ All expenses are settled! No pending transactions.');
+          return;
+        }
+
+        let message = `📋 **All Pending Transactions (${pendingTransactions.length}):**\n\n`;
+        
+        pendingTransactions.forEach((t, index) => {
+          const dateStr = formatDate(t.date, 'dd MMM yyyy');
+          message += `${index + 1}. **${t.description}**\n`;
+          message += `   Amount: SGD $${t.amount.toFixed(2)}\n`;
+          message += `   Paid by: ${t.payerName}\n`;
+          message += `   Category: ${t.category}\n`;
+          message += `   Date: ${dateStr}\n`;
+          
+          if (t.bryanOwes > 0) {
+            message += `   💰 Sir Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
+          } else if (t.hweiYeenOwes > 0) {
+            message += `   💰 Madam Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
+          }
+          
+          message += '\n';
+        });
+
+        // Add total balance at the end
+        const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+        message += balanceMessage;
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+      } catch (error: any) {
+        console.error('Error getting pending transactions:', error);
+        await ctx.reply('Sorry, I encountered an error retrieving pending transactions. Please try again.');
+      }
     });
 
     // Admin stats command
@@ -798,6 +839,12 @@ export class YBBTallyBot {
           session.awaitingPayer = false;
           session.awaitingAmountConfirmation = false;
 
+          // Calculate transaction-specific amount owed
+          const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
+            transaction.amountSGD,
+            payerRole
+          );
+          
           // Show outstanding balance
           const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
           
@@ -806,6 +853,7 @@ export class YBBTallyBot {
             `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
             `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
             `Category: ${transaction.category || 'Other'}\n\n` +
+            `${transactionOwedMessage}\n\n` +
             balanceMessage,
             { parse_mode: 'Markdown' }
           );
@@ -892,6 +940,12 @@ export class YBBTallyBot {
             session.manualCategory = undefined;
             session.manualDescription = undefined;
 
+            // Calculate transaction-specific amount owed
+            const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
+              transaction.amountSGD,
+              payerRole
+            );
+            
             const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
             
             await ctx.reply(
@@ -899,6 +953,7 @@ export class YBBTallyBot {
               `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
               `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
               `Category: ${transaction.category || 'Other'}\n\n` +
+              `${transactionOwedMessage}\n\n` +
               balanceMessage,
               { parse_mode: 'Markdown' }
             );
@@ -1073,6 +1128,12 @@ export class YBBTallyBot {
           }
         }
 
+        // Calculate transaction-specific amount owed
+        const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
+          transaction.amountSGD,
+          payerRole
+        );
+        
         // Show outstanding balance
         const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
         
@@ -1082,6 +1143,7 @@ export class YBBTallyBot {
             `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
             `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
             `Category: ${transaction.category || 'Other'}\n\n` +
+            `${transactionOwedMessage}\n\n` +
             balanceMessage,
             { parse_mode: 'Markdown' }
           );
@@ -1092,6 +1154,7 @@ export class YBBTallyBot {
             `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
             `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
             `Category: ${transaction.category || 'Other'}\n\n` +
+            `${transactionOwedMessage}\n\n` +
             balanceMessage,
             { parse_mode: 'Markdown' }
           );
