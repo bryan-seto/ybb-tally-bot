@@ -9,15 +9,87 @@ datasource db {
 
 model User {
   id                  BigInt             @id @default(autoincrement())
+  telegramId          BigInt?            @unique
   name                String
-  role                UserRole
+  role                UserRole?
+  hasUsedTrial        Boolean            @default(false)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   recurringExpenses   RecurringExpense[]
   systemLogs          SystemLog[]
   transactionsAsPayer Transaction[]      @relation("Payer")
+  groups              Group[]            @relation("GroupMembers")
+  linkedVirtualUsers  VirtualUser[]     @relation("LinkedUser")
+  installerGroups     Group[]            @relation("Installer")
+  splitsAsDebtor      Split[]            @relation("Debtor")
 
   @@map("users")
+}
+
+model Group {
+  id                  BigInt             @id @default(autoincrement())
+  chatId              BigInt             @unique
+  subscriptionStatus  SubscriptionStatus @default(trial)
+  trialStartDate      DateTime?
+  expiryDate          DateTime?
+  installerUserId     BigInt?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  installer           User?              @relation("Installer", fields: [installerUserId], references: [id])
+  members             User[]             @relation("GroupMembers")
+  virtualUsers        VirtualUser[]
+  expenses            Expense[]
+
+  @@map("groups")
+}
+
+model VirtualUser {
+  id                  BigInt             @id @default(autoincrement())
+  groupId             BigInt
+  name                String
+  linkedUserId        BigInt?
+  outstandingDebt     Float              @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  group               Group              @relation(fields: [groupId], references: [id])
+  linkedUser          User?              @relation("LinkedUser", fields: [linkedUserId], references: [id])
+  splits              Split[]
+
+  @@map("virtual_users")
+}
+
+model Expense {
+  id                  BigInt             @id @default(autoincrement())
+  groupId             BigInt
+  amountSGD           Float
+  currency            String             @default("SGD")
+  category            String?
+  description         String?
+  payerId             BigInt
+  payerType           PayerType          @default(real)
+  date                DateTime           @default(now())
+  isSettled           Boolean            @default(false)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  group               Group              @relation(fields: [groupId], references: [id])
+  splits              Split[]
+
+  @@map("expenses")
+}
+
+model Split {
+  id                  BigInt             @id @default(autoincrement())
+  expenseId           BigInt
+  debtorId            BigInt?
+  virtualDebtorId     BigInt?
+  amount              Float
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  expense             Expense             @relation(fields: [expenseId], references: [id])
+  debtor              User?              @relation("Debtor", fields: [debtorId], references: [id])
+  virtualDebtor       VirtualUser?       @relation(fields: [virtualDebtorId], references: [id])
+
+  @@map("splits")
 }
 
 model Transaction {
@@ -94,4 +166,16 @@ enum SplitType {
   PARTIAL // Legacy, not used
   FIFTY_FIFTY // 50/50 split
   PAYER_ONLY // 100% paid by payer only
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  expired
+  locked
+}
+
+enum PayerType {
+  real
+  virtual
 }

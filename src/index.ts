@@ -4,6 +4,7 @@ import express, { Request, Response } from 'express';
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
+import { SubscriptionService } from './services/subscriptionService';
 import { getDayOfMonth, getNow, getMonthsAgo, getStartOfMonth, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
@@ -192,6 +193,48 @@ app.get('/bot-info', async (req: Request, res: Response) => {
       error: 'Failed to get bot info',
       message: error.message 
     });
+  }
+});
+
+// Stripe webhook endpoint
+app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const sig = req.headers['stripe-signature'];
+  
+  if (!sig) {
+    return res.status(400).send('Missing stripe-signature header');
+  }
+
+  try {
+    const subscriptionService = new SubscriptionService();
+    const event = subscriptionService.verifyWebhookSignature(req.body, sig as string);
+    
+    await subscriptionService.handleWebhookEvent(event);
+    
+    res.json({ received: true });
+  } catch (error: any) {
+    console.error('Stripe webhook error:', error);
+    res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+});
+
+// Stripe webhook endpoint (must be before app.listen and after express.json() setup)
+app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const sig = req.headers['stripe-signature'];
+  
+  if (!sig) {
+    return res.status(400).send('Missing stripe-signature header');
+  }
+
+  try {
+    const subscriptionService = new SubscriptionService();
+    const event = subscriptionService.verifyWebhookSignature(req.body, sig as string);
+    
+    await subscriptionService.handleWebhookEvent(event);
+    
+    res.json({ received: true });
+  } catch (error: any) {
+    console.error('Stripe webhook error:', error);
+    res.status(400).send(`Webhook Error: ${error.message}`);
   }
 });
 

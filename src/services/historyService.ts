@@ -80,7 +80,7 @@ export class HistoryService {
       description: transaction.description || 'No description',
       paidBy: transaction.payer.name,
       payerId: transaction.payerId,
-      payerRole: transaction.payer.role,
+      payerRole: transaction.payer.role || 'Unknown',
     };
   }
 

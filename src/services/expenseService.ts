@@ -276,7 +276,7 @@ export class ExpenseService {
         description: t.description || 'No description',
         date: t.date,
         payerName: t.payer.name,
-        payerRole: t.payer.role,
+        payerRole: t.payer.role || 'Unknown',
         bryanOwes: owed.bryanOwes,
         hweiYeenOwes: owed.hweiYeenOwes,
       };

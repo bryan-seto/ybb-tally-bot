@@ -3,6 +3,9 @@ import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
+import { SubscriptionService } from './services/subscriptionService';
+import { GroupService } from './services/groupService';
+import { SplitService, SplitMember } from './services/splitService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
@@ -50,6 +53,23 @@ interface BotSession {
   editLastAction?: 'amount' | 'category' | 'split';
   editLastTransactionId?: bigint;
   searchMode?: boolean;
+  // Smart split flow
+  pendingExpense?: {
+    groupId: bigint;
+    amount: number;
+    description: string;
+    category: string | null;
+    payerId: bigint;
+    payerType: 'real' | 'virtual';
+    members: SplitMember[];
+    receiptId?: string;
+  };
+  awaitingVirtualUserName?: boolean;
+  // Identity merging
+  pendingIdentityMerge?: {
+    groupId: bigint;
+    virtualUsers: Array<{ id: bigint; name: string; debt: number }>;
+  };
 }
 
 interface PendingReceiptData {
@@ -86,6 +106,9 @@ export class YBBTallyBot {
   private analyticsService: AnalyticsService;
   private expenseService: ExpenseService;
   private historyService: HistoryService;
+  private subscriptionService: SubscriptionService;
+  private groupService: GroupService;
+  private splitService: SplitService;
   private allowedUserIds: Set<string>;
   private photoCollections: Map<number, PhotoCollection> = new Map(); // chat_id -> collection
   private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
@@ -96,6 +119,9 @@ export class YBBTallyBot {
     this.analyticsService = new AnalyticsService();
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
+    this.subscriptionService = new SubscriptionService();
+    this.groupService = new GroupService();
+    this.splitService = new SplitService();
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
@@ -125,8 +151,9 @@ export class YBBTallyBot {
   private setupMiddleware(): void {
     this.bot.use(async (ctx, next) => {
       const userId = ctx.from?.id?.toString();
+      const telegramId = ctx.from?.id;
       
-      if (!userId) {
+      if (!userId || !telegramId) {
         return;
       }
 
@@ -153,11 +180,54 @@ export class YBBTallyBot {
         console.error('Error logging interaction:', error);
       }
 
-      // Check if user is allowed
+      // Check if user is allowed (legacy check - can be removed if using group-based auth)
       if (!this.allowedUserIds.has(userId)) {
         await ctx.reply('Access Denied');
         console.log(`Access denied for user ID: ${userId}`);
         return;
+      }
+
+      // Trial gatekeeper middleware - check subscription status for expense commands
+      const chatId = ctx.chat?.id;
+      const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+      
+      if (isGroup && chatId) {
+        // Check if this is an expense-related command
+        const isExpenseCommand = 
+          ctx.message && (
+            ('photo' in ctx.message) ||
+            ('text' in ctx.message && !ctx.message.text.startsWith('/'))
+          ) ||
+          (ctx.callbackQuery && 'data' in ctx.callbackQuery && (ctx.callbackQuery as any).data && (
+            (ctx.callbackQuery as any).data.startsWith('confirm_amount_') ||
+            (ctx.callbackQuery as any).data.startsWith('split_') ||
+            (ctx.callbackQuery as any).data.startsWith('menu_add')
+          ));
+
+        if (isExpenseCommand) {
+          // Initialize group if it doesn't exist
+          let group = await this.groupService.getGroupByChatId(chatId);
+          if (!group) {
+            const { groupId } = await this.subscriptionService.initializeGroup(chatId, telegramId);
+            group = await this.groupService.getGroupByChatId(chatId);
+          }
+
+          if (group) {
+            const isActive = await this.subscriptionService.isGroupActive(group.id);
+            const isVIP = this.subscriptionService.isVIP(telegramId);
+
+            if (!isActive && !isVIP) {
+              // Group is locked or expired
+              const checkoutUrl = await this.subscriptionService.createCheckoutSession(group.id, true);
+              await ctx.reply(
+                '🔒 This group\'s subscription has expired. Please subscribe to continue using the bot.\n\n' +
+                `[Subscribe Now](${checkoutUrl})`,
+                { parse_mode: 'Markdown' }
+              );
+              return;
+            }
+          }
+        }
       }
 
       return next();
@@ -1235,6 +1305,11 @@ export class YBBTallyBot {
    * Setup message handlers
    */
   private setupHandlers(): void {
+    // New chat members handler (for identity merging)
+    this.bot.on('new_chat_members', async (ctx) => {
+      await this.handleNewChatMembers(ctx);
+    });
+
     // Photo handler - receipt processing with debouncing
     this.bot.on('photo', async (ctx) => {
       try {
@@ -1413,6 +1488,81 @@ export class YBBTallyBot {
           await ctx.reply('Sorry, I encountered an error searching. Please try again.', this.getMainMenuKeyboard());
         }
         return;
+      }
+
+      // Handle virtual user name input
+      if (session.awaitingVirtualUserName && session.pendingExpense) {
+        const name = text.trim();
+        if (name.length === 0) {
+          await ctx.reply('Please enter a valid name:');
+          return;
+        }
+
+        try {
+          const virtualUserId = await this.groupService.createVirtualUser(
+            session.pendingExpense.groupId,
+            name
+          );
+
+          // Add to pending expense members
+          session.pendingExpense.members.push({
+            id: virtualUserId,
+            name,
+            type: 'virtual',
+            isSelected: true,
+          });
+
+          session.awaitingVirtualUserName = false;
+
+          // Show updated split UI
+          await this.showSmartSplitUI(
+            ctx,
+            session.pendingExpense.groupId,
+            session.pendingExpense.amount,
+            session.pendingExpense.description,
+            session.pendingExpense.category,
+            session.pendingExpense.payerId,
+            session.pendingExpense.payerType
+          );
+        } catch (error: any) {
+          console.error('Error creating virtual user:', error);
+          await ctx.reply('Sorry, I encountered an error. Please try again.');
+        }
+        return;
+      }
+
+      // Handle text expense input (e.g., "Dinner 120")
+      // Pattern: description followed by number (amount)
+      const expenseMatch = text.match(/^(.+?)\s+(\d+(?:\.\d+)?)$/);
+      if (expenseMatch && !session.manualAddMode && !session.recurringMode && !session.editLastMode && !session.searchMode) {
+        const description = expenseMatch[1].trim();
+        const amount = parseFloat(expenseMatch[2]);
+
+        if (amount > 0) {
+          const chatId = ctx.chat.id;
+          const group = await this.groupService.getGroupByChatId(chatId);
+          
+          if (group) {
+            // Get or create payer user
+            const payerId = await this.groupService.getOrCreateUser(
+              ctx.from.id,
+              ctx.from.first_name || `User ${ctx.from.id}`
+            );
+            await this.groupService.addMemberToGroup(group.id, payerId);
+
+            // Show smart split UI
+            await this.showSmartSplitUI(
+              ctx,
+              group.id,
+              amount,
+              description,
+              null, // category
+              payerId,
+              'real'
+            );
+            return;
+          }
+        }
       }
 
       // Handle edit last amount
@@ -1798,6 +1948,179 @@ export class YBBTallyBot {
       
       const callbackData = ctx.callbackQuery.data;
       const session = ctx.session;
+
+      // Handle identity merging
+      if (callbackData.startsWith('merge_identity_')) {
+        await ctx.answerCbQuery();
+        const parts = callbackData.replace('merge_identity_', '').split('_');
+        
+        if (parts[0] === 'new') {
+          // User selected "No, I'm new"
+          const userId = BigInt(parts[1]);
+          await ctx.reply('Welcome! You\'re all set up.');
+          if (session.pendingIdentityMerge) {
+            session.pendingIdentityMerge = undefined;
+          }
+          return;
+        } else {
+          // User selected a virtual user to merge
+          const virtualUserId = BigInt(parts[0]);
+          const realUserId = BigInt(parts[1]);
+          
+          await this.groupService.mergeVirtualToReal(virtualUserId, realUserId);
+          await ctx.reply('✅ Identity merged! Your expense history has been linked.');
+          if (session.pendingIdentityMerge) {
+            session.pendingIdentityMerge = undefined;
+          }
+          return;
+        }
+      }
+
+      // Handle smart split toggle
+      if (callbackData.startsWith('split_toggle_')) {
+        await ctx.answerCbQuery();
+        if (!session.pendingExpense) {
+          await ctx.reply('Session expired. Please start over.');
+          return;
+        }
+
+        const parts = callbackData.replace('split_toggle_', '').split('_');
+        const memberId = BigInt(parts[0]);
+        const memberType = parts[1] as 'real' | 'virtual';
+
+        // Toggle member selection
+        const member = session.pendingExpense.members.find(
+          (m) => m.id === memberId && m.type === memberType
+        );
+        if (member) {
+          member.isSelected = !member.isSelected;
+        }
+
+        // Update the message with new state
+        const preview = this.splitService.formatSplitPreview(
+          session.pendingExpense.amount,
+          session.pendingExpense.members
+        );
+
+        const keyboard: any[] = [];
+        const rows: any[] = [];
+        session.pendingExpense.members.forEach((member, index) => {
+          const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+          rows.push(
+            Markup.button.callback(
+              buttonText,
+              `split_toggle_${member.id}_${member.type}`
+            )
+          );
+          if (rows.length === 2 || index === session.pendingExpense!.members.length - 1) {
+            keyboard.push(rows.slice());
+            rows.length = 0;
+          }
+        });
+        keyboard.push([Markup.button.callback('➕ Add Person', 'split_add_person')]);
+        keyboard.push([Markup.button.callback('✅ Confirm', 'split_confirm')]);
+
+        await ctx.editMessageText(preview, {
+          parse_mode: 'Markdown',
+          reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+        });
+        return;
+      }
+
+      // Handle add person (virtual user)
+      if (callbackData === 'split_add_person') {
+        await ctx.answerCbQuery();
+        if (!session.pendingExpense) {
+          await ctx.reply('Session expired. Please start over.');
+          return;
+        }
+        session.awaitingVirtualUserName = true;
+        await ctx.reply('Please type the name of the person to add:');
+        return;
+      }
+
+      // Handle split confirm
+      if (callbackData === 'split_confirm') {
+        await ctx.answerCbQuery();
+        if (!session.pendingExpense) {
+          await ctx.reply('Session expired. Please start over.');
+          return;
+        }
+
+        const selectedMembers = session.pendingExpense.members.filter((m) => m.isSelected);
+        if (selectedMembers.length === 0) {
+          await ctx.reply('Please select at least one person to split with.');
+          return;
+        }
+
+        // Create member type map
+        const memberTypes = new Map<bigint, 'real' | 'virtual'>();
+        selectedMembers.forEach((m) => memberTypes.set(m.id, m.type));
+
+        // Create expense with splits
+        const expenseId = await this.splitService.createExpenseWithSplits(
+          session.pendingExpense.groupId,
+          session.pendingExpense.amount,
+          session.pendingExpense.description,
+          session.pendingExpense.category,
+          session.pendingExpense.payerId,
+          session.pendingExpense.payerType,
+          selectedMembers.map((m) => m.id),
+          memberTypes
+        );
+
+        await ctx.reply(
+          `✅ Expense recorded!\n\n` +
+          `Amount: SGD $${session.pendingExpense.amount.toFixed(2)}\n` +
+          `Split between ${selectedMembers.length} person(s): SGD $${(session.pendingExpense.amount / selectedMembers.length).toFixed(2)} each`,
+          this.getMainMenuKeyboard()
+        );
+
+        // Clear session
+        session.pendingExpense = undefined;
+        return;
+      }
+
+      // Handle confirm amount (from receipt processing) - trigger smart split
+      if (callbackData.startsWith('confirm_amount_')) {
+        await ctx.answerCbQuery();
+        const receiptId = callbackData.replace('confirm_amount_', '');
+        const receiptData = this.pendingReceipts.get(receiptId);
+
+        if (!receiptData) {
+          await ctx.reply('Receipt data not found. Please try again.');
+          return;
+        }
+
+        const chatId = receiptData.chatId;
+        const group = await this.groupService.getGroupByChatId(chatId);
+        if (!group) {
+          await ctx.reply('Group not found. Please add the bot to a group first.');
+          return;
+        }
+
+        // Get or create payer user
+        const payerId = await this.groupService.getOrCreateUser(
+          Number(receiptData.userId),
+          ctx.from?.first_name || `User ${receiptData.userId}`
+        );
+        await this.groupService.addMemberToGroup(group.id, payerId);
+
+        // Show smart split UI
+        await this.showSmartSplitUI(
+          ctx,
+          group.id,
+          receiptData.receiptData.amount,
+          receiptData.receiptData.merchant || 'Expense',
+          receiptData.receiptData.category || null,
+          payerId,
+          'real',
+          receiptId
+        );
+
+        this.pendingReceipts.delete(receiptId);
+        return;
+      }
 
       // Handle manual category selection
       if (callbackData.startsWith('manual_category_')) {
@@ -2824,6 +3147,133 @@ export class YBBTallyBot {
       );
       // Clean up
       this.photoCollections.delete(chatId);
+    }
+  }
+
+  /**
+   * Handle new chat members (for identity merging)
+   */
+  private async handleNewChatMembers(ctx: any): Promise<void> {
+    try {
+      const chatId = ctx.chat?.id;
+      const newMembers = ctx.message?.new_chat_members;
+
+      if (!chatId || !newMembers || newMembers.length === 0) {
+        return;
+      }
+
+      // Get or initialize group
+      let group = await this.groupService.getGroupByChatId(chatId);
+      if (!group) {
+        const installerId = ctx.message.from?.id || newMembers[0].id;
+        const { groupId } = await this.subscriptionService.initializeGroup(chatId, installerId);
+        group = await this.groupService.getGroupByChatId(chatId);
+      }
+
+      if (!group) return;
+
+      // Check for unlinked virtual users with debt
+      const unlinkedVirtualUsers = await this.groupService.getUnlinkedVirtualUsersWithDebt(group.id);
+
+      if (unlinkedVirtualUsers.length === 0) {
+        return; // No virtual users to merge
+      }
+
+      // For each new member, check if they match any virtual user
+      for (const member of newMembers) {
+        if (member.is_bot) continue;
+
+        const userId = await this.groupService.getOrCreateUser(member.id, member.first_name || `User ${member.id}`);
+        await this.groupService.addMemberToGroup(group.id, userId);
+
+        // Show identity merge prompt
+        const virtualUsersWithDebt = unlinkedVirtualUsers.map((vu) => ({
+          id: vu.id,
+          name: vu.name,
+          debt: vu.outstandingDebt,
+        }));
+
+        if (virtualUsersWithDebt.length > 0) {
+          const keyboard = virtualUsersWithDebt.map((vu) => [
+            Markup.button.callback(
+              `${vu.name} ($${vu.debt.toFixed(2)})`,
+              `merge_identity_${vu.id}_${userId}`
+            ),
+          ]);
+          keyboard.push([Markup.button.callback('No, I\'m new', `merge_identity_new_${userId}`)]);
+
+          await ctx.reply(
+            `Welcome! I found existing expense records for these people. Are you one of them?`,
+            Markup.inlineKeyboard(keyboard)
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error('Error handling new chat members:', error);
+    }
+  }
+
+  /**
+   * Show smart split UI
+   */
+  private async showSmartSplitUI(
+    ctx: any,
+    groupId: bigint,
+    amount: number,
+    description: string,
+    category: string | null,
+    payerId: bigint,
+    payerType: 'real' | 'virtual',
+    receiptId?: string
+  ): Promise<void> {
+    try {
+      const members = await this.splitService.getSplitMembers(groupId);
+      const preview = this.splitService.formatSplitPreview(amount, members);
+
+      // Build inline keyboard with member toggles
+      const keyboard: any[] = [];
+      const rows: any[] = [];
+
+      members.forEach((member, index) => {
+        const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+        rows.push(
+          Markup.button.callback(
+            buttonText,
+            `split_toggle_${member.id}_${member.type}`
+          )
+        );
+
+        // Add row every 2 buttons or at end
+        if (rows.length === 2 || index === members.length - 1) {
+          keyboard.push(rows.slice());
+          rows.length = 0;
+        }
+      });
+
+      // Add "Add Person" and "Confirm" buttons
+      keyboard.push([Markup.button.callback('➕ Add Person', 'split_add_person')]);
+      keyboard.push([Markup.button.callback('✅ Confirm', 'split_confirm')]);
+
+      // Store in session
+      if (!ctx.session) ctx.session = {};
+      ctx.session.pendingExpense = {
+        groupId,
+        amount,
+        description,
+        category,
+        payerId,
+        payerType,
+        members,
+        receiptId,
+      };
+
+      await ctx.reply(preview, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+      });
+    } catch (error: any) {
+      console.error('Error showing smart split UI:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
     }
   }
 

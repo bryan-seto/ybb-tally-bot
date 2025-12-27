@@ -1,0 +1,53 @@
+name: Weekly Release Automation
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC (5:00 PM SGT)
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  weekly-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history for git log
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run Weekly Release Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_IDS: ${{ secrets.TELEGRAM_USER_IDS }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node dist/scripts/weekly-release.js
+
+      - name: Commit and push USER_GUIDE.md changes
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add USER_GUIDE.md
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: Auto-update user guide from weekly release"
+            git push
+          else
+            echo "No changes to USER_GUIDE.md to commit"
+          fi
+
