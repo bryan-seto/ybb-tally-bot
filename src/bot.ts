@@ -197,19 +197,13 @@ export class YBBTallyBot {
    * Get main menu keyboard
    */
   private getMainMenuKeyboard() {
-    return {
-      reply_markup: {
-        keyboard: [
-          ['✅ Settle Up', '💰 Check Balance'],
-          ['🧾 View Unsettled', '➕ Add Manual Expense'],
-          ['✏️ Edit Last', '🔍 Search'],
-          ['🔄 Recurring', '📊 Reports'],
-          ['❓ User Guide'],
-        ],
-        resize_keyboard: true,
-        persistent: true,
-      },
-    };
+    return Markup.keyboard([
+      ['✅ Settle Up', '💰 Check Balance'],
+      ['🧾 View Unsettled', '➕ Add Manual Expense'],
+      ['✏️ Edit Last', '🔍 Search'],
+      ['🔄 Recurring', '📊 Reports'],
+      ['❓ User Guide'],
+    ]).resize().persistent();
   }
 
   /**
@@ -223,7 +217,25 @@ export class YBBTallyBot {
       `👇 Or tap a button below:`;
     
     const keyboard = this.getMainMenuKeyboard();
-    await ctx.reply(menuMessage, keyboard);
+    console.log('Sending main menu with keyboard:', JSON.stringify(keyboard, null, 2));
+    console.log('Chat type:', ctx.chat?.type);
+    console.log('Chat ID:', ctx.chat?.id);
+    console.log('User ID:', ctx.from?.id);
+    
+    try {
+      // Use sendMessage directly to ensure keyboard is sent
+      const result = await ctx.telegram.sendMessage(
+        ctx.chat.id,
+        menuMessage,
+        keyboard
+      );
+      console.log('Main menu sent successfully, message ID:', result?.message_id);
+    } catch (error: any) {
+      console.error('Error sending main menu:', error);
+      console.error('Error details:', error.response || error.message);
+      // Fallback: send without keyboard
+      await ctx.reply(menuMessage);
+    }
   }
 
   /**
