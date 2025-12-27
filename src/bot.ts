@@ -47,7 +47,7 @@ interface BotSession {
     payer?: string;
   };
   editLastMode?: boolean;
-  editLastAction?: 'amount' | 'category';
+  editLastAction?: 'amount' | 'category' | 'split';
   editLastTransactionId?: bigint;
   searchMode?: boolean;
 }
@@ -1008,14 +1008,15 @@ export class YBBTallyBot {
         `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
         `What would you like to edit?`,
         {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
-              [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
-              [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
-              [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
-            ],
-          },
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
+                [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
+                [{ text: '📊 Edit Split %', callback_data: `edit_last_split_${lastTransaction.id}` }],
+                [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
+                [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
+              ],
+            },
         }
       );
     } catch (error: any) {
@@ -1414,6 +1415,79 @@ export class YBBTallyBot {
         return;
       }
 
+      // Handle edit split percentage
+      if (session.editLastMode && session.editLastAction === 'split') {
+        const bryanPercentage = parseFloat(textLower.replace(/[^0-9.]/g, ''));
+        if (isNaN(bryanPercentage) || bryanPercentage < 0 || bryanPercentage > 100) {
+          await ctx.reply('Please enter a valid percentage between 0 and 100 for Bryan\'s share:');
+          return;
+        }
+
+        const hweiYeenPercentage = 100 - bryanPercentage;
+
+        try {
+          const transactionId = session.editLastTransactionId;
+          if (transactionId) {
+            // Update transaction with split percentages
+            // Note: This assumes the Transaction model has bryanPercentage and hweiYeenPercentage fields
+            // If not, you'll need to add a database migration first
+            await prisma.transaction.update({
+              where: { id: transactionId },
+              data: { 
+                // @ts-ignore - These fields may need to be added to the schema
+                bryanPercentage: bryanPercentage / 100,
+                hweiYeenPercentage: hweiYeenPercentage / 100,
+              },
+            });
+            session.editLastMode = false;
+            session.editLastAction = undefined;
+            session.editLastTransactionId = undefined;
+            await ctx.reply(
+              `✅ Split updated: Bryan ${bryanPercentage.toFixed(0)}% / Hwei Yeen ${hweiYeenPercentage.toFixed(0)}%`,
+              this.getMainMenuKeyboard()
+            );
+          } else {
+            // Fallback: get last transaction
+            const userId = BigInt(ctx.from.id);
+            const lastTransaction = await prisma.transaction.findFirst({
+              where: { payerId: userId },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (lastTransaction) {
+              await prisma.transaction.update({
+                where: { id: lastTransaction.id },
+                data: { 
+                  // @ts-ignore - These fields may need to be added to the schema
+                  bryanPercentage: bryanPercentage / 100,
+                  hweiYeenPercentage: hweiYeenPercentage / 100,
+                },
+              });
+              session.editLastMode = false;
+              session.editLastAction = undefined;
+              await ctx.reply(
+                `✅ Split updated: Bryan ${bryanPercentage.toFixed(0)}% / Hwei Yeen ${hweiYeenPercentage.toFixed(0)}%`,
+                this.getMainMenuKeyboard()
+              );
+            } else {
+              session.editLastMode = false;
+              session.editLastAction = undefined;
+              await ctx.reply('No transaction found to update.', this.getMainMenuKeyboard());
+            }
+          }
+        } catch (error: any) {
+          console.error('Error updating split:', error);
+          session.editLastMode = false;
+          session.editLastAction = undefined;
+          session.editLastTransactionId = undefined;
+          await ctx.reply(
+            'Sorry, I encountered an error. The split percentage fields may need to be added to the database schema first.',
+            this.getMainMenuKeyboard()
+          );
+        }
+        return;
+      }
+
       // If user sends text during photo collection, clear the collection
       // (they might be sending a correction or canceling)
       if (this.photoCollections.has(chatId)) {
@@ -1525,9 +1599,15 @@ export class YBBTallyBot {
           session.awaitingAmountConfirmation = false;
 
           // Calculate transaction-specific amount owed
+          // @ts-ignore - These fields may need to be added to the schema
+          const bryanPercent = (transaction as any).bryanPercentage;
+          // @ts-ignore
+          const hweiYeenPercent = (transaction as any).hweiYeenPercentage;
           const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
             transaction.amountSGD,
-            payerRole
+            payerRole,
+            bryanPercent,
+            hweiYeenPercent
           );
           
           // Show outstanding balance
@@ -1983,6 +2063,22 @@ export class YBBTallyBot {
               },
             }
           );
+        } else if (action === 'split') {
+          if (!session) ctx.session = {};
+          session.editLastMode = true;
+          session.editLastAction = 'split';
+          if (transactionId) {
+            session.editLastTransactionId = transactionId;
+          }
+          await ctx.reply(
+            'Enter split percentage for Bryan (0-100).\n\n' +
+            'Examples:\n' +
+            '• 70 (for 70/30 split)\n' +
+            '• 50 (for 50/50 split)\n' +
+            '• 80 (for 80/20 split)\n\n' +
+            'Hwei Yeen\'s percentage will be calculated automatically.',
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
         } else if (action === 'delete') {
           if (transactionId) {
             await prisma.transaction.delete({
@@ -2096,6 +2192,7 @@ export class YBBTallyBot {
               inline_keyboard: [
                 [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${transactionId}` }],
                 [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${transactionId}` }],
+                [{ text: '📊 Edit Split %', callback_data: `edit_last_split_${transactionId}` }],
                 [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${transactionId}` }],
               ],
             },
@@ -2631,18 +2728,7 @@ export class YBBTallyBot {
         transactionInfo = `Processed ${collection.photos.length} receipt${collection.photos.length > 1 ? 's' : ''}.\n\n`;
       }
       
-      if (receiptData.merchants && receiptData.merchants.length > 0 && 
-          receiptData.individualAmounts && receiptData.individualAmounts.length > 0 &&
-          receiptData.merchants.length === receiptData.individualAmounts.length) {
-        // Combine merchants and amounts on same line
-        transactionInfo += '**Merchants:**\n';
-        receiptData.merchants.forEach((merchant, index) => {
-          const amt = receiptData.individualAmounts![index];
-          transactionInfo += `${index + 1}. ${merchant} - SGD $${amt.toFixed(2)}\n`;
-        });
-        transactionInfo += `\n**Total: ${amountStr}**\n\n`;
-      } else if (receiptData.merchants && receiptData.merchants.length > 0) {
-        // Fallback: show merchants only if amounts don't match
+      if (receiptData.merchants && receiptData.merchants.length > 0) {
         transactionInfo += '**Merchants:**\n';
         receiptData.merchants.forEach((merchant, index) => {
           transactionInfo += `${index + 1}. ${merchant}\n`;
@@ -2650,16 +2736,13 @@ export class YBBTallyBot {
         transactionInfo += '\n';
       }
       
-      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0 && 
-          (!receiptData.merchants || receiptData.merchants.length !== receiptData.individualAmounts.length)) {
-        // Show breakdown only if merchants weren't shown or don't match
+      if (receiptData.individualAmounts && receiptData.individualAmounts.length > 0) {
         transactionInfo += '**Breakdown:**\n';
         receiptData.individualAmounts.forEach((amt, index) => {
           transactionInfo += `${index + 1}. SGD $${amt.toFixed(2)}\n`;
         });
         transactionInfo += `\n**Total: ${amountStr}**\n\n`;
-      } else if (!receiptData.merchants || receiptData.merchants.length === 0) {
-        // No merchants, just show total
+      } else {
         transactionInfo += `**Total: ${amountStr}**\n\n`;
       }
       

@@ -31,20 +31,25 @@ export class ExpenseService {
 
     let bryanPaid = 0;
     let hweiYeenPaid = 0;
-    let totalAmount = 0;
+    let bryanShare = 0;
+    let hweiYeenShare = 0;
 
     transactions.forEach((t) => {
-      totalAmount += t.amountSGD;
       if (t.payerId === bryan.id) {
         bryanPaid += t.amountSGD;
       } else if (t.payerId === hweiYeen.id) {
         hweiYeenPaid += t.amountSGD;
       }
+      
+      // Use custom split if available, otherwise default to 70/30
+      // @ts-ignore - These fields may need to be added to the schema
+      const bryanPercent = (t as any).bryanPercentage ?? 0.7;
+      // @ts-ignore
+      const hweiYeenPercent = (t as any).hweiYeenPercentage ?? 0.3;
+      
+      bryanShare += t.amountSGD * bryanPercent;
+      hweiYeenShare += t.amountSGD * hweiYeenPercent;
     });
-
-    // 70/30 split: Bryan 70%, HweiYeen 30%
-    const bryanShare = totalAmount * 0.7;
-    const hweiYeenShare = totalAmount * 0.3;
 
     const bryanOwes = Math.max(0, bryanShare - bryanPaid);
     const hweiYeenOwes = Math.max(0, hweiYeenShare - hweiYeenPaid);
@@ -133,11 +138,15 @@ export class ExpenseService {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    // Bryan's categories
+    // Bryan's categories - calculate his share of all transactions by category
     const bryanCategoryMap: { [key: string]: number } = {};
-    bryanTransactions.forEach((t) => {
+    transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + t.amountSGD;
+      // Use custom split if available, otherwise default to 70%
+      // @ts-ignore - These fields may need to be added to the schema
+      const bryanPercent = (t as any).bryanPercentage ?? 0.7;
+      const bryanShare = t.amountSGD * bryanPercent;
+      bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + bryanShare;
     });
 
     const bryanCategories = Object.entries(bryanCategoryMap)
@@ -145,11 +154,15 @@ export class ExpenseService {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    // Hwei Yeen's categories
+    // Hwei Yeen's categories - calculate her share of all transactions by category
     const hweiYeenCategoryMap: { [key: string]: number } = {};
-    hweiYeenTransactions.forEach((t) => {
+    transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + t.amountSGD;
+      // Use custom split if available, otherwise default to 30%
+      // @ts-ignore - These fields may need to be added to the schema
+      const hweiYeenPercent = (t as any).hweiYeenPercentage ?? 0.3;
+      const hweiYeenShare = t.amountSGD * hweiYeenPercent;
+      hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + hweiYeenShare;
     });
 
     const hweiYeenCategories = Object.entries(hweiYeenCategoryMap)
@@ -169,16 +182,24 @@ export class ExpenseService {
   }
 
   /**
-   * Calculate amount owed from a single transaction (70/30 split)
+   * Calculate amount owed from a single transaction
    * Returns: { bryanOwes: number, hweiYeenOwes: number }
    */
-  calculateTransactionOwed(amount: number, payerRole: 'Bryan' | 'HweiYeen'): {
+  calculateTransactionOwed(
+    amount: number, 
+    payerRole: 'Bryan' | 'HweiYeen',
+    bryanPercentage?: number,
+    hweiYeenPercentage?: number
+  ): {
     bryanOwes: number;
     hweiYeenOwes: number;
   } {
-    // 70/30 split: Bryan 70%, HweiYeen 30%
-    const bryanShare = amount * 0.7;
-    const hweiYeenShare = amount * 0.3;
+    // Use custom split if provided, otherwise default to 70/30
+    const bryanPercent = bryanPercentage ?? 0.7;
+    const hweiYeenPercent = hweiYeenPercentage ?? 0.3;
+    
+    const bryanShare = amount * bryanPercent;
+    const hweiYeenShare = amount * hweiYeenPercent;
 
     let bryanOwes = 0;
     let hweiYeenOwes = 0;
@@ -197,8 +218,13 @@ export class ExpenseService {
   /**
    * Format transaction-specific amount owed message
    */
-  getTransactionOwedMessage(amount: number, payerRole: 'Bryan' | 'HweiYeen'): string {
-    const owed = this.calculateTransactionOwed(amount, payerRole);
+  getTransactionOwedMessage(
+    amount: number, 
+    payerRole: 'Bryan' | 'HweiYeen',
+    bryanPercentage?: number,
+    hweiYeenPercentage?: number
+  ): string {
+    const owed = this.calculateTransactionOwed(amount, payerRole, bryanPercentage, hweiYeenPercentage);
     
     if (owed.bryanOwes > 0) {
       return `From this transaction: Bryan owes Hwei Yeen SGD $${owed.bryanOwes.toFixed(2)}`;
@@ -237,7 +263,16 @@ export class ExpenseService {
     });
 
     return transactions.map(t => {
-      const owed = this.calculateTransactionOwed(t.amountSGD, t.payer.role as 'Bryan' | 'HweiYeen');
+      // @ts-ignore - These fields may need to be added to the schema
+      const bryanPercent = (t as any).bryanPercentage;
+      // @ts-ignore
+      const hweiYeenPercent = (t as any).hweiYeenPercentage;
+      const owed = this.calculateTransactionOwed(
+        t.amountSGD, 
+        t.payer.role as 'Bryan' | 'HweiYeen',
+        bryanPercent,
+        hweiYeenPercent
+      );
       return {
         id: t.id,
         amount: t.amountSGD,
