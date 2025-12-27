@@ -37,7 +37,7 @@ interface BotSession {
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
-  manualAddStep?: 'description' | 'amount' | 'category' | 'payer';
+  manualAddStep?: 'description' | 'amount' | 'category' | 'payer' | 'split_count';
   manualAmount?: number;
   manualCategory?: string;
   manualDescription?: string;
@@ -2088,6 +2088,89 @@ export class YBBTallyBot {
         } else if (session.manualAddStep === 'payer') {
           // This is handled by callback query for payer buttons
           return;
+        } else if (session.manualAddStep === 'split_count') {
+          const count = parseInt(textLower.replace(/[^0-9]/g, ''));
+          if (isNaN(count) || count < 1 || count > 20) {
+            await ctx.reply('Please enter a valid number between 1 and 20:', this.getNumericKeyboard());
+            return;
+          }
+          
+          // Create Person A, B, C, D... members
+          const members: SplitMember[] = [];
+          for (let i = 0; i < count; i++) {
+            const personName = String.fromCharCode(65 + i); // A, B, C, D...
+            members.push({
+              id: BigInt(i + 1),
+              name: `Person ${personName}`,
+              type: 'real',
+              isSelected: true, // All selected by default
+            });
+          }
+          
+          // Get group
+          const chatId = ctx.chat?.id;
+          const group = chatId ? await this.groupService.getGroupByChatId(chatId) : null;
+          
+          if (!group) {
+            await ctx.reply('Error: Group not found.');
+            session.manualAddMode = false;
+            return;
+          }
+          
+          // Store in pending expense
+          if (!ctx.session) ctx.session = {};
+          ctx.session.pendingExpense = {
+            groupId: group.id,
+            amount: session.manualAmount!,
+            description: session.manualDescription || 'Manual Expense',
+            category: session.manualCategory || null,
+            payerId: session.manualPayerId!,
+            payerType: 'real',
+            members: members,
+            isManual: true,
+          };
+          
+          // Show preview with Person A, B, C, D
+          const preview = this.splitService.formatSplitPreview(
+            session.manualAmount!,
+            members,
+            session.manualDescription || 'Manual Expense',
+            ctx.from?.id,
+            true // isManual
+          );
+          
+          // Build keyboard with Person toggles
+          const keyboard: any[] = [];
+          const rows: any[] = [];
+          
+          members.forEach((member, index) => {
+            const buttonText = `${member.isSelected ? '✅' : '❌'} ${member.name}`;
+            rows.push(
+              Markup.button.callback(
+                buttonText,
+                `split_toggle_${member.id}_${member.type}`
+              )
+            );
+            
+            if (rows.length === 2 || index === members.length - 1) {
+              keyboard.push(rows.slice());
+              rows.length = 0;
+            }
+          });
+          
+          keyboard.push([Markup.button.callback('💾 Done', 'split_confirm')]);
+          
+          await ctx.reply(preview, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: keyboard,
+            },
+          });
+          
+          // Clear manual add mode
+          session.manualAddMode = false;
+          session.manualAddStep = undefined;
+          return;
         }
         return;
       }
@@ -2189,8 +2272,10 @@ export class YBBTallyBot {
       // Handle smart split toggle
       if (callbackData.startsWith('split_toggle_')) {
         await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
         if (!session.pendingExpense) {
-          await ctx.reply('Session expired. Please start over.');
+          await ctx.reply('Session expired. Please start over. Use /menu to begin again.');
           return;
         }
 
@@ -2209,7 +2294,10 @@ export class YBBTallyBot {
         // Update the message with new state
         const preview = this.splitService.formatSplitPreview(
           session.pendingExpense.amount,
-          session.pendingExpense.members
+          session.pendingExpense.members,
+          session.pendingExpense.description,
+          undefined,
+          session.pendingExpense.isManual
         );
 
         const keyboard: any[] = [];
@@ -2240,8 +2328,10 @@ export class YBBTallyBot {
       // Handle add person (virtual user)
       if (callbackData === 'split_add_person') {
         await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
         if (!session.pendingExpense) {
-          await ctx.reply('Session expired. Please start over.');
+          await ctx.reply('Session expired. Please start over. Use /menu to begin again.');
           return;
         }
         session.awaitingVirtualUserName = true;
@@ -2252,8 +2342,10 @@ export class YBBTallyBot {
       // Handle split confirm
       if (callbackData === 'split_confirm') {
         await ctx.answerCbQuery();
+        if (!ctx.session) ctx.session = {};
+        const session = ctx.session;
         if (!session.pendingExpense) {
-          await ctx.reply('Session expired. Please start over.');
+          await ctx.reply('Session expired. Please start over. Use /menu to begin again.');
           return;
         }
 
@@ -2486,26 +2578,16 @@ export class YBBTallyBot {
           return;
         }
 
-        // Show smart split UI (like old flow - ask who to split with)
-        // The showSmartSplitUI will set up pendingExpense properly
-        await this.showSmartSplitUI(
-          ctx,
-          group.id,
-          session.manualAmount,
-          session.manualDescription || 'Manual Expense',
-          session.manualCategory || null,
-          user.id,
-          'real'
+        // For manual expenses, ask how many people to split with
+        session.manualPayerId = user.id;
+        session.manualAddStep = 'split_count';
+        await ctx.reply(
+          `Amount: SGD $${session.manualAmount.toFixed(2)}\n` +
+          `Category: ${session.manualCategory || 'Other'}\n` +
+          `Paid by: ${user.name}\n\n` +
+          `How many people to split with? (Including yourself)`,
+          this.getNumericKeyboard()
         );
-
-        // Mark as manual expense (after showSmartSplitUI sets it up)
-        if (ctx.session.pendingExpense) {
-          ctx.session.pendingExpense.isManual = true;
-        }
-
-        // Clear manual add mode (split UI will handle the rest)
-        session.manualAddMode = false;
-        session.manualAddStep = undefined;
         return;
       }
 
@@ -3754,7 +3836,13 @@ export class YBBTallyBot {
         this.bot,
         payerTelegramId
       );
-      const preview = this.splitService.formatSplitPreview(amount, members, description, payerTelegramId);
+      const preview = this.splitService.formatSplitPreview(
+        amount, 
+        members, 
+        description, 
+        payerTelegramId,
+        false // isManual - receipts are not manual
+      );
 
       // Build inline keyboard with member toggles
       const keyboard: any[] = [];

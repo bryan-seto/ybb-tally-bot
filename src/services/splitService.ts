@@ -225,14 +225,20 @@ export class SplitService {
     amount: number,
     members: SplitMember[],
     description?: string,
-    payerTelegramId?: number
+    payerTelegramId?: number,
+    isManual?: boolean
   ): string {
     const selectedCount = members.filter((m) => m.isSelected).length;
     const splitAmount = selectedCount > 0 ? amount / selectedCount : 0;
     const VIP_IDS = [109284773, 424894363];
     const isVIP = payerTelegramId && VIP_IDS.includes(payerTelegramId);
 
-    let message = `🧾 **Receipt Scanned:** SGD $${amount.toFixed(2)}\n`;
+    // Use different header for manual vs receipt
+    const header = isManual 
+      ? `✏️ **Manually Entered:** SGD $${amount.toFixed(2)}`
+      : `🧾 **Receipt Scanned:** SGD $${amount.toFixed(2)}`;
+    
+    let message = `${header}\n`;
     if (description) {
       message += `**Description:** ${description}\n`;
     }
@@ -241,7 +247,7 @@ export class SplitService {
     if (isVIP) {
       message += `**Split with:** Database members (${selectedCount} people)\n\n`;
     } else {
-      message += `**Split with:** Everyone in Chat (${selectedCount} people)\n\n`;
+      message += `**Split with:** ${selectedCount} person${selectedCount !== 1 ? 's' : ''}\n\n`;
     }
     
     message += `**Share:** SGD $${splitAmount.toFixed(2)} each\n\n`;
