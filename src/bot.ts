@@ -180,8 +180,10 @@ export class YBBTallyBot {
         console.error('Error logging interaction:', error);
       }
 
-      // Check if user is allowed (legacy check - can be removed if using group-based auth)
-      if (!this.allowedUserIds.has(userId)) {
+      // Only apply legacy allowedUserIds check for private chats
+      // In groups, allow all users and let subscription logic handle access
+      const isPrivate = ctx.chat?.type === 'private';
+      if (isPrivate && !this.allowedUserIds.has(userId)) {
         await ctx.reply('Access Denied');
         console.log(`Access denied for user ID: ${userId}`);
         return;
@@ -192,6 +194,13 @@ export class YBBTallyBot {
       const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
       
       if (isGroup && chatId) {
+        // Initialize group if it doesn't exist (for new_chat_members or first interaction)
+        let group = await this.groupService.getGroupByChatId(chatId);
+        if (!group) {
+          const { groupId } = await this.subscriptionService.initializeGroup(chatId, telegramId);
+          group = await this.groupService.getGroupByChatId(chatId);
+        }
+
         // Check if this is an expense-related command
         const isExpenseCommand = 
           ctx.message && (
@@ -204,28 +213,19 @@ export class YBBTallyBot {
             (ctx.callbackQuery as any).data.startsWith('menu_add')
           ));
 
-        if (isExpenseCommand) {
-          // Initialize group if it doesn't exist
-          let group = await this.groupService.getGroupByChatId(chatId);
-          if (!group) {
-            const { groupId } = await this.subscriptionService.initializeGroup(chatId, telegramId);
-            group = await this.groupService.getGroupByChatId(chatId);
-          }
+        if (isExpenseCommand && group) {
+          const isActive = await this.subscriptionService.isGroupActive(group.id);
+          const isVIP = this.subscriptionService.isVIP(telegramId);
 
-          if (group) {
-            const isActive = await this.subscriptionService.isGroupActive(group.id);
-            const isVIP = this.subscriptionService.isVIP(telegramId);
-
-            if (!isActive && !isVIP) {
-              // Group is locked or expired
-              const checkoutUrl = await this.subscriptionService.createCheckoutSession(group.id, true);
-              await ctx.reply(
-                '🔒 This group\'s subscription has expired. Please subscribe to continue using the bot.\n\n' +
-                `[Subscribe Now](${checkoutUrl})`,
-                { parse_mode: 'Markdown' }
-              );
-              return;
-            }
+          if (!isActive && !isVIP) {
+            // Group is locked or expired
+            const checkoutUrl = await this.subscriptionService.createCheckoutSession(group.id, true);
+            await ctx.reply(
+              '🔒 This group\'s subscription has expired. Please subscribe to continue using the bot.\n\n' +
+              `[Subscribe Now](${checkoutUrl})`,
+              { parse_mode: 'Markdown' }
+            );
+            return;
           }
         }
       }
