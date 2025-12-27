@@ -92,6 +92,13 @@ export class HistoryService {
   }
 
   /**
+   * Escape Markdown special characters
+   */
+  private escapeMarkdown(text: string): string {
+    return text.replace(/([_*\[\]()~`>#+=|{}.!-])/g, '\\$1');
+  }
+
+  /**
    * Format transaction list item
    */
   formatTransactionListItem(tx: TransactionListItem): string {
@@ -100,7 +107,10 @@ export class HistoryService {
       ? `$${tx.amount.toFixed(2)}`
       : `${tx.currency} ${tx.amount.toFixed(2)}`;
     
-    return `/${tx.id} ${statusEmoji} *${tx.merchant}* - ${amountStr}`;
+    // Escape merchant name to prevent Markdown parsing errors
+    const merchant = this.escapeMarkdown(tx.merchant);
+    
+    return `/${tx.id} ${statusEmoji} *${merchant}* - ${amountStr}`;
   }
 
   /**

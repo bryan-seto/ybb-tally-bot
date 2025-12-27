@@ -1038,7 +1038,12 @@ export class YBBTallyBot {
         const message = '📜 **Transaction History**\n\nNo transactions found.';
         if (ctx.callbackQuery) {
           await ctx.callbackQuery.answer();
-          await ctx.callbackQuery.editMessageText(message, { parse_mode: 'Markdown' });
+          try {
+            await ctx.callbackQuery.editMessageText(message, { parse_mode: 'Markdown' });
+          } catch (editError) {
+            // If edit fails, send a new message
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+          }
         } else {
           await ctx.reply(message, { parse_mode: 'Markdown' });
         }
@@ -1067,13 +1072,22 @@ export class YBBTallyBot {
 
       if (ctx.callbackQuery) {
         await ctx.callbackQuery.answer();
-        await ctx.callbackQuery.editMessageText(
-          message,
-          {
+        try {
+          await ctx.callbackQuery.editMessageText(
+            message,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: replyMarkup?.reply_markup,
+            }
+          );
+        } catch (editError: any) {
+          // If edit fails, send a new message
+          console.error('Error editing history message:', editError);
+          await ctx.reply(message, {
             parse_mode: 'Markdown',
             reply_markup: replyMarkup?.reply_markup,
-          }
-        );
+          });
+        }
       } else {
         await ctx.reply(message, {
           parse_mode: 'Markdown',
@@ -1082,7 +1096,21 @@ export class YBBTallyBot {
       }
     } catch (error: any) {
       console.error('Error showing history:', error);
-      await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
+      console.error('Error stack:', error.stack);
+      const errorMessage = ctx.callbackQuery 
+        ? 'Sorry, I encountered an error retrieving history. Please try again.'
+        : 'Sorry, I encountered an error retrieving history. Please try again.';
+      
+      if (ctx.callbackQuery) {
+        await ctx.callbackQuery.answer('Error retrieving history', { show_alert: true });
+        try {
+          await ctx.callbackQuery.editMessageText(errorMessage);
+        } catch {
+          await ctx.reply(errorMessage);
+        }
+      } else {
+        await ctx.reply(errorMessage);
+      }
     }
   }
 

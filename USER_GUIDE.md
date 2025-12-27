@@ -70,6 +70,21 @@ All expenses are automatically split:
 - Hwei Yeen's share (30%): $45
 - Since Bryan paid $100 but owes $105, Bryan owes Hwei Yeen $5
 
+## Viewing Transaction History
+
+Tap **📜 History** from the main menu to view your complete transaction history:
+
+- **List View**: See the last 20 transactions in a compact format
+- **Format**: Each transaction shows as `/<id> <status> *merchant* - $amount`
+  - 🔴 = Unsettled transaction
+  - ✅ = Settled transaction
+- **Pagination**: Use the **⬇️ Load More** button to see older transactions
+- **Transaction Details**: Click on any transaction ID (e.g., `/101`) to see:
+  - Full transaction details (date, merchant, amount, category, payer)
+  - Action buttons: **✅ Settle**, **✏️ Edit**, **🗑️ Delete**
+
+**Sorting**: Transactions are sorted by when they were recorded (most recent first), not by transaction date.
+
 ## Viewing Unsettled Transactions
 
 Tap **🧾 View Unsettled** to see:
@@ -121,6 +136,7 @@ While the bot primarily uses buttons for navigation, you can also use these comm
 - `/start` - Show the main menu
 - `/help` - Show the main menu
 - `/balance` - Check outstanding balance
+- `/history` - View transaction history
 - `/pending` - View all unsettled transactions
 - `/settle` - Mark all expenses as settled
 - `/report` - Generate monthly report (use `/report 1` for last month)
