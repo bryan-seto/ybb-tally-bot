@@ -41,6 +41,7 @@ interface PendingReceiptData {
     category?: string;
     individualAmounts?: number[];
     merchants?: string[];
+    categories?: string[];
   };
   chatId: number;
   userId: bigint;
@@ -1097,17 +1098,62 @@ export class YBBTallyBot {
           return;
         }
 
-        const transaction = await prisma.transaction.create({
-          data: {
-            amountSGD: receiptDataToUse.amount,
-            currency: receiptDataToUse.currency || 'SGD',
-            category: receiptDataToUse.category || 'Other',
-            description: receiptDataToUse.merchant || 'Multiple Receipts',
-            payerId: user.id,
-            date: receiptDataToUse.date ? new Date(receiptDataToUse.date) : getNow(),
-            splitType: 'FULL',
-          },
-        });
+        // Check if we have multiple receipts to split
+        const hasMultipleReceipts = receiptDataToUse.individualAmounts && 
+                                     receiptDataToUse.individualAmounts.length > 1;
+        const hasMultipleMerchants = receiptDataToUse.merchants && 
+                                      receiptDataToUse.merchants.length > 1;
+
+        let transactions: any[] = [];
+        let totalAmount = 0;
+
+        if (hasMultipleReceipts) {
+          // Create separate transactions for each receipt
+          const individualAmounts = receiptDataToUse.individualAmounts || [];
+          const merchants = receiptDataToUse.merchants || [];
+          const categories = receiptDataToUse.categories || [];
+          const baseCategory = receiptDataToUse.category || 'Other';
+          const transactionDate = receiptDataToUse.date ? new Date(receiptDataToUse.date) : getNow();
+
+          for (let i = 0; i < individualAmounts.length; i++) {
+            const amount = individualAmounts[i];
+            const merchant = merchants[i] || merchants[0] || receiptDataToUse.merchant || `Receipt ${i + 1}`;
+            
+            // Use individual category if available, otherwise use base category
+            const category = categories[i] || baseCategory;
+            
+            const transaction = await prisma.transaction.create({
+              data: {
+                amountSGD: amount,
+                currency: receiptDataToUse.currency || 'SGD',
+                category: category,
+                description: merchant,
+                payerId: user.id,
+                date: transactionDate,
+                splitType: 'FULL',
+              },
+            });
+            
+            transactions.push(transaction);
+            totalAmount += amount;
+          }
+        } else {
+          // Single receipt - create one transaction
+          const transaction = await prisma.transaction.create({
+            data: {
+              amountSGD: receiptDataToUse.amount,
+              currency: receiptDataToUse.currency || 'SGD',
+              category: receiptDataToUse.category || 'Other',
+              description: receiptDataToUse.merchant || (receiptDataToUse.merchants && receiptDataToUse.merchants[0]) || 'Receipt',
+              payerId: user.id,
+              date: receiptDataToUse.date ? new Date(receiptDataToUse.date) : getNow(),
+              splitType: 'FULL',
+            },
+          });
+          
+          transactions.push(transaction);
+          totalAmount = receiptDataToUse.amount;
+        }
 
         // Clear session and pending receipt
         session.receiptData = undefined;
@@ -1128,36 +1174,39 @@ export class YBBTallyBot {
           }
         }
 
-        // Calculate transaction-specific amount owed
+        // Build confirmation message
+        let message = '';
+        if (transactions.length > 1) {
+          message = `✅ ${transactions.length} expenses recorded!\n\n`;
+          transactions.forEach((t, index) => {
+            message += `${index + 1}. ${t.description}: SGD $${t.amountSGD.toFixed(2)} (${t.category})\n`;
+          });
+          message += `\n**Total: SGD $${totalAmount.toFixed(2)}**\n`;
+          message += `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n\n`;
+        } else {
+          const transaction = transactions[0];
+          message = `✅ Expense recorded!\n\n` +
+            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
+            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
+            `Category: ${transaction.category || 'Other'}\n\n`;
+        }
+
+        // Calculate transaction-specific amount owed (from total)
         const transactionOwedMessage = this.expenseService.getTransactionOwedMessage(
-          transaction.amountSGD,
+          totalAmount,
           payerRole
         );
         
         // Show outstanding balance
         const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
         
+        message += `${transactionOwedMessage}\n\n${balanceMessage}`;
+        
         try {
-          await ctx.editMessageText(
-            `✅ Expense recorded!\n\n` +
-            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
-            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
-            `Category: ${transaction.category || 'Other'}\n\n` +
-            `${transactionOwedMessage}\n\n` +
-            balanceMessage,
-            { parse_mode: 'Markdown' }
-          );
+          await ctx.editMessageText(message, { parse_mode: 'Markdown' });
         } catch (error) {
           // If editing fails, send a new message
-          await ctx.reply(
-            `✅ Expense recorded!\n\n` +
-            `Amount: SGD $${transaction.amountSGD.toFixed(2)}\n` +
-            `Paid by: ${USER_NAMES[user.id.toString()] || payerRole}\n` +
-            `Category: ${transaction.category || 'Other'}\n\n` +
-            `${transactionOwedMessage}\n\n` +
-            balanceMessage,
-            { parse_mode: 'Markdown' }
-          );
+          await ctx.reply(message, { parse_mode: 'Markdown' });
         }
       }
     });
@@ -1273,6 +1322,7 @@ export class YBBTallyBot {
           category: receiptData.category,
           individualAmounts: receiptData.individualAmounts,
           merchants: receiptData.merchants || [],
+          categories: receiptData.categories || [],
         },
         chatId,
         userId: collection.userId,

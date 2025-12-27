@@ -11,6 +11,7 @@ interface ReceiptData {
   transactionCount?: number;
   individualAmounts?: number[]; // Array of individual transaction amounts in SGD
   merchants?: string[]; // Array of merchant names when multiple receipts
+  categories?: string[]; // Array of categories for each receipt (when multiple receipts)
 }
 
 export class AIService {
@@ -42,7 +43,7 @@ export class AIService {
 
 IMPORTANT:
 - If they are multiple parts of one long receipt (e.g., top and bottom of same receipt), combine them and provide a SINGLE total.
-- If they are different receipts, sum all the totals and list all the merchants.
+- If they are different receipts, analyze each one separately and provide individual details for each.
 
 Extract the following information in JSON format:
 {
@@ -50,12 +51,18 @@ Extract the following information in JSON format:
   "total": number (the total amount in SGD - sum of all receipts if multiple, or single total if one receipt),
   "currency": string (e.g., "SGD", "USD", "THB" - use SGD if amounts are converted),
   "merchant": string (merchant/store name, or "Multiple Receipts" if different merchants, null if not found),
-  "merchants": array of strings (list of all merchant names found across all receipts, empty array if not found),
+  "merchants": array of strings (list of all merchant names found across all receipts, in the order they appear, empty array if not found),
   "date": string (date in YYYY-MM-DD format - use the most recent transaction date, null if not found),
-  "category": string (category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found),
+  "category": string (primary category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found - use the most common category if multiple),
+  "categories": array of strings (list of categories for each receipt in the order they appear, e.g. ["Food", "Food"] or ["Food", "Shopping"], empty array if single receipt or categories are the same),
   "transactionCount": number (total number of individual transactions across all receipts),
   "individualAmounts": array of numbers (list of each receipt's total amount in SGD, in the order they appear)
 }
+
+IMPORTANT FOR CATEGORIES:
+- If receipts have different categories (e.g., one is "Food" and another is "Shopping"), provide them in the "categories" array.
+- If all receipts have the same category, you can provide a single "category" and leave "categories" empty, OR provide the same category in "categories" array.
+- Categories should be one of: "Food", "Transport", "Shopping", "Bills", "Travel", "Other"
 
 Return ONLY valid JSON, no additional text.`
         : `Analyze this image. It could be:
@@ -111,6 +118,11 @@ Return ONLY valid JSON, no additional text.`;
       // Ensure merchants array exists
       if (!receiptData.merchants) {
         receiptData.merchants = receiptData.merchant ? [receiptData.merchant] : [];
+      }
+
+      // Ensure categories array exists
+      if (!receiptData.categories) {
+        receiptData.categories = receiptData.category ? [receiptData.category] : [];
       }
 
       const latencyMs = Date.now() - startTime;
