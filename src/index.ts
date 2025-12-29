@@ -92,6 +92,11 @@ async function main() {
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
       await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
       console.log(`📡 Webhook set: ${fullWebhookUrl}`);
+      
+      // Cache bot username and setup commands for webhook mode
+      await bot.cacheBotUsername();
+      await bot.setupBotCommands();
+      console.log('✅ Bot initialized for webhook mode');
     } else {
       console.log(`💻 Running in ${environment.toUpperCase()} mode with LONG POLLING`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });

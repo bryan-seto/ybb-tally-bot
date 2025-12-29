@@ -1188,10 +1188,9 @@ export class YBBTallyBot {
   }
 
   /**
-   * Launch the bot
+   * Cache bot username at startup to prevent blocking getMe() calls
    */
-  async launch(): Promise<void> {
-    // Cache bot username at startup
+  async cacheBotUsername(): Promise<void> {
     try {
       const botInfo = await this.bot.telegram.getMe();
       this.botUsername = botInfo.username || '';
@@ -1199,7 +1198,13 @@ export class YBBTallyBot {
     } catch (error) {
       console.error('[Bot] Failed to get bot username:', error);
     }
-    
+  }
+
+  /**
+   * Launch the bot
+   */
+  async launch(): Promise<void> {
+    await this.cacheBotUsername();
     await this.bot.launch();
     await this.setupBotCommands();
     console.log('YBB Tally Bot is running...');
