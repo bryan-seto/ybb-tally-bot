@@ -1,0 +1,53 @@
+name: Test CI
+
+on:
+  push:
+    branches: [ main, staging ]
+  pull_request:
+    branches: [ main, staging ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: ybb_tally_bot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/ybb_tally_bot_test?schema=public"
+
+      - name: Run tests
+        run: npm test
+        env:
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/ybb_tally_bot_test?schema=public"
+          TELEGRAM_BOT_TOKEN: "mock_token"
+          GEMINI_API_KEY: "mock_key"
+          ALLOWED_USER_IDS: "123,456"
+          NODE_ENV: test
+
