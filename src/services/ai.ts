@@ -30,7 +30,15 @@ export class AIService {
 
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // Old (Deprecated)
+    // this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    // Stable (Good)
+    this.model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    // Best (Recommended for New Features) but expensive
+    // this.model = this.genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
   }
 
   /**
