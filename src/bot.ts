@@ -167,8 +167,8 @@ export class YBBTallyBot {
 
       // Check if user is allowed
       if (!this.allowedUserIds.has(userId)) {
-        await ctx.reply('Access Denied');
-        console.log(`Access denied for user ID: ${userId}`);
+        console.log(`[SECURITY] Access denied for user ID: ${userId}. Allowed:`, Array.from(this.allowedUserIds));
+        await ctx.reply(`Access Denied (ID: ${userId})`);
         return;
       }
 
