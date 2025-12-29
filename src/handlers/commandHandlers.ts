@@ -102,7 +102,7 @@ export class CommandHandlers {
       if (CONFIG.FEATURE_FLAGS.ENABLE_NEW_REPORT_FEATURE) {
         await ctx.reply('🚀 [New Feature Enabled] Generating advanced monthly report...');
         // Your new feature logic would go here.
-        // For now, it just falls through or you can return early.
+        // For now, we continue to the standard report as well.
       } else {
         await ctx.reply('Generating monthly report... At your service!');
       }

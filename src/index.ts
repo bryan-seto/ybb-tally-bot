@@ -108,8 +108,8 @@ async function main() {
     if ((isProduction || isStaging) && CONFIG.WEBHOOK_URL) {
       const fullWebhookUrl = `${CONFIG.WEBHOOK_URL}/webhook`;
       console.log(`🌐 Running in ${environment.toUpperCase()} mode with WEBHOOKS`);
-      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
-      await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
+      await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
+      await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: false });
       console.log(`📡 Webhook set: ${fullWebhookUrl}`);
     } else {
       console.log(`💻 Running in ${environment.toUpperCase()} mode with LONG POLLING`);
