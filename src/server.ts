@@ -7,12 +7,10 @@ export function setupServer(bot: YBBTallyBot) {
   app.use(express.json());
 
   app.get('/', (req: Request, res: Response) => {
-    console.log('[SERVER] Root endpoint hit');
     res.status(200).send('Bot is alive');
   });
 
   app.get('/health', (req: Request, res: Response) => {
-    console.log('[SERVER] Health check endpoint hit');
     res.status(200).json({
       status: 'ok',
       message: 'Bot is alive',
@@ -36,23 +34,10 @@ export function setupServer(bot: YBBTallyBot) {
   });
 
   const webhookPath = '/webhook';
-  app.post(webhookPath, (req, res, next) => {
-    console.log(`[WEBHOOK] Received update from Telegram`);
-    console.log(`[WEBHOOK] Update type: ${req.body?.message ? 'message' : req.body?.callback_query ? 'callback_query' : 'other'}`);
-    if (req.body?.message?.text) {
-      console.log(`[WEBHOOK] Message text: ${req.body.message.text}`);
-    }
-    next();
-  }, bot.getBot().webhookCallback(webhookPath));
+  app.use(webhookPath, bot.getBot().webhookCallback());
 
-  const server = app.listen(Number(CONFIG.PORT), '0.0.0.0', () => {
-    console.log(`✅ Server listening on port ${CONFIG.PORT}`);
-    console.log(`🌐 Health check: http://0.0.0.0:${CONFIG.PORT}/health`);
-    console.log(`📡 Webhook endpoint: http://0.0.0.0:${CONFIG.PORT}/webhook`);
-  });
-
-  server.on('error', (error: any) => {
-    console.error('❌ Server error:', error);
+  app.listen(Number(CONFIG.PORT), '0.0.0.0', () => {
+    console.log(`Server listening on port ${CONFIG.PORT}`);
   });
 
   return app;
