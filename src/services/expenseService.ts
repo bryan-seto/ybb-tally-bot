@@ -284,6 +284,139 @@ export class ExpenseService {
   }
 
   /**
+   * Calculate detailed balance with weighted percentages
+   * This is the comprehensive view that shows how much each person paid and their share
+   */
+  async calculateDetailedBalance(): Promise<{
+    bryanPaid: number;
+    hweiYeenPaid: number;
+    bryanShare: number;
+    hweiYeenShare: number;
+    totalSpending: number;
+    avgBryanPercent: number;
+    avgHweiYeenPercent: number;
+    bryanNet: number;
+    hweiYeenNet: number;
+  }> {
+    // Get users
+    const bryan = await prisma.user.findFirst({
+      where: { role: 'Bryan' },
+    });
+    const hweiYeen = await prisma.user.findFirst({
+      where: { role: 'HweiYeen' },
+    });
+
+    if (!bryan || !hweiYeen) {
+      return {
+        bryanPaid: 0,
+        hweiYeenPaid: 0,
+        bryanShare: 0,
+        hweiYeenShare: 0,
+        totalSpending: 0,
+        avgBryanPercent: 70,
+        avgHweiYeenPercent: 30,
+        bryanNet: 0,
+        hweiYeenNet: 0,
+      };
+    }
+
+    // Get all unsettled transactions with their split percentages
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        isSettled: false,
+      },
+      include: {
+        payer: true,
+      },
+    });
+
+    let bryanPaid = 0;
+    let hweiYeenPaid = 0;
+    let bryanShare = 0;
+    let hweiYeenShare = 0;
+    
+    // Track split percentages for display
+    let totalAmount = 0;
+    let weightedBryanPercent = 0;
+    let weightedHweiYeenPercent = 0;
+
+    transactions.forEach((t) => {
+      if (t.payerId === bryan.id) {
+        bryanPaid += t.amountSGD;
+      } else if (t.payerId === hweiYeen.id) {
+        hweiYeenPaid += t.amountSGD;
+      }
+      
+      // Use custom split if available, otherwise default to 70/30
+      const bryanPercent = t.bryanPercentage ?? 0.7;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
+      
+      bryanShare += t.amountSGD * bryanPercent;
+      hweiYeenShare += t.amountSGD * hweiYeenPercent;
+      
+      // Calculate weighted average for display
+      totalAmount += t.amountSGD;
+      weightedBryanPercent += t.amountSGD * bryanPercent;
+      weightedHweiYeenPercent += t.amountSGD * hweiYeenPercent;
+    });
+
+    // Calculate weighted average percentages
+    const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
+    const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
+    
+    const totalSpending = bryanPaid + hweiYeenPaid;
+    
+    // Calculate net: positive = overpaid (other person owes them), negative = underpaid (they owe)
+    const bryanNet = bryanPaid - bryanShare;
+    const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
+
+    return {
+      bryanPaid,
+      hweiYeenPaid,
+      bryanShare,
+      hweiYeenShare,
+      totalSpending,
+      avgBryanPercent,
+      avgHweiYeenPercent,
+      bryanNet,
+      hweiYeenNet,
+    };
+  }
+
+  /**
+   * Format detailed balance message
+   */
+  async getDetailedBalanceMessage(): Promise<string> {
+    const balance = await this.calculateDetailedBalance();
+    
+    let message = `💰 **Balance Summary**\n\n`;
+    message += `Total Paid by Bryan (Unsettled): SGD $${balance.bryanPaid.toFixed(2)}\n`;
+    message += `Total Paid by Hwei Yeen (Unsettled): SGD $${balance.hweiYeenPaid.toFixed(2)}\n`;
+    message += `Total Group Spending: SGD $${balance.totalSpending.toFixed(2)}\n\n`;
+    message += `**Split Calculation (${balance.avgBryanPercent.toFixed(0)}/${balance.avgHweiYeenPercent.toFixed(0)}):**\n`;
+    message += `Bryan's share (${balance.avgBryanPercent.toFixed(0)}%): SGD $${balance.bryanShare.toFixed(2)}\n`;
+    message += `Hwei Yeen's share (${balance.avgHweiYeenPercent.toFixed(0)}%): SGD $${balance.hweiYeenShare.toFixed(2)}\n\n`;
+    
+    if (balance.bryanNet > 0) {
+      // Bryan overpaid, so Hwei Yeen owes Bryan
+      message += `👉 Hwei Yeen owes Bryan: SGD $${balance.bryanNet.toFixed(2)}`;
+    } else if (balance.hweiYeenNet > 0) {
+      // Hwei Yeen overpaid, so Bryan owes Hwei Yeen
+      message += `👉 Bryan owes Hwei Yeen: SGD $${balance.hweiYeenNet.toFixed(2)}`;
+    } else if (balance.bryanNet < 0) {
+      // Bryan underpaid, so Bryan owes Hwei Yeen
+      message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(balance.bryanNet).toFixed(2)}`;
+    } else if (balance.hweiYeenNet < 0) {
+      // Hwei Yeen underpaid, so Hwei Yeen owes Bryan
+      message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(balance.hweiYeenNet).toFixed(2)}`;
+    } else {
+      message += `✅ All settled!`;
+    }
+    
+    return message;
+  }
+
+  /**
    * Format outstanding balance message
    */
   async getOutstandingBalanceMessage(): Promise<string> {
@@ -304,6 +437,53 @@ export class ExpenseService {
     } else if (balance.hweiYeenOwes > 0) {
       message += `Hwei Yeen owes Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     }
+
+    return message;
+  }
+
+  /**
+   * Format monthly report with category percentages
+   */
+  formatMonthlyReportMessage(
+    report: {
+      totalSpend: number;
+      bryanPaid: number;
+      hweiYeenPaid: number;
+      transactionCount: number;
+      topCategories: { category: string; amount: number }[];
+      bryanCategories: { category: string; amount: number }[];
+      hweiYeenCategories: { category: string; amount: number }[];
+    },
+    monthName: string,
+    chartUrl: string
+  ): string {
+    const message =
+      `📊 **Monthly Report - ${monthName}**\n\n` +
+      `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
+      `Transactions: ${report.transactionCount}\n\n` +
+      `**Top Categories - Bryan:**\n` +
+      (report.bryanCategories.length > 0
+        ? report.bryanCategories
+            .map((c) => {
+              const percentage = report.bryanPaid > 0 
+                ? Math.round((c.amount / report.bryanPaid) * 100) 
+                : 0;
+              return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+            })
+            .join('\n')
+        : 'No categories found') +
+      `\n\n**Top Categories - Hwei Yeen:**\n` +
+      (report.hweiYeenCategories.length > 0
+        ? report.hweiYeenCategories
+            .map((c) => {
+              const percentage = report.hweiYeenPaid > 0 
+                ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                : 0;
+              return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+            })
+            .join('\n')
+        : 'No categories found') +
+      `\n\n[View Chart](${chartUrl})`;
 
     return message;
   }
