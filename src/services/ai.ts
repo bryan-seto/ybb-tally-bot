@@ -1,18 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from '../lib/prisma';
+import { z } from 'zod';
+import * as Sentry from "@sentry/node";
 
-interface ReceiptData {
-  isValid: boolean;
-  total?: number;
-  currency?: string;
-  merchant?: string;
-  date?: string;
-  category?: string;
-  transactionCount?: number;
-  individualAmounts?: number[]; // Array of individual transaction amounts in SGD
-  merchants?: string[]; // Array of merchant names when multiple receipts
-  categories?: string[]; // Array of categories for each receipt (when multiple receipts)
-}
+const ReceiptDataSchema = z.object({
+  isValid: z.boolean(),
+  total: z.number().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  merchant: z.string().nullable().optional(),
+  merchants: z.array(z.string()).nullable().optional(),
+  date: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  categories: z.array(z.string()).nullable().optional(),
+  transactionCount: z.number().nullable().optional(),
+  individualAmounts: z.array(z.number()).nullable().optional(),
+});
+
+export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
 export class AIService {
   private genAI: GoogleGenerativeAI;
@@ -113,7 +117,8 @@ Return ONLY valid JSON, no additional text.`;
         throw new Error('No JSON found in response');
       }
 
-      const receiptData: ReceiptData = JSON.parse(jsonMatch[0]);
+      const rawData = JSON.parse(jsonMatch[0]);
+      const receiptData = ReceiptDataSchema.parse(rawData);
       
       // Ensure merchants array exists
       if (!receiptData.merchants) {

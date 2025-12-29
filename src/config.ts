@@ -9,6 +9,7 @@ export const CONFIG = {
   PORT: process.env.PORT || 10000,
   NODE_ENV: process.env.NODE_ENV || 'development',
   WEBHOOK_URL: process.env.WEBHOOK_URL || '',
+  SENTRY_DSN: process.env.SENTRY_DSN || '',
 };
 
 export const USER_IDS = {

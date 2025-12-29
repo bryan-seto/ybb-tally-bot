@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import { YBBTallyBot } from './bot';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
@@ -9,6 +11,21 @@ import { setupJobs } from './jobs';
 import { UserRole } from '@prisma/client';
 
 dotenv.config();
+
+if (CONFIG.SENTRY_DSN) {
+  Sentry.init({
+    dsn: CONFIG.SENTRY_DSN,
+    integrations: [
+      nodeProfilingIntegration(),
+    ],
+    // Performance Monitoring
+    tracesSampleRate: 1.0, //  Capture 100% of the transactions
+    // Set sampling rate for profiling - this is relative to tracesSampleRate
+    profilesSampleRate: 1.0,
+    environment: CONFIG.NODE_ENV,
+  });
+  console.log('🛡️ Sentry initialized');
+}
 
 declare global {
   var botInstance: YBBTallyBot | undefined;
@@ -42,6 +59,7 @@ async function gracefulShutdown(signal: string) {
     process.exit(0);
   } catch (error) {
     console.error('❌ Error during shutdown:', error);
+    Sentry.captureException(error);
     process.exit(1);
   }
 }
@@ -71,6 +89,7 @@ async function initializeDatabase(): Promise<void> {
     }
   } catch (error: any) {
     console.error('❌ Error initializing database:', error.message);
+    Sentry.captureException(error);
     throw error;
   }
 }
@@ -99,8 +118,21 @@ async function main() {
     }
     
     global.isBooting = false;
+
+    // Global Telegraf error handler
+    bot.getBot().catch((err: any, ctx: any) => {
+      console.error(`💥 Telegraf error for ${ctx.updateType}`, err);
+      Sentry.withScope((scope) => {
+        scope.setTag("updateType", ctx.updateType);
+        scope.setContext("update", ctx.update);
+        if (ctx.from) scope.setUser({ id: ctx.from.id.toString(), username: ctx.from.username });
+        Sentry.captureException(err);
+      });
+    });
+
   } catch (error: any) {
     console.error('💥 Error starting bot:', error.message);
+    Sentry.captureException(error);
     process.exit(1);
   }
 }
