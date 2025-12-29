@@ -325,6 +325,7 @@ export class YBBTallyBot {
 
     // Start command - register group
     this.bot.command('start', async (ctx) => {
+      console.log(`[DEBUG] /start command received from user ${ctx.from?.id} in chat ${ctx.chat?.id}`);
       if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
         // Save group chat ID
         await prisma.settings.upsert({
@@ -344,10 +345,16 @@ export class YBBTallyBot {
     });
 
     // Help command - show main menu
-    this.bot.command('help', async (ctx) => await this.showMainMenu(ctx));
+    this.bot.command('help', async (ctx) => {
+      console.log(`[DEBUG] /help command received from user ${ctx.from?.id}`);
+      await this.showMainMenu(ctx);
+    });
 
     // Menu command
-    this.bot.command('menu', async (ctx) => await this.showMainMenu(ctx));
+    this.bot.command('menu', async (ctx) => {
+      console.log(`[DEBUG] /menu command received from user ${ctx.from?.id} (@${ctx.from?.username})`);
+      await this.showMainMenu(ctx);
+    });
 
     // Balance command
     this.bot.command('balance', async (ctx) => await this.commandHandlers.handleBalance(ctx));

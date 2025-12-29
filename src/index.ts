@@ -79,23 +79,44 @@ async function main() {
   try {
     await initializeDatabase();
     
+    console.log('🔧 Setting up server...');
     setupServer(bot);
+    console.log('✅ Server setup complete');
+    
+    console.log('⏰ Setting up jobs...');
     setupJobs(bot, expenseService, analyticsService);
+    console.log('✅ Jobs setup complete');
 
     const environment = CONFIG.NODE_ENV || 'development';
     const isProduction = environment === 'production';
     const isStaging = environment === 'staging';
 
+    console.log(`🌍 Environment: ${environment}`);
+    console.log(`🔗 Webhook URL: ${CONFIG.WEBHOOK_URL || 'Not set'}`);
+    console.log(`🚪 Port: ${CONFIG.PORT}`);
+
     if ((isProduction || isStaging) && CONFIG.WEBHOOK_URL) {
       const fullWebhookUrl = `${CONFIG.WEBHOOK_URL}/webhook`;
       console.log(`🌐 Running in ${environment.toUpperCase()} mode with WEBHOOKS`);
+      console.log(`🧹 Deleting existing webhook...`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
+      console.log(`📡 Setting new webhook: ${fullWebhookUrl}`);
       await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
-      console.log(`📡 Webhook set: ${fullWebhookUrl}`);
+      
+      // Verify webhook was set
+      const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+      console.log(`✅ Webhook confirmed: ${webhookInfo.url}`);
+      console.log(`📊 Pending updates: ${webhookInfo.pending_update_count}`);
+      
+      // Get bot info
+      const botInfo = await bot.getBot().telegram.getMe();
+      console.log(`🤖 Bot @${botInfo.username} (ID: ${botInfo.id}) ready for webhooks`);
+      console.log(`🎯 Bot launched successfully!`);
     } else {
       console.log(`💻 Running in ${environment.toUpperCase()} mode with LONG POLLING`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
       await bot.launch();
+      console.log(`🎯 Bot launched successfully!`);
     }
     
     global.isBooting = false;

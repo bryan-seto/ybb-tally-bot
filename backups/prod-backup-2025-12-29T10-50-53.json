@@ -1,0 +1,1546 @@
+{
+  "timestamp": "2025-12-29T10:50:53.661Z",
+  "databaseUrl": "postgresql://postgres.bctwuxduyvoxpebdlpwt:****@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres",
+  "data": {
+    "users": [
+      {
+        "id": "109284773",
+        "name": "Bryan",
+        "role": "Bryan",
+        "createdAt": "2025-12-29T03:58:24.811Z",
+        "updatedAt": "2025-12-29T03:58:24.811Z"
+      },
+      {
+        "id": "424894363",
+        "name": "Hwei Yeen",
+        "role": "HweiYeen",
+        "createdAt": "2025-12-29T03:58:24.845Z",
+        "updatedAt": "2025-12-29T03:58:24.845Z"
+      }
+    ],
+    "transactions": [
+      {
+        "id": "1",
+        "amountSGD": 48.49,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Awesome Cotton Bacon",
+        "payerId": "109284773",
+        "date": "2025-12-15T19:09:33.364Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.861Z",
+        "updatedAt": "2025-12-29T03:58:24.861Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "2",
+        "amountSGD": 117.29,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Generic Bronze Keyboard",
+        "payerId": "109284773",
+        "date": "2025-12-11T05:00:03.240Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.903Z",
+        "updatedAt": "2025-12-29T03:58:24.903Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "3",
+        "amountSGD": 18.95,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Small Concrete Shirt",
+        "payerId": "424894363",
+        "date": "2025-12-21T23:40:55.585Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.919Z",
+        "updatedAt": "2025-12-29T03:58:24.919Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "4",
+        "amountSGD": 75.94,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Oriental Aluminum Mouse",
+        "payerId": "109284773",
+        "date": "2025-12-09T04:38:12.898Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.962Z",
+        "updatedAt": "2025-12-29T03:58:24.962Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "5",
+        "amountSGD": 197.05,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Fresh Rubber Pants",
+        "payerId": "424894363",
+        "date": "2025-12-06T11:27:35.706Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.975Z",
+        "updatedAt": "2025-12-29T03:58:24.975Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "6",
+        "amountSGD": 134.89,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Oriental Metal Salad",
+        "payerId": "109284773",
+        "date": "2025-12-08T02:29:07.943Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.986Z",
+        "updatedAt": "2025-12-29T03:58:24.986Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "7",
+        "amountSGD": 83.39,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Sleek Bronze Tuna",
+        "payerId": "109284773",
+        "date": "2025-12-05T02:57:31.337Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:24.996Z",
+        "updatedAt": "2025-12-29T03:58:24.996Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "8",
+        "amountSGD": 74.69,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Frozen Metal Towels",
+        "payerId": "109284773",
+        "date": "2025-12-28T03:28:35.843Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.008Z",
+        "updatedAt": "2025-12-29T03:58:25.008Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "9",
+        "amountSGD": 26.95,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Sleek Wooden Pizza",
+        "payerId": "109284773",
+        "date": "2025-11-30T14:15:59.788Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.020Z",
+        "updatedAt": "2025-12-29T03:58:25.020Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "10",
+        "amountSGD": 94.69,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "Sleek Rubber Chair",
+        "payerId": "424894363",
+        "date": "2025-12-26T23:36:33.418Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.032Z",
+        "updatedAt": "2025-12-29T03:58:25.032Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "11",
+        "amountSGD": 147.99,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Generic Wooden Shirt",
+        "payerId": "424894363",
+        "date": "2025-12-01T19:16:32.284Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.047Z",
+        "updatedAt": "2025-12-29T03:58:25.047Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "12",
+        "amountSGD": 145.39,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Intelligent Granite Cheese",
+        "payerId": "424894363",
+        "date": "2025-12-03T04:16:47.726Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.058Z",
+        "updatedAt": "2025-12-29T03:58:25.058Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "13",
+        "amountSGD": 35.05,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Handmade Gold Chair",
+        "payerId": "109284773",
+        "date": "2025-12-04T01:04:27.525Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.070Z",
+        "updatedAt": "2025-12-29T03:58:25.070Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "14",
+        "amountSGD": 158.89,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Tasty Gold Chicken",
+        "payerId": "424894363",
+        "date": "2025-12-06T19:32:23.889Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.081Z",
+        "updatedAt": "2025-12-29T03:58:25.081Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "15",
+        "amountSGD": 26.39,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Rustic Marble Soap",
+        "payerId": "109284773",
+        "date": "2025-12-13T23:23:54.177Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.092Z",
+        "updatedAt": "2025-12-29T03:58:25.092Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "16",
+        "amountSGD": 141.95,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Rustic Granite Pants",
+        "payerId": "109284773",
+        "date": "2025-12-20T15:12:54.963Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.104Z",
+        "updatedAt": "2025-12-29T03:58:25.104Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "17",
+        "amountSGD": 129.89,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Handmade Aluminum Bacon",
+        "payerId": "424894363",
+        "date": "2025-12-18T09:19:20.540Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.117Z",
+        "updatedAt": "2025-12-29T03:58:25.117Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "18",
+        "amountSGD": 69.7,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Luxurious Concrete Towels",
+        "payerId": "109284773",
+        "date": "2025-12-16T00:56:45.200Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.130Z",
+        "updatedAt": "2025-12-29T03:58:25.130Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "19",
+        "amountSGD": 153.65,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Practical Rubber Salad",
+        "payerId": "424894363",
+        "date": "2025-11-29T12:11:51.624Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.145Z",
+        "updatedAt": "2025-12-29T03:58:25.145Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "20",
+        "amountSGD": 115.9,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Intelligent Concrete Chips",
+        "payerId": "424894363",
+        "date": "2025-12-20T05:08:00.857Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.166Z",
+        "updatedAt": "2025-12-29T03:58:25.166Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "21",
+        "amountSGD": 69.02,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Oriental Concrete Hat",
+        "payerId": "109284773",
+        "date": "2025-12-26T03:59:29.270Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.177Z",
+        "updatedAt": "2025-12-29T03:58:25.177Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "22",
+        "amountSGD": 178.3,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Fresh Metal Cheese",
+        "payerId": "109284773",
+        "date": "2025-12-03T17:25:29.149Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.190Z",
+        "updatedAt": "2025-12-29T03:58:25.190Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "23",
+        "amountSGD": 61.41,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Frozen Marble Computer",
+        "payerId": "424894363",
+        "date": "2025-12-03T13:59:30.261Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.202Z",
+        "updatedAt": "2025-12-29T03:58:25.202Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "24",
+        "amountSGD": 167.59,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Refined Granite Ball",
+        "payerId": "109284773",
+        "date": "2025-12-12T00:31:33.900Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.212Z",
+        "updatedAt": "2025-12-29T03:58:25.212Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "25",
+        "amountSGD": 39.99,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Licensed Bamboo Pants",
+        "payerId": "424894363",
+        "date": "2025-12-13T15:16:30.447Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.224Z",
+        "updatedAt": "2025-12-29T03:58:25.224Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "26",
+        "amountSGD": 10.49,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "Modern Metal Pizza",
+        "payerId": "109284773",
+        "date": "2025-12-21T14:53:00.505Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.238Z",
+        "updatedAt": "2025-12-29T03:58:25.238Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "27",
+        "amountSGD": 66.05,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Practical Aluminum Pizza",
+        "payerId": "424894363",
+        "date": "2025-12-20T05:22:24.279Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.252Z",
+        "updatedAt": "2025-12-29T03:58:25.252Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "28",
+        "amountSGD": 46.59,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Incredible Concrete Soap",
+        "payerId": "424894363",
+        "date": "2025-12-12T17:11:48.469Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.264Z",
+        "updatedAt": "2025-12-29T03:58:25.264Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "29",
+        "amountSGD": 31.19,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Ergonomic Aluminum Table",
+        "payerId": "109284773",
+        "date": "2025-12-23T19:23:11.034Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.273Z",
+        "updatedAt": "2025-12-29T03:58:25.273Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "30",
+        "amountSGD": 185.95,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Frozen Aluminum Bacon",
+        "payerId": "109284773",
+        "date": "2025-12-19T04:11:32.485Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.285Z",
+        "updatedAt": "2025-12-29T03:58:25.285Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "31",
+        "amountSGD": 187.29,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Recycled Rubber Chips",
+        "payerId": "109284773",
+        "date": "2025-12-09T05:59:24.719Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.297Z",
+        "updatedAt": "2025-12-29T03:58:25.297Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "32",
+        "amountSGD": 100.69,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Generic Concrete Pizza",
+        "payerId": "424894363",
+        "date": "2025-12-24T18:19:35.428Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.308Z",
+        "updatedAt": "2025-12-29T03:58:25.308Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "33",
+        "amountSGD": 49.79,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Tasty Concrete Pizza",
+        "payerId": "424894363",
+        "date": "2025-12-29T03:48:31.258Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.319Z",
+        "updatedAt": "2025-12-29T03:58:25.319Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "34",
+        "amountSGD": 151.1,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "Incredible Wooden Salad",
+        "payerId": "424894363",
+        "date": "2025-12-21T04:21:34.994Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.330Z",
+        "updatedAt": "2025-12-29T03:58:25.330Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "35",
+        "amountSGD": 79.39,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "Luxurious Wooden Ball",
+        "payerId": "109284773",
+        "date": "2025-12-10T15:23:46.946Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.342Z",
+        "updatedAt": "2025-12-29T03:58:25.342Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "36",
+        "amountSGD": 142.7,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Intelligent Concrete Fish",
+        "payerId": "109284773",
+        "date": "2025-12-19T10:33:07.913Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.357Z",
+        "updatedAt": "2025-12-29T03:58:25.357Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "37",
+        "amountSGD": 40.07,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Rustic Wooden Computer",
+        "payerId": "424894363",
+        "date": "2025-12-14T19:25:25.526Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.368Z",
+        "updatedAt": "2025-12-29T03:58:25.368Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "38",
+        "amountSGD": 122.33,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Rustic Plastic Pizza",
+        "payerId": "109284773",
+        "date": "2025-12-11T00:53:02.034Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.381Z",
+        "updatedAt": "2025-12-29T03:58:25.381Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "39",
+        "amountSGD": 147.69,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Awesome Wooden Mouse",
+        "payerId": "109284773",
+        "date": "2025-12-26T03:51:59.937Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.393Z",
+        "updatedAt": "2025-12-29T03:58:25.393Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "40",
+        "amountSGD": 40.59,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Awesome Cotton Cheese",
+        "payerId": "424894363",
+        "date": "2025-12-26T16:01:09.410Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.403Z",
+        "updatedAt": "2025-12-29T03:58:25.403Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "41",
+        "amountSGD": 110.15,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Bespoke Marble Cheese",
+        "payerId": "424894363",
+        "date": "2025-12-08T11:26:55.215Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.413Z",
+        "updatedAt": "2025-12-29T03:58:25.413Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "42",
+        "amountSGD": 84.85,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Awesome Steel Towels",
+        "payerId": "424894363",
+        "date": "2025-12-06T04:25:48.275Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.426Z",
+        "updatedAt": "2025-12-29T03:58:25.426Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "43",
+        "amountSGD": 26.05,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Ergonomic Aluminum Shoes",
+        "payerId": "424894363",
+        "date": "2025-12-28T10:55:23.749Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.439Z",
+        "updatedAt": "2025-12-29T03:58:25.439Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "44",
+        "amountSGD": 11.99,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Elegant Ceramic Hat",
+        "payerId": "424894363",
+        "date": "2025-12-24T08:22:14.930Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.453Z",
+        "updatedAt": "2025-12-29T03:58:25.453Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "45",
+        "amountSGD": 193.65,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Gorgeous Aluminum Chips",
+        "payerId": "109284773",
+        "date": "2025-12-03T04:35:01.911Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.466Z",
+        "updatedAt": "2025-12-29T03:58:25.466Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "46",
+        "amountSGD": 179.49,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Rustic Metal Gloves",
+        "payerId": "424894363",
+        "date": "2025-12-18T10:58:44.000Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.477Z",
+        "updatedAt": "2025-12-29T03:58:25.477Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "47",
+        "amountSGD": 110.09,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Oriental Silk Shirt",
+        "payerId": "424894363",
+        "date": "2025-12-12T07:39:24.071Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.490Z",
+        "updatedAt": "2025-12-29T03:58:25.490Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "48",
+        "amountSGD": 92.39,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Generic Gold Soap",
+        "payerId": "109284773",
+        "date": "2025-12-05T23:40:27.926Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.502Z",
+        "updatedAt": "2025-12-29T03:58:25.502Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "49",
+        "amountSGD": 30.95,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Fresh Bronze Pants",
+        "payerId": "109284773",
+        "date": "2025-12-04T03:57:14.546Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.514Z",
+        "updatedAt": "2025-12-29T03:58:25.514Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "50",
+        "amountSGD": 7.72,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Recycled Cotton Salad",
+        "payerId": "109284773",
+        "date": "2025-12-06T16:27:59.354Z",
+        "isSettled": true,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.525Z",
+        "updatedAt": "2025-12-29T03:58:25.525Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "51",
+        "amountSGD": 12.39,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Recycled Granite Tuna",
+        "payerId": "424894363",
+        "date": "2025-12-29T03:58:25.536Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.537Z",
+        "updatedAt": "2025-12-29T03:58:25.537Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "52",
+        "amountSGD": 17.85,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "Unbranded Wooden Shirt",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.549Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.550Z",
+        "updatedAt": "2025-12-29T03:58:25.550Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "53",
+        "amountSGD": 11.05,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Fantastic Silk Salad",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.563Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.564Z",
+        "updatedAt": "2025-12-29T03:58:25.564Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "54",
+        "amountSGD": 53.69,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Small Concrete Chips",
+        "payerId": "424894363",
+        "date": "2025-12-29T03:58:25.577Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.578Z",
+        "updatedAt": "2025-12-29T03:58:25.578Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "55",
+        "amountSGD": 33.65,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Luxurious Cotton Pizza",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.590Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.591Z",
+        "updatedAt": "2025-12-29T03:58:25.591Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "56",
+        "amountSGD": 68.35,
+        "currency": "SGD",
+        "category": "Other",
+        "description": "Gorgeous Concrete Chicken",
+        "payerId": "424894363",
+        "date": "2025-12-29T03:58:25.601Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.602Z",
+        "updatedAt": "2025-12-29T03:58:25.602Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "57",
+        "amountSGD": 70.39,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Intelligent Silk Salad",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.615Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.616Z",
+        "updatedAt": "2025-12-29T03:58:25.616Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "58",
+        "amountSGD": 39.79,
+        "currency": "SGD",
+        "category": "Transport",
+        "description": "Soft Concrete Hat",
+        "payerId": "424894363",
+        "date": "2025-12-29T03:58:25.632Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.633Z",
+        "updatedAt": "2025-12-29T03:58:25.633Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "59",
+        "amountSGD": 54.29,
+        "currency": "SGD",
+        "category": "Shopping",
+        "description": "Frozen Wooden Gloves",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.644Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.645Z",
+        "updatedAt": "2025-12-29T03:58:25.645Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "60",
+        "amountSGD": 34.48,
+        "currency": "SGD",
+        "category": "Travel",
+        "description": "Handmade Concrete Keyboard",
+        "payerId": "109284773",
+        "date": "2025-12-29T03:58:25.657Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T03:58:25.658Z",
+        "updatedAt": "2025-12-29T03:58:25.658Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "61",
+        "amountSGD": 90,
+        "currency": "SGD",
+        "category": "Groceries",
+        "description": "Weekly Groceries",
+        "payerId": "109284773",
+        "date": "2025-12-29T07:14:17.806Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T07:14:17.806Z",
+        "updatedAt": "2025-12-29T07:14:17.806Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      },
+      {
+        "id": "62",
+        "amountSGD": 60,
+        "currency": "SGD",
+        "category": "Food",
+        "description": "Dinner last night",
+        "payerId": "424894363",
+        "date": "2025-12-29T07:14:17.936Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T07:14:17.936Z",
+        "updatedAt": "2025-12-29T07:14:17.936Z",
+        "payer": {
+          "id": "424894363",
+          "name": "Hwei Yeen",
+          "role": "HweiYeen",
+          "createdAt": "2025-12-29T03:58:24.845Z",
+          "updatedAt": "2025-12-29T03:58:24.845Z"
+        }
+      },
+      {
+        "id": "63",
+        "amountSGD": 36.84,
+        "currency": "SGD",
+        "category": "Bills",
+        "description": "M1",
+        "payerId": "109284773",
+        "date": "2025-12-01T00:00:00.000Z",
+        "isSettled": false,
+        "splitType": "FULL",
+        "bryanPercentage": 0.7,
+        "hweiYeenPercentage": 0.3,
+        "createdAt": "2025-12-29T10:23:23.379Z",
+        "updatedAt": "2025-12-29T10:23:23.379Z",
+        "payer": {
+          "id": "109284773",
+          "name": "Bryan",
+          "role": "Bryan",
+          "createdAt": "2025-12-29T03:58:24.811Z",
+          "updatedAt": "2025-12-29T03:58:24.811Z"
+        }
+      }
+    ],
+    "recurringExpenses": [],
+    "settings": [
+      {
+        "key": "primary_group_id",
+        "value": "-5281217081",
+        "updatedAt": "2025-12-27T17:07:16.905Z"
+      }
+    ],
+    "systemLogs": [
+      {
+        "id": "136",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "photo",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:23:06.969Z"
+      },
+      {
+        "id": "137",
+        "userId": "109284773",
+        "event": "receipt_processed",
+        "metadata": {
+          "isValid": true,
+          "success": true,
+          "latencyMs": 2303
+        },
+        "timestamp": "2025-12-29T10:23:22.112Z"
+      },
+      {
+        "id": "138",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "/menu@YBBTally_Bot",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:23:57.110Z"
+      },
+      {
+        "id": "139",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "menu_history",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:24:02.711Z"
+      },
+      {
+        "id": "140",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "/62",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:27:41.181Z"
+      },
+      {
+        "id": "141",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "/menu@YBBTally_Bot",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:50:00.883Z"
+      },
+      {
+        "id": "142",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "menu_history",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:50:03.957Z"
+      },
+      {
+        "id": "143",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "/menu@YBBTally_Bot",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:50:10.912Z"
+      },
+      {
+        "id": "144",
+        "userId": "109284773",
+        "event": "command_used",
+        "metadata": {
+          "command": "menu_unsettled",
+          "chatType": "supergroup"
+        },
+        "timestamp": "2025-12-29T10:50:14.410Z"
+      }
+    ],
+    "dailyStats": [
+      {
+        "date": "2025-12-26T16:00:00.000Z",
+        "dau": 0,
+        "receiptsProcessed": 0,
+        "totalSpend": 0,
+        "avgLatencyMs": 0,
+        "peakHour": null,
+        "spendVelocity7DayAvg": 0
+      },
+      {
+        "date": "2025-12-27T16:00:00.000Z",
+        "dau": 0,
+        "receiptsProcessed": 0,
+        "totalSpend": 100.74,
+        "avgLatencyMs": 0,
+        "peakHour": null,
+        "spendVelocity7DayAvg": 111.02
+      }
+    ],
+    "sessions": [
+      {
+        "id": "109284773:-1003631134640",
+        "data": "{}"
+      }
+    ]
+  },
+  "stats": {
+    "users": 2,
+    "transactions": 63,
+    "recurringExpenses": 0,
+    "settings": 1,
+    "systemLogs": 9,
+    "dailyStats": 2,
+    "sessions": 1
+  }
+}
