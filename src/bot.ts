@@ -298,6 +298,31 @@ export class YBBTallyBot {
    * Setup all bot commands
    */
   private setupCommands(): void {
+    // Handle bot being added to a group
+    this.bot.on('my_chat_member', async (ctx) => {
+      const { new_chat_member } = ctx.myChatMember;
+      
+      // If bot was added to group
+      if (
+        (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') &&
+        new_chat_member.status === 'member'
+      ) {
+        // Save group chat ID (same as /start logic)
+        await prisma.settings.upsert({
+          where: { key: 'primary_group_id' },
+          update: { value: ctx.chat.id.toString() },
+          create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
+        });
+
+        // Show main menu automatically
+        await this.showMainMenu(ctx, 
+          `👋 I've been added to this group! I'm ready to track.\n\n` +
+          `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
+          `👇 Or tap a button below:`
+        );
+      }
+    });
+
     // Start command - register group
     this.bot.command('start', async (ctx) => {
       if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
@@ -1095,6 +1120,33 @@ export class YBBTallyBot {
     this.bot.on('photo', async (ctx) => await this.photoHandler.handlePhoto(ctx));
     this.bot.on('text', async (ctx) => await this.messageHandlers.handleText(ctx));
     this.bot.on('callback_query', async (ctx) => await this.callbackHandlers.handleCallback(ctx));
+
+    // Auto-start when added to a group
+    this.bot.on('my_chat_member', async (ctx) => {
+      try {
+        const { new_chat_member } = ctx.myChatMember;
+        
+        // Check if the bot was added as a member or administrator
+        if (new_chat_member.status === 'member' || new_chat_member.status === 'administrator') {
+          if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
+            // Register group as primary
+            await prisma.settings.upsert({
+              where: { key: 'primary_group_id' },
+              update: { value: ctx.chat.id.toString() },
+              create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
+            });
+            
+            const groupTitle = (ctx.chat as any).title || 'this group';
+            await this.showMainMenu(ctx, 
+              `👋 I've been added to **${groupTitle}**!\n\n` +
+              `I'm ready to track expenses for everyone here. Simply send photos of your receipts or screenshots to get started!`
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error handling my_chat_member update:', error);
+      }
+    });
   }
   async getPrimaryGroupId(): Promise<number | null> {
     const setting = await prisma.settings.findUnique({

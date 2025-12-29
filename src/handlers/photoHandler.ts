@@ -14,6 +14,7 @@ interface PhotoCollection {
   photos: PendingPhoto[];
   timer: NodeJS.Timeout | null;
   statusMessageId?: number;
+  isCreatingStatus?: boolean;
   userId: bigint;
 }
 
@@ -29,18 +30,19 @@ export class PhotoHandler {
     try {
       const chatId = ctx.chat.id;
       const userId = BigInt(ctx.from.id);
+
+      let collection = this.photoCollections.get(chatId);
+      if (!collection) {
+        collection = { photos: [], timer: null, userId };
+        this.photoCollections.set(chatId, collection);
+      }
+
       const photo = ctx.message.photo[ctx.message.photo.length - 1];
       const file = await ctx.telegram.getFile(photo.file_id);
       
       if (!file.file_path) {
         await ctx.reply('Error: Could not get file path from Telegram.');
         return;
-      }
-      
-      let collection = this.photoCollections.get(chatId);
-      if (!collection) {
-        collection = { photos: [], timer: null, userId };
-        this.photoCollections.set(chatId, collection);
       }
 
       collection.photos.push({ fileId: photo.file_id, filePath: file.file_path });
@@ -54,12 +56,18 @@ export class PhotoHandler {
         try {
           await ctx.telegram.editMessageText(chatId, collection.statusMessageId, undefined, statusText);
         } catch {
+          // Message might have been deleted or edited too quickly
+        }
+      } else if (!collection.isCreatingStatus) {
+        collection.isCreatingStatus = true;
+        try {
           const statusMsg = await ctx.reply(statusText);
           collection.statusMessageId = statusMsg.message_id;
+        } catch (err) {
+          console.error('Error creating status message:', err);
+        } finally {
+          collection.isCreatingStatus = false;
         }
-      } else {
-        const statusMsg = await ctx.reply(statusText);
-        collection.statusMessageId = statusMsg.message_id;
       }
 
       collection.timer = setTimeout(async () => {
