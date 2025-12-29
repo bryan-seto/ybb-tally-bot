@@ -12,38 +12,50 @@ export class MessageHandlers {
   ) {}
 
   async handleText(ctx: any) {
-    if (!ctx.session) ctx.session = {};
-    const text = ctx.message.text.trim();
-    const session = ctx.session;
+    try {
+      if (!ctx.session) ctx.session = {};
+      const text = ctx.message.text.trim();
+      const session = ctx.session;
 
-    // Handle cancel
-    if (text === '❌ Cancel') {
-      this.clearSession(session);
-      await ctx.reply('❌ Operation cancelled.', Markup.removeKeyboard());
-      return;
-    }
+      // Handle cancel
+      if (text === '❌ Cancel') {
+        this.clearSession(session);
+        await ctx.reply('❌ Operation cancelled.', Markup.removeKeyboard());
+        return;
+      }
 
-    // Handle manual add flow
-    if (session.manualAddMode) {
-      await this.handleManualAddFlow(ctx, text, session);
-      return;
-    }
+      // Handle manual add flow
+      if (session.manualAddMode) {
+        await this.handleManualAddFlow(ctx, text, session);
+        return;
+      }
 
-    // Handle search flow
-    if (session.searchMode) {
-      await this.handleSearchFlow(ctx, text, session);
-      return;
-    }
+      // Handle search flow
+      if (session.searchMode) {
+        await this.handleSearchFlow(ctx, text, session);
+        return;
+      }
 
-    // Handle AI correction commands (tag-only)
-    // Check if the bot is mentioned/tagged
-    const botInfo = await ctx.telegram.getMe();
-    const botUsername = botInfo.username;
-    const isBotTagged = text.includes(`@${botUsername}`);
+      // Handle AI correction commands (tag-only)
+      // Check if the bot is mentioned/tagged
+      const botInfo = await ctx.telegram.getMe();
+      const botUsername = botInfo.username;
+      const isBotTagged = text.includes(`@${botUsername}`);
 
-    if (isBotTagged) {
-      await this.handleAICorrection(ctx, text);
-      return;
+      if (isBotTagged) {
+        await this.handleAICorrection(ctx, text);
+        return;
+      }
+    } catch (error: any) {
+      console.error('Error in handleText:', error);
+      // Only respond if this was clearly meant for the bot
+      if (ctx.message?.text?.includes('@')) {
+        try {
+          await ctx.reply('❌ Sorry, something went wrong. Please try again.');
+        } catch (replyError) {
+          console.error('Failed to send error message:', replyError);
+        }
+      }
     }
   }
 
