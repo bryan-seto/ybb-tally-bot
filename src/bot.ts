@@ -116,7 +116,69 @@ export class YBBTallyBot {
     this.setupMiddleware();
     this.setupCommands();
     this.setupHandlers();
+    this.setupGlobalErrorHandler();
     // setupBotCommands will be called after bot is launched
+  }
+
+  /**
+   * Global error handler to catch any unhandled exceptions
+   */
+  private setupGlobalErrorHandler(): void {
+    this.bot.catch(async (err: any, ctx: Context) => {
+      console.error(`[GLOBAL ERROR] for ${ctx.updateType}:`, err);
+      
+      // 1. Report to Sentry
+      Sentry.withScope((scope) => {
+        scope.setTag("updateType", ctx.updateType);
+        scope.setContext("update", ctx.update);
+        if (ctx.from) scope.setUser({ id: ctx.from.id.toString(), username: ctx.from.username });
+        Sentry.captureException(err);
+      });
+
+      // 2. Notify Founder (Bryan)
+      try {
+        const errorMsg = err.message || 'Unknown error';
+        const userStr = ctx.from ? `${ctx.from.first_name} (@${ctx.from.username})` : 'System';
+        const groupStr = ctx.chat?.type !== 'private' ? `in group <b>${(ctx.chat as any).title}</b>` : 'in private chat';
+        
+        await this.bot.telegram.sendMessage(CONFIG.USER_IDS.BRYAN, 
+          `🚨 <b>BOT ERROR ALERT</b>\n\n` +
+          `<b>User:</b> ${userStr}\n` +
+          `<b>Location:</b> ${groupStr}\n` +
+          `<b>Error:</b> <code>${errorMsg}</code>`,
+          { parse_mode: 'HTML' }
+        );
+      } catch (notifyErr) {
+        console.error('Failed to notify founder about error:', notifyErr);
+      }
+
+      // 3. Apologize to User
+      try {
+        const apology = `🛠️ <b>Status: Temporary Glitch</b>\n\n` +
+          `🙏 <b>Apologies!</b> I hit a snag while processing your request.\n` +
+          `Our founder @bryanseto has been notified and is fixing it right now.\n\n` +
+          `⏳ I will post a message here as soon as I'm back online!`;
+        
+        await ctx.reply(apology, { parse_mode: 'HTML' });
+
+        // 4. Register group as "waiting for fix"
+        if (ctx.chat?.id) {
+          const chatId = ctx.chat.id.toString();
+          const setting = await prisma.settings.findUnique({ where: { key: 'broken_groups' } });
+          const groups = setting ? setting.value.split(',') : [];
+          if (!groups.includes(chatId)) {
+            groups.push(chatId);
+            await prisma.settings.upsert({
+              where: { key: 'broken_groups' },
+              update: { value: groups.join(',') },
+              create: { key: 'broken_groups', value: chatId },
+            });
+          }
+        }
+      } catch (replyErr) {
+        console.error('Failed to send apology to user:', replyErr);
+      }
+    });
   }
 
   /**
@@ -279,6 +341,45 @@ export class YBBTallyBot {
 
     // Monthly report command
     this.bot.command('report', async (ctx) => await this.commandHandlers.handleReport(ctx));
+
+    // Admin: Broadcast fix to all broken groups
+    this.bot.command('fixed', async (ctx) => {
+      const userId = ctx.from?.id?.toString();
+      if (userId !== CONFIG.USER_IDS.BRYAN) return;
+
+      try {
+        const setting = await prisma.settings.findUnique({ where: { key: 'broken_groups' } });
+        if (!setting || !setting.value) {
+          await ctx.reply('No groups are currently waiting for a fix.');
+          return;
+        }
+
+        const groups = setting.value.split(',');
+        const message = `✅ <b>Issue Resolved!</b>\n\n` +
+          `Thanks for your patience. @bryanseto has fixed the glitch and I'm fully operational again! 🚀`;
+
+        let successCount = 0;
+        for (const chatId of groups) {
+          try {
+            await this.bot.telegram.sendMessage(chatId, message, { parse_mode: 'HTML' });
+            successCount++;
+          } catch (sendErr) {
+            console.error(`Failed to notify group ${chatId}:`, sendErr);
+          }
+        }
+
+        // Clear the list
+        await prisma.settings.update({
+          where: { key: 'broken_groups' },
+          data: { value: '' },
+        });
+
+        await ctx.reply(`Successfully broadcasted "fixed" message to ${successCount} groups.`);
+      } catch (error: any) {
+        console.error('Error in /fixed command:', error);
+        await ctx.reply(`Error broadcasting fix: ${error.message}`);
+      }
+    });
 
 
     // Manual add command

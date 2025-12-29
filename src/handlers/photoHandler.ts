@@ -68,7 +68,7 @@ export class PhotoHandler {
 
     } catch (error) {
       console.error('Error handling photo:', error);
-      await ctx.reply('Error handling photo.');
+      throw error;
     }
   }
 
@@ -129,9 +129,10 @@ export class PhotoHandler {
 
       await ctx.telegram.sendMessage(chatId, summary, { parse_mode: 'Markdown' });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing batch:', error);
-      await ctx.telegram.sendMessage(chatId, 'Error processing receipt batch.');
+      // Re-throw so global catch in bot.ts handles notification & apology
+      throw error;
     }
   }
 }
