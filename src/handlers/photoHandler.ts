@@ -3,6 +3,7 @@ import { AIService } from '../services/ai';
 import { prisma } from '../lib/prisma';
 import { CONFIG } from '../config';
 import { getNow } from '../utils/dateHelpers';
+import { ExpenseService } from '../services/expenseService';
 
 interface PendingPhoto {
   fileId: string;
@@ -19,7 +20,10 @@ interface PhotoCollection {
 export class PhotoHandler {
   private photoCollections: Map<number, PhotoCollection> = new Map();
 
-  constructor(private aiService: AIService) {}
+  constructor(
+    private aiService: AIService,
+    private expenseService: ExpenseService
+  ) {}
 
   async handlePhoto(ctx: any) {
     try {
@@ -103,43 +107,28 @@ export class PhotoHandler {
         try { await ctx.telegram.deleteMessage(chatId, processingMsg.message_id); } catch {}
       }
 
-      if (!receiptData.isValid || receiptData.total === null || receiptData.total === undefined) {
+      if (!receiptData.isValid || (!receiptData.transactions?.length && !receiptData.total)) {
         await ctx.telegram.sendMessage(chatId, '❌ Could not find valid expense data in these images.');
         return;
       }
 
-      // Store in session for confirmation
-      if (!ctx.session) ctx.session = {};
-      if (!ctx.session.pendingReceipts) ctx.session.pendingReceipts = {};
-      
-      const receiptId = Date.now().toString();
-      ctx.session.pendingReceipts[receiptId] = {
-        amount: receiptData.total,
-        currency: receiptData.currency || 'SGD',
-        merchant: receiptData.merchant || 'Unknown Merchant',
-        category: receiptData.category || 'Other',
-        date: receiptData.date || getNow().toISOString(),
-      };
-
-      const amountStr = receiptData.currency === 'SGD' || !receiptData.currency 
-        ? `SGD $${receiptData.total.toFixed(2)}` 
-        : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
-      
-      const message = `💰 **Total:** ${amountStr}\n` +
-                      `🏪 **Merchant:** ${receiptData.merchant || 'Unknown'}\n` +
-                      `📂 **Category:** ${receiptData.category || 'Other'}\n\n` +
-                      `Is this correct?`;
-
-      await ctx.telegram.sendMessage(
-        chatId,
-        message,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[{ text: '✅ Confirm', callback_data: `confirm_receipt_${receiptId}` }]],
-          },
-        }
+      // Automatically record the transactions
+      const { savedTransactions, balanceMessage } = await this.expenseService.recordAISavedTransactions(
+        receiptData,
+        collection.userId
       );
+
+      // Build the minimalist summary
+      let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
+      
+      savedTransactions.forEach(tx => {
+        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})\n`;
+      });
+
+      summary += `\n${balanceMessage}`;
+
+      await ctx.telegram.sendMessage(chatId, summary, { parse_mode: 'Markdown' });
+
     } catch (error) {
       console.error('Error processing batch:', error);
       await ctx.telegram.sendMessage(chatId, 'Error processing receipt batch.');

@@ -4,7 +4,7 @@ import { ExpenseService } from '../services/expenseService';
 import { AnalyticsService } from '../services/analyticsService';
 import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
-import { USER_NAMES } from '../config';
+import { USER_NAMES, CONFIG } from '../config';
 
 export class CommandHandlers {
   constructor(
@@ -99,7 +99,14 @@ export class CommandHandlers {
     }
 
     try {
-      await ctx.reply('Generating monthly report... At your service!');
+      if (CONFIG.FEATURE_FLAGS.ENABLE_NEW_REPORT_FEATURE) {
+        await ctx.reply('🚀 [New Feature Enabled] Generating advanced monthly report...');
+        // Your new feature logic would go here.
+        // For now, it just falls through or you can return early.
+      } else {
+        await ctx.reply('Generating monthly report... At your service!');
+      }
+
       const report = await this.expenseService.getMonthlyReport(monthOffset);
       const reportDate = getMonthsAgo(monthOffset);
       const monthName = formatDate(reportDate, 'MMMM yyyy');

@@ -5,6 +5,12 @@ import * as Sentry from "@sentry/node";
 
 const ReceiptDataSchema = z.object({
   isValid: z.boolean(),
+  transactions: z.array(z.object({
+    amount: z.number(),
+    merchant: z.string(),
+    category: z.string(),
+    date: z.string().nullable().optional(), // YYYY-MM-DD
+  })).optional(),
   total: z.number().nullable().optional(),
   currency: z.string().nullable().optional(),
   merchant: z.string().nullable().optional(),
@@ -42,60 +48,33 @@ export class AIService {
     const isMultiple = buffers.length > 1;
 
     try {
-      const prompt = isMultiple
-        ? `I have provided ${buffers.length} images of receipts. Please analyze them together.
+      const prompt = `Analyze the provided image(s) of receipts, invoices, or transaction screenshots. 
+If there are multiple receipts or multiple transactions on one page, extract EACH one separately.
 
 IMPORTANT:
-- If they are multiple parts of one long receipt (e.g., top and bottom of same receipt), combine them and provide a SINGLE total.
-- If they are different receipts, analyze each one separately and provide individual details for each.
+- If multiple images are provided, check if they are parts of the same long receipt. If so, combine them into one transaction.
+- If they are different receipts, provide individual details for each in the "transactions" array.
+- For each transaction, extract:
+  - amount: The total amount in SGD (numbers only).
+  - merchant: The store or service provider name.
+  - category: One of "Food", "Transport", "Shopping", "Bills", "Travel", "Other".
+  - date: The date in YYYY-MM-DD format (if found).
 
 Extract the following information in JSON format:
 {
   "isValid": true/false (true if any image contains expense/transaction data),
-  "total": number (the total amount in SGD - sum of all receipts if multiple, or single total if one receipt),
-  "currency": string (e.g., "SGD", "USD", "THB" - use SGD if amounts are converted),
-  "merchant": string (merchant/store name, or "Multiple Receipts" if different merchants, null if not found),
-  "merchants": array of strings (list of all merchant names found across all receipts, in the order they appear, empty array if not found),
-  "date": string (date in YYYY-MM-DD format - use the most recent transaction date, null if not found),
-  "category": string (primary category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found - use the most common category if multiple),
-  "categories": array of strings (list of categories for each receipt in the order they appear, e.g. ["Food", "Food"] or ["Food", "Shopping"], empty array if single receipt or categories are the same),
-  "transactionCount": number (total number of individual transactions across all receipts),
-  "individualAmounts": array of numbers (list of each receipt's total amount in SGD, in the order they appear)
+  "transactions": [
+    {
+      "amount": number,
+      "merchant": "string",
+      "category": "string",
+      "date": "string"
+    }
+  ],
+  "total": number (sum of all amounts in SGD),
+  "merchant": "string" (Main merchant or "Multiple Merchants"),
+  "category": "string" (Main category or "Multiple Categories")
 }
-
-IMPORTANT FOR CATEGORIES:
-- If receipts have different categories (e.g., one is "Food" and another is "Shopping"), provide them in the "categories" array.
-- If all receipts have the same category, you can provide a single "category" and leave "categories" empty, OR provide the same category in "categories" array.
-- Categories should be one of: "Food", "Transport", "Shopping", "Bills", "Travel", "Other"
-
-Return ONLY valid JSON, no additional text.`
-        : `Analyze this image. It could be:
-1. A traditional receipt/invoice
-2. A YouTrip transaction history screenshot
-3. A banking app transaction list
-4. Any other expense-related image
-
-Extract the following information in JSON format:
-{
-  "isValid": true/false (true if this contains any expense/transaction data),
-  "total": number (the total amount in SGD - if multiple transactions, sum all SGD amounts excluding credits/top-ups/refunds),
-  "currency": string (e.g., "SGD", "USD", "THB" - use SGD if amounts are converted),
-  "merchant": string (merchant/store name, or "Multiple Transactions" if multiple merchants, null if not found),
-  "merchants": array of strings (list of merchant names, empty array if single merchant or not found),
-  "date": string (date in YYYY-MM-DD format - use the most recent transaction date, null if not found),
-  "category": string (category like "Food", "Transport", "Shopping", "Bills", "Travel", "Other", null if not found),
-  "transactionCount": number (number of individual transactions if this is a transaction list, 1 for single receipt),
-  "individualAmounts": array of numbers (list of each individual transaction amount in SGD, in the order they appear. For single receipt, use [total])
-}
-
-IMPORTANT FOR YOUTRIP/BANKING SCREENSHOTS:
-- Look for all expense transactions (exclude "Top Up", "Refund", or any positive/credit amounts)
-- Extract the SGD converted amounts (shown as "$X.XX SGD" or similar)
-- For each expense transaction, extract its SGD amount and add it to the "individualAmounts" array
-- Sum ALL expense transactions to get the total
-- If you see multiple transactions, set transactionCount to the number of expense transactions
-- Set merchant to "Multiple Transactions" if there are multiple merchants
-- The individualAmounts array should contain all the SGD amounts that were summed to get the total
 
 Return ONLY valid JSON, no additional text.`;
 

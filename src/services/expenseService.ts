@@ -307,6 +307,43 @@ export class ExpenseService {
 
     return message;
   }
+
+  /**
+   * Automatically record transactions extracted by AI
+   */
+  async recordAISavedTransactions(receiptData: any, userId: bigint) {
+    const savedTransactions = [];
+    
+    // Ensure we have a list of transactions to process
+    const items = receiptData.transactions || (receiptData.total ? [{
+      amount: receiptData.total,
+      merchant: receiptData.merchant || 'Unknown Merchant',
+      category: receiptData.category || 'Other',
+      date: receiptData.date
+    }] : []);
+
+    for (const item of items) {
+      const tx = await prisma.transaction.create({
+        data: {
+          amountSGD: item.amount,
+          currency: 'SGD',
+          category: item.category || 'Other',
+          description: item.merchant || 'Unknown Merchant',
+          payerId: userId,
+          date: item.date ? new Date(item.date) : new Date(),
+        },
+        include: {
+          payer: true
+        }
+      });
+      savedTransactions.push(tx);
+    }
+
+    // Get the updated balance message
+    const balanceMessage = await this.getOutstandingBalanceMessage();
+    
+    return { savedTransactions, balanceMessage };
+  }
 }
 
 
