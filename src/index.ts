@@ -455,6 +455,18 @@ async function sendMonthlyReport(): Promise<void> {
   }
 }
 
+/**
+ * Generate and send daily database backup to admin
+ */
+async function sendDailyBackup(): Promise<void> {
+  try {
+    const adminId = 109284773; // Bryan
+    await bot.sendBackupToUser(adminId);
+  } catch (error) {
+    console.error('Error in daily backup job:', error);
+  }
+}
+
 // Setup cron jobs
 // Note: node-cron v3 doesn't support timezone option, so we calculate UTC times
 // Asia/Singapore is UTC+8, so:
@@ -469,6 +481,9 @@ cron.schedule('0 1 * * *', processRecurringExpenses);
 
 // Monthly report on 1st of month at 09:00 Asia/Singapore time = 01:00 UTC
 cron.schedule('0 1 1 * *', sendMonthlyReport);
+
+// Daily backup at 02:00 Asia/Singapore time = 18:00 UTC (previous day)
+cron.schedule('0 18 * * *', sendDailyBackup);
 
 // Start bot
 async function main() {

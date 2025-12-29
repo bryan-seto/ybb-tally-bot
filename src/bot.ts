@@ -3,6 +3,7 @@ import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
+import { BackupService } from './services/backupService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
@@ -86,6 +87,7 @@ export class YBBTallyBot {
   private analyticsService: AnalyticsService;
   private expenseService: ExpenseService;
   private historyService: HistoryService;
+  private backupService: BackupService;
   private allowedUserIds: Set<string>;
   private photoCollections: Map<number, PhotoCollection> = new Map(); // chat_id -> collection
   private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
@@ -96,6 +98,7 @@ export class YBBTallyBot {
     this.analyticsService = new AnalyticsService();
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
+    this.backupService = new BackupService();
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
@@ -2865,6 +2868,37 @@ export class YBBTallyBot {
     await this.bot.launch();
     await this.setupBotCommands();
     console.log('YBB Tally Bot is running...');
+  }
+
+  /**
+   * Send a database backup to a specific user via Telegram
+   */
+  async sendBackupToUser(userId: number): Promise<void> {
+    try {
+      console.log(`📦 Generating backup for user ${userId}...`);
+      const sql = await this.backupService.generateSQLBackup();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `backup_${dateStr}_${Date.now()}.sql`;
+      const buffer = Buffer.from(sql);
+
+      const message = `📦 **Daily Backup - ${dateStr}**\n\n` +
+        `✅ Backup generated successfully\n` +
+        `📊 Tables: transactions, users, recurring_expenses, settings\n\n` +
+        `🔧 **How to Restore in Supabase:**\n` +
+        `1. Open Supabase Dashboard → SQL Editor\n` +
+        `2. Copy the contents of the attached SQL file\n` +
+        `3. Paste into SQL Editor\n` +
+        `4. Click "Run" to execute\n\n` +
+        `⚠️ **Note:** This will INSERT data. If tables already have data, you may need to DELETE existing rows first or use ON CONFLICT logic (included).`;
+
+      await this.bot.telegram.sendDocument(userId, { source: buffer, filename }, {
+        caption: message,
+        parse_mode: 'Markdown'
+      });
+      console.log(`✅ Backup sent successfully to user ${userId}`);
+    } catch (error) {
+      console.error('❌ Error sending backup to user:', error);
+    }
   }
 
   /**
