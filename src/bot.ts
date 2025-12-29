@@ -1039,19 +1039,19 @@ export class YBBTallyBot {
       const filename = `backup_${dateStr}_${Date.now()}.sql`;
       const buffer = Buffer.from(sql);
 
-      const message = `📦 **Daily Backup - ${dateStr}**\n\n` +
+      const message = `📦 <b>Daily Backup - ${dateStr}</b>\n\n` +
         `✅ Backup generated successfully\n` +
         `📊 Tables: transactions, users, recurring_expenses, settings\n\n` +
-        `🔧 **How to Restore in Supabase:**\n` +
+        `🔧 <b>How to Restore in Supabase:</b>\n` +
         `1. Open Supabase Dashboard → SQL Editor\n` +
         `2. Copy the contents of the attached SQL file\n` +
         `3. Paste into SQL Editor\n` +
         `4. Click "Run" to execute\n\n` +
-        `⚠️ **Note:** This will INSERT data. If tables already have data, you may need to DELETE existing rows first or use ON CONFLICT logic (included).`;
+        `⚠️ <b>Note:</b> This will INSERT data. If tables already have data, you may need to DELETE existing rows first or use ON CONFLICT logic (included).`;
 
       await this.bot.telegram.sendDocument(userId, { source: buffer, filename }, {
         caption: message,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
       console.log(`✅ Backup sent successfully to user ${userId}`);
     } catch (error) {
