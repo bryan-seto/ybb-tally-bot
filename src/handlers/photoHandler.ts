@@ -109,8 +109,8 @@ export class PhotoHandler {
       try {
         receiptData = await this.aiService.processReceipt(imageBuffers, collection.userId, 'image/jpeg');
       } catch (error: any) {
-        await ctx.telegram.sendMessage(chatId, `AI processing error: ${error.message}`);
-        return;
+        // Re-throw so the global error handler in bot.ts handles Sentry, Founder alert, and user apology
+        throw error;
       } finally {
         try { await ctx.telegram.deleteMessage(chatId, processingMsg.message_id); } catch {}
       }
