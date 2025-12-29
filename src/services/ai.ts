@@ -149,6 +149,14 @@ Return ONLY valid JSON, no additional text.`;
     } catch (error: any) {
       const latencyMs = Date.now() - startTime;
 
+      // Capture to Sentry
+      Sentry.withScope((scope) => {
+        scope.setUser({ id: userId.toString() });
+        scope.setTag("service", "AIService");
+        scope.setContext("performance", { latencyMs });
+        Sentry.captureException(error);
+      });
+
       // Log error to SystemLog
       await prisma.systemLog.create({
         data: {
