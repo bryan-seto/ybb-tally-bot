@@ -11,3 +11,15 @@ services:
         value: 10000
     healthCheckPath: /health
 
+  - type: web
+    name: ybb-tally-bot-staging
+    env: node
+    buildCommand: npm install && npm run build && npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+
