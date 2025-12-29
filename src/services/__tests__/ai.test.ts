@@ -114,5 +114,225 @@ describe('AIService', () => {
       }));
     });
   });
+
+  describe('processCorrection', () => {
+    const mockTransactions = [
+      {
+        id: BigInt(1),
+        description: 'Venchi chocolate',
+        amountSGD: 25.50,
+        category: 'Shopping',
+        bryanPercentage: 0.7,
+        hweiYeenPercentage: 0.3,
+      },
+      {
+        id: BigInt(2),
+        description: 'Grab ride',
+        amountSGD: 15.00,
+        category: 'Transport',
+        bryanPercentage: 0.7,
+        hweiYeenPercentage: 0.3,
+      },
+      {
+        id: BigInt(3),
+        description: 'Coffee at Starbucks',
+        amountSGD: 8.50,
+        category: 'Food',
+        bryanPercentage: 0.7,
+        hweiYeenPercentage: 0.3,
+      },
+    ];
+
+    it('should parse a single UPDATE_SPLIT action', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [{
+            action: 'UPDATE_SPLIT',
+            transactionId: 1,
+            data: {
+              bryanPercentage: 0.5,
+              hweiYeenPercentage: 0.5,
+            },
+            statusMessage: 'Updating split for Venchi chocolate to 50-50...',
+          }],
+          confidence: 'high',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection('split venchi 50-50', mockTransactions);
+
+      expect(result.confidence).toBe('high');
+      expect(result.actions).toHaveLength(1);
+      expect(result.actions[0].action).toBe('UPDATE_SPLIT');
+      expect(result.actions[0].transactionId).toBe(BigInt(1));
+      expect(result.actions[0].data?.bryanPercentage).toBe(0.5);
+      expect(result.actions[0].data?.hweiYeenPercentage).toBe(0.5);
+      expect(result.actions[0].statusMessage).toContain('Updating split');
+    });
+
+    it('should parse multiple actions', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [
+            {
+              action: 'UPDATE_CATEGORY',
+              transactionId: 3,
+              data: {
+                category: 'Entertainment',
+              },
+              statusMessage: 'Updating category for Coffee at Starbucks to Entertainment...',
+            },
+            {
+              action: 'DELETE',
+              transactionId: 2,
+              statusMessage: 'Deleting Grab ride...',
+            },
+          ],
+          confidence: 'high',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection(
+        'make the coffee entertainment and delete the grab',
+        mockTransactions
+      );
+
+      expect(result.confidence).toBe('high');
+      expect(result.actions).toHaveLength(2);
+      expect(result.actions[0].action).toBe('UPDATE_CATEGORY');
+      expect(result.actions[0].data?.category).toBe('Entertainment');
+      expect(result.actions[1].action).toBe('DELETE');
+      expect(result.actions[1].transactionId).toBe(BigInt(2));
+    });
+
+    it('should handle UPDATE_AMOUNT action', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [{
+            action: 'UPDATE_AMOUNT',
+            transactionId: 1,
+            data: {
+              amountSGD: 30.00,
+            },
+            statusMessage: 'Updating amount for Venchi chocolate to $30.00...',
+          }],
+          confidence: 'high',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection('change venchi to $30', mockTransactions);
+
+      expect(result.actions[0].action).toBe('UPDATE_AMOUNT');
+      expect(result.actions[0].data?.amountSGD).toBe(30.00);
+    });
+
+    it('should handle DELETE actions for multiple transactions', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [
+            {
+              action: 'DELETE',
+              transactionId: 1,
+              statusMessage: 'Deleting Venchi chocolate...',
+            },
+            {
+              action: 'DELETE',
+              transactionId: 2,
+              statusMessage: 'Deleting Grab ride...',
+            },
+          ],
+          confidence: 'high',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection('delete last two', mockTransactions);
+
+      expect(result.actions).toHaveLength(2);
+      expect(result.actions[0].action).toBe('DELETE');
+      expect(result.actions[1].action).toBe('DELETE');
+    });
+
+    it('should return UNKNOWN action with low confidence for invalid JSON', async () => {
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: { text: () => 'Not a valid JSON response' },
+      });
+
+      const result = await aiService.processCorrection('invalid command', mockTransactions);
+
+      expect(result.confidence).toBe('low');
+      expect(result.actions).toHaveLength(1);
+      expect(result.actions[0].action).toBe('UNKNOWN');
+      expect(result.actions[0].statusMessage).toBeTruthy();
+    });
+
+    it('should handle AI errors gracefully', async () => {
+      mockModel.generateContent.mockRejectedValueOnce(new Error('AI service unavailable'));
+
+      const result = await aiService.processCorrection('split venchi 50-50', mockTransactions);
+
+      expect(result.confidence).toBe('low');
+      expect(result.actions).toHaveLength(1);
+      expect(result.actions[0].action).toBe('UNKNOWN');
+    });
+
+    it('should convert transactionId to bigint', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [{
+            action: 'DELETE',
+            transactionId: 123, // Returned as number from AI
+            statusMessage: 'Deleting transaction...',
+          }],
+          confidence: 'high',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection('delete last', mockTransactions);
+
+      expect(typeof result.actions[0].transactionId).toBe('bigint');
+      expect(result.actions[0].transactionId).toBe(BigInt(123));
+    });
+
+    it('should add default statusMessage if missing', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          actions: [{
+            action: 'DELETE',
+            transactionId: 1,
+            // statusMessage is missing
+          }],
+          confidence: 'medium',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.processCorrection('delete', mockTransactions);
+
+      expect(result.actions[0].statusMessage).toBe('Processing...');
+    });
+  });
 });
 

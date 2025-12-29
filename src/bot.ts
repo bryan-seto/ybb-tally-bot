@@ -107,7 +107,7 @@ export class YBBTallyBot {
     this.backupService = new BackupService();
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
-    this.messageHandlers = new MessageHandlers(this.expenseService);
+    this.messageHandlers = new MessageHandlers(this.expenseService, this.aiService);
     this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, this.analyticsService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 

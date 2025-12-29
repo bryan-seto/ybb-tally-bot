@@ -24,6 +24,18 @@ const ReceiptDataSchema = z.object({
 
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
+export interface AIAction {
+  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UNKNOWN';
+  transactionId?: bigint;
+  data?: {
+    bryanPercentage?: number;
+    hweiYeenPercentage?: number;
+    amountSGD?: number;
+    category?: string;
+  };
+  statusMessage: string;
+}
+
 export class AIService {
   private genAI: GoogleGenerativeAI;
   private model: any;
@@ -158,6 +170,108 @@ Return ONLY valid JSON, no additional text.`;
       });
 
       throw error;
+    }
+  }
+
+  /**
+   * Process natural language correction commands (e.g., "split venchi 50-50, and delete last")
+   * Returns a structured array of actions for the bot to execute
+   */
+  async processCorrection(
+    text: string,
+    recentTransactions: Array<{
+      id: bigint;
+      description: string;
+      amountSGD: number;
+      category: string;
+      bryanPercentage: number;
+      hweiYeenPercentage: number;
+    }>
+  ): Promise<{
+    actions: AIAction[];
+    confidence: 'high' | 'medium' | 'low';
+  }> {
+    const prompt = `You are a financial assistant bot. A user has sent correction command(s).
+The user might request MULTIPLE changes in one message. Identify ALL actions requested.
+
+User's command: "${text}"
+
+Recent transactions (most recent first):
+${recentTransactions.map((tx, i) => `${i + 1}. ID: ${tx.id}, Description: "${tx.description}", Amount: $${tx.amountSGD}, Category: ${tx.category}, Split: ${Math.round(tx.bryanPercentage * 100)}-${Math.round(tx.hweiYeenPercentage * 100)}`).join('\n')}
+
+Analyze the user's intent and respond in JSON format:
+{
+  "actions": [
+    {
+      "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UNKNOWN",
+      "transactionId": number (best matching transaction ID),
+      "data": {
+        "bryanPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
+        "hweiYeenPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
+        "amountSGD": number (only for UPDATE_AMOUNT),
+        "category": string (only for UPDATE_CATEGORY)
+      },
+      "statusMessage": "string (A friendly message in present continuous tense, e.g., 'Updating split for Venchi to 50-50...')"
+    }
+  ],
+  "confidence": "high" | "medium" | "low"
+}
+
+Examples:
+- "split venchi 50-50" → One action: UPDATE_SPLIT, statusMessage: "Updating split for Venchi to 50-50..."
+- "delete last two" → Two DELETE actions for the two most recent transactions
+- "make the $20 one food and delete the coffee" → Two actions: UPDATE_CATEGORY for the $20 transaction, and DELETE for "coffee"
+- "change amount to $15" → One action: UPDATE_AMOUNT for most recent, statusMessage: "Updating amount to $15.00..."
+
+IMPORTANT:
+- For each action, create a user-friendly statusMessage in present continuous tense
+- If user says "last two" or "last 3", create that many DELETE actions
+- Match transactions by description keywords, amounts, or position (last, first, etc.)
+
+Return ONLY valid JSON, no additional text.`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const responseText = response.text();
+
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return { 
+          actions: [{ 
+            action: 'UNKNOWN', 
+            statusMessage: 'Processing your request...' 
+          }], 
+          confidence: 'low' 
+        };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Ensure transactionIds are bigints
+      if (parsed.actions && Array.isArray(parsed.actions)) {
+        parsed.actions.forEach((a: any) => {
+          if (a.transactionId) {
+            a.transactionId = BigInt(a.transactionId);
+          }
+          // Ensure statusMessage exists
+          if (!a.statusMessage) {
+            a.statusMessage = 'Processing...';
+          }
+        });
+      }
+
+      return parsed;
+    } catch (error: any) {
+      console.error('Error processing correction:', error);
+      Sentry.captureException(error);
+      return { 
+        actions: [{ 
+          action: 'UNKNOWN', 
+          statusMessage: 'Processing your request...' 
+        }], 
+        confidence: 'low' 
+      };
     }
   }
 }
