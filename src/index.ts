@@ -82,16 +82,20 @@ async function main() {
     setupServer(bot);
     setupJobs(bot, expenseService, analyticsService);
 
-    const isProduction = CONFIG.NODE_ENV === 'production';
-    if (isProduction && CONFIG.WEBHOOK_URL) {
+    const environment = CONFIG.NODE_ENV || 'development';
+    const isProduction = environment === 'production';
+    const isStaging = environment === 'staging';
+
+    if ((isProduction || isStaging) && CONFIG.WEBHOOK_URL) {
       const fullWebhookUrl = `${CONFIG.WEBHOOK_URL}/webhook`;
+      console.log(`🌐 Running in ${environment.toUpperCase()} mode with WEBHOOKS`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
       await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
       console.log(`📡 Webhook set: ${fullWebhookUrl}`);
     } else {
+      console.log(`💻 Running in ${environment.toUpperCase()} mode with LONG POLLING`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: false });
       await bot.launch();
-      console.log('💻 Polling mode enabled');
     }
     
     global.isBooting = false;

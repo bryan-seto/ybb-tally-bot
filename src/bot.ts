@@ -16,7 +16,9 @@ import { CallbackHandlers } from './handlers/callbackHandlers';
 // Helper function for dynamic greeting
 function getGreeting(userId: string): string {
   const name = USER_NAMES[userId] || 'there';
-  return `Hi ${name}!`;
+  const env = process.env.NODE_ENV || 'development';
+  const prefix = env !== 'production' ? `[${env.toUpperCase()}] ` : '';
+  return `${prefix}Hi ${name}!`;
 }
 
 // Session data interface
@@ -1039,7 +1041,10 @@ export class YBBTallyBot {
       const filename = `backup_${dateStr}_${Date.now()}.sql`;
       const buffer = Buffer.from(sql);
 
-      const message = `📦 <b>Daily Backup - ${dateStr}</b>\n\n` +
+      const env = process.env.NODE_ENV || 'development';
+      const prefix = env !== 'production' ? `[${env.toUpperCase()}] ` : '';
+      
+      const message = `${prefix}📦 <b>Daily Backup - ${dateStr}</b>\n\n` +
         `✅ Backup generated successfully\n` +
         `📊 Tables: transactions, users, recurring_expenses, settings\n\n` +
         `🔧 <b>How to Restore in Supabase:</b>\n` +
