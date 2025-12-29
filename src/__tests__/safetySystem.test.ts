@@ -142,7 +142,6 @@ describe('Safety System - /fixed Broadcast Command', () => {
     const mockCtx = {
       from: { id: USER_IDS.BRYAN },
       reply: vi.fn().mockResolvedValue({}),
-      telegram: mockTelegrafInstance.telegram,
     };
 
     vi.mocked(prisma.settings.findUnique).mockResolvedValue({ key: 'broken_groups', value: 'group1,group2' } as any);
