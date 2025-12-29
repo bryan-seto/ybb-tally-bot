@@ -1,4 +1,5 @@
 import { Telegraf, Context, session, Markup } from 'telegraf';
+import * as Sentry from '@sentry/node';
 import { AIService } from './services/ai';
 import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
@@ -7,7 +8,7 @@ import { BackupService } from './services/backupService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
-import { CONFIG, USER_NAMES } from './config';
+import { CONFIG, USER_NAMES, USER_IDS } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
 import { PhotoHandler } from './handlers/photoHandler';
 import { MessageHandlers } from './handlers/messageHandlers';
@@ -130,7 +131,7 @@ export class YBBTallyBot {
       // 1. Report to Sentry
       Sentry.withScope((scope) => {
         scope.setTag("updateType", ctx.updateType);
-        scope.setContext("update", ctx.update);
+        scope.setContext("update", ctx.update as any);
         if (ctx.from) scope.setUser({ id: ctx.from.id.toString(), username: ctx.from.username });
         Sentry.captureException(err);
       });
@@ -141,7 +142,7 @@ export class YBBTallyBot {
         const userStr = ctx.from ? `${ctx.from.first_name} (@${ctx.from.username})` : 'System';
         const groupStr = ctx.chat?.type !== 'private' ? `in group <b>${(ctx.chat as any).title}</b>` : 'in private chat';
         
-        await this.bot.telegram.sendMessage(CONFIG.USER_IDS.BRYAN, 
+        await this.bot.telegram.sendMessage(USER_IDS.BRYAN, 
           `🚨 <b>BOT ERROR ALERT</b>\n\n` +
           `<b>User:</b> ${userStr}\n` +
           `<b>Location:</b> ${groupStr}\n` +
@@ -345,7 +346,7 @@ export class YBBTallyBot {
     // Admin: Broadcast fix to all broken groups
     this.bot.command('fixed', async (ctx) => {
       const userId = ctx.from?.id?.toString();
-      if (userId !== CONFIG.USER_IDS.BRYAN) return;
+      if (userId !== USER_IDS.BRYAN) return;
 
       try {
         const setting = await prisma.settings.findUnique({ where: { key: 'broken_groups' } });
