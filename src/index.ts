@@ -131,7 +131,12 @@ async function main() {
     });
 
   } catch (error: any) {
-    console.error('💥 Error starting bot:', error.message);
+    if (error.message?.includes('409: Conflict')) {
+      console.error('💥 Error starting bot: 409: Conflict. ANOTHER INSTANCE IS RUNNING!');
+      console.error('👉 If you are running locally, please stop your local bot before starting staging.');
+    } else {
+      console.error('💥 Error starting bot:', error.message);
+    }
     Sentry.captureException(error);
     process.exit(1);
   }

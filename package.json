@@ -11,7 +11,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "test": "vitest",
+    "test": "vitest run",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "db:reset": "docker-compose down && docker-compose up -d && sleep 2 && npx prisma migrate dev && npx prisma db seed",
