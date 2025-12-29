@@ -13,9 +13,11 @@ export class MessageHandlers {
 
   async handleText(ctx: any) {
     try {
+      console.log('[handleText] Called');
       if (!ctx.session) ctx.session = {};
       const text = ctx.message.text.trim();
       const session = ctx.session;
+      console.log('[handleText] Text received:', text);
 
       // Handle cancel
       if (text === '❌ Cancel') {
@@ -26,12 +28,14 @@ export class MessageHandlers {
 
       // Handle manual add flow
       if (session.manualAddMode) {
+        console.log('[handleText] Manual add mode detected');
         await this.handleManualAddFlow(ctx, text, session);
         return;
       }
 
       // Handle search flow
       if (session.searchMode) {
+        console.log('[handleText] Search mode detected');
         await this.handleSearchFlow(ctx, text, session);
         return;
       }
@@ -40,12 +44,18 @@ export class MessageHandlers {
       // Check if the bot is mentioned/tagged
       const botInfo = await ctx.telegram.getMe();
       const botUsername = botInfo.username;
+      console.log('[handleText] Bot username:', botUsername);
+      console.log('[handleText] Checking for tag:', `@${botUsername}`);
       const isBotTagged = text.includes(`@${botUsername}`);
+      console.log('[handleText] Is bot tagged?', isBotTagged);
 
       if (isBotTagged) {
+        console.log('[handleText] Calling handleAICorrection');
         await this.handleAICorrection(ctx, text);
         return;
       }
+      
+      console.log('[handleText] No action taken for this message');
     } catch (error: any) {
       console.error('Error in handleText:', error);
       // Only respond if this was clearly meant for the bot
@@ -132,9 +142,11 @@ export class MessageHandlers {
   }
 
   private async handleAICorrection(ctx: any, text: string) {
+    console.log('[handleAICorrection] Called with text:', text);
     let statusMsg: any = null;
     try {
       // 1. Get recent unsettled transactions
+      console.log('[handleAICorrection] Fetching recent transactions');
       const recentTransactions = await prisma.transaction.findMany({
         where: { isSettled: false },
         orderBy: { date: 'desc' },
@@ -149,13 +161,18 @@ export class MessageHandlers {
         },
       });
 
+      console.log('[handleAICorrection] Found transactions:', recentTransactions.length);
+      
       if (recentTransactions.length === 0) {
+        console.log('[handleAICorrection] No transactions, sending error');
         await ctx.reply('❌ No unsettled transactions found to edit.');
         return;
       }
 
       // 2. Initial loading message
+      console.log('[handleAICorrection] Sending thinking message');
       statusMsg = await ctx.reply('🔍 <i>Thinking...</i>', { parse_mode: 'HTML' });
+      console.log('[handleAICorrection] Thinking message sent, ID:', statusMsg.message_id);
 
       // 3. Process with AI
       const result = await this.aiService.processCorrection(
