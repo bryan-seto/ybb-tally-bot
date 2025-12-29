@@ -97,6 +97,7 @@ export class YBBTallyBot {
   private callbackHandlers: CallbackHandlers;
   private allowedUserIds: Set<string>;
   private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
+  private botUsername: string = '';
 
   constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
     this.bot = new Telegraf(token);
@@ -107,7 +108,7 @@ export class YBBTallyBot {
     this.backupService = new BackupService();
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
-    this.messageHandlers = new MessageHandlers(this.expenseService, this.aiService);
+    this.messageHandlers = new MessageHandlers(this.expenseService, this.aiService, () => this.botUsername);
     this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, this.analyticsService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
@@ -1118,6 +1119,16 @@ export class YBBTallyBot {
    */
   private setupHandlers(): void {
     this.bot.on('photo', async (ctx) => await this.photoHandler.handlePhoto(ctx));
+    
+    // Handle /ID format for transaction details (e.g., /21)
+    this.bot.hears(/^\/(\d+)$/, async (ctx) => {
+      const match = ctx.message.text.match(/^\/(\d+)$/);
+      if (match) {
+        const txId = BigInt(match[1]);
+        await this.showTransactionDetail(ctx, txId);
+      }
+    });
+    
     this.bot.on('text', async (ctx) => await this.messageHandlers.handleText(ctx));
     this.bot.on('callback_query', async (ctx) => await this.callbackHandlers.handleCallback(ctx));
 
@@ -1180,6 +1191,15 @@ export class YBBTallyBot {
    * Launch the bot
    */
   async launch(): Promise<void> {
+    // Cache bot username at startup
+    try {
+      const botInfo = await this.bot.telegram.getMe();
+      this.botUsername = botInfo.username || '';
+      console.log('[Bot] Username cached:', this.botUsername);
+    } catch (error) {
+      console.error('[Bot] Failed to get bot username:', error);
+    }
+    
     await this.bot.launch();
     await this.setupBotCommands();
     console.log('YBB Tally Bot is running...');

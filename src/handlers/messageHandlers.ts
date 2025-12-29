@@ -8,7 +8,8 @@ import { USER_NAMES } from '../config';
 export class MessageHandlers {
   constructor(
     private expenseService: ExpenseService,
-    private aiService: AIService
+    private aiService: AIService,
+    private getBotUsername: () => string
   ) {}
 
   async handleText(ctx: any) {
@@ -26,32 +27,47 @@ export class MessageHandlers {
         return;
       }
 
-      // Handle manual add flow
+      // --- PRIORITY 1: Check for bot tag FIRST (AI commands override everything) ---
+      const botUsername = this.getBotUsername();
+      console.log('[handleText] Bot username:', botUsername);
+      
+      if (botUsername) {
+        console.log('[handleText] Checking for tag:', `@${botUsername}`);
+        const isBotTagged = text.includes(`@${botUsername}`);
+        console.log('[handleText] Is bot tagged?', isBotTagged);
+
+        if (isBotTagged) {
+          // If user tags the bot, they likely want to override any manual flow
+          if (session.manualAddMode || session.searchMode || session.editingTxId) {
+            console.log('[handleText] Clearing manual modes for AI correction');
+            this.clearSession(session);
+          }
+          console.log('[handleText] Calling handleAICorrection');
+          await this.handleAICorrection(ctx, text);
+          return;
+        }
+      } else {
+        console.log('[handleText] Bot username not yet cached, skipping AI correction check');
+      }
+      // ---------------------------------------------------------------------------
+
+      // PRIORITY 2: Handle transaction edit mode
+      if (session.editingTxId && session.editingField) {
+        await this.handleTransactionEdit(ctx, text, session);
+        return;
+      }
+
+      // PRIORITY 3: Handle manual add flow
       if (session.manualAddMode) {
         console.log('[handleText] Manual add mode detected');
         await this.handleManualAddFlow(ctx, text, session);
         return;
       }
 
-      // Handle search flow
+      // PRIORITY 4: Handle search flow
       if (session.searchMode) {
         console.log('[handleText] Search mode detected');
         await this.handleSearchFlow(ctx, text, session);
-        return;
-      }
-
-      // Handle AI correction commands (tag-only)
-      // Check if the bot is mentioned/tagged
-      const botInfo = await ctx.telegram.getMe();
-      const botUsername = botInfo.username;
-      console.log('[handleText] Bot username:', botUsername);
-      console.log('[handleText] Checking for tag:', `@${botUsername}`);
-      const isBotTagged = text.includes(`@${botUsername}`);
-      console.log('[handleText] Is bot tagged?', isBotTagged);
-
-      if (isBotTagged) {
-        console.log('[handleText] Calling handleAICorrection');
-        await this.handleAICorrection(ctx, text);
         return;
       }
       
@@ -79,6 +95,8 @@ export class MessageHandlers {
     session.searchMode = false;
     session.awaitingAmountConfirmation = false;
     session.awaitingPayer = false;
+    session.editingTxId = undefined;
+    session.editingField = undefined;
   }
 
   private async handleManualAddFlow(ctx: any, text: string, session: any) {
@@ -281,6 +299,91 @@ export class MessageHandlers {
       } else {
         await ctx.reply('❌ Sorry, something went wrong while processing your request.');
       }
+    }
+  }
+
+  private async handleTransactionEdit(ctx: any, text: string, session: any) {
+    try {
+      const txId = session.editingTxId;
+      const field = session.editingField;
+
+      console.log(`[handleTransactionEdit] Editing transaction ${txId}, field: ${field}, value: ${text}`);
+
+      if (field === 'amount') {
+        const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
+        if (isNaN(amount) || amount <= 0) {
+          await ctx.reply('Invalid amount. Please enter a positive number:');
+          return;
+        }
+
+        const updated = await prisma.transaction.update({
+          where: { id: BigInt(txId) },
+          data: { amountSGD: amount },
+        });
+
+        this.clearSession(session);
+        await ctx.reply(
+          `✅ Amount updated to $${amount.toFixed(2)} for transaction /${txId}\n\n` +
+          `${updated.description || 'No description'}`,
+          Markup.removeKeyboard()
+        );
+      } else if (field === 'category') {
+        const category = text.trim();
+        const validCategories = ['Food', 'Transport', 'Groceries', 'Shopping', 'Bills', 'Entertainment', 'Medical', 'Travel', 'Other'];
+        
+        if (!validCategories.includes(category)) {
+          await ctx.reply(
+            `Invalid category. Please choose one of:\n${validCategories.join(', ')}`
+          );
+          return;
+        }
+
+        const updated = await prisma.transaction.update({
+          where: { id: BigInt(txId) },
+          data: { category },
+        });
+
+        this.clearSession(session);
+        await ctx.reply(
+          `✅ Category updated to ${category} for transaction /${txId}\n\n` +
+          `${updated.description || 'No description'}`,
+          Markup.removeKeyboard()
+        );
+      } else if (field === 'split') {
+        // Parse split like "50-50" or "70-30"
+        const splitMatch = text.match(/^(\d+)-(\d+)$/);
+        if (!splitMatch) {
+          await ctx.reply('Invalid format. Please enter split as "XX-YY" (e.g., "50-50" or "70-30")');
+          return;
+        }
+
+        const bryanPercent = parseInt(splitMatch[1]);
+        const hweiYeenPercent = parseInt(splitMatch[2]);
+
+        if (bryanPercent + hweiYeenPercent !== 100) {
+          await ctx.reply('Split percentages must add up to 100. Try again:');
+          return;
+        }
+
+        const updated = await prisma.transaction.update({
+          where: { id: BigInt(txId) },
+          data: {
+            bryanPercentage: bryanPercent / 100,
+            hweiYeenPercentage: hweiYeenPercent / 100,
+          },
+        });
+
+        this.clearSession(session);
+        await ctx.reply(
+          `✅ Split updated to ${bryanPercent}-${hweiYeenPercent} for transaction /${txId}\n\n` +
+          `${updated.description || 'No description'}`,
+          Markup.removeKeyboard()
+        );
+      }
+    } catch (error: any) {
+      console.error('Error handling transaction edit:', error);
+      this.clearSession(session);
+      await ctx.reply('❌ Sorry, something went wrong updating the transaction.', Markup.removeKeyboard());
     }
   }
 }
