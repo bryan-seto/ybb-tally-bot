@@ -52,6 +52,7 @@ interface BotSession {
   editLastAction?: 'amount' | 'category' | 'split';
   editLastTransactionId?: bigint;
   searchMode?: boolean;
+  pendingReceipts?: { [key: string]: any };
 }
 
 interface PendingReceiptData {
@@ -106,7 +107,7 @@ export class YBBTallyBot {
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService);
     this.photoHandler = new PhotoHandler(this.aiService);
     this.messageHandlers = new MessageHandlers(this.expenseService);
-    this.callbackHandlers = new CallbackHandlers(this.expenseService);
+    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, this.analyticsService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)

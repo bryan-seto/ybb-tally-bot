@@ -10,16 +10,7 @@ export class MessageHandlers {
   async handleText(ctx: any) {
     if (!ctx.session) ctx.session = {};
     const text = ctx.message.text.trim();
-    const textLower = text.toLowerCase();
     const session = ctx.session;
-    const chatId = ctx.chat.id;
-
-    // Handle transaction ID commands (e.g., /101)
-    const transactionIdMatch = text.match(/^\/(\d+)$/);
-    if (transactionIdMatch) {
-      // Logic for showTransactionDetail...
-      return;
-    }
 
     // Handle cancel
     if (text === '❌ Cancel') {
@@ -31,12 +22,6 @@ export class MessageHandlers {
     // Handle manual add flow
     if (session.manualAddMode) {
       await this.handleManualAddFlow(ctx, text, session);
-      return;
-    }
-
-    // Handle recurring flow
-    if (session.recurringMode) {
-      await this.handleRecurringFlow(ctx, text, session);
       return;
     }
 
@@ -72,16 +57,51 @@ export class MessageHandlers {
       }
       session.manualAmount = amount;
       session.manualAddStep = 'category';
-      // ... category selection keyboard
+      
+      await ctx.reply('Select a category:', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🍔 Food', callback_data: 'manual_category_Food' }, { text: '🚗 Transport', callback_data: 'manual_category_Transport' }],
+            [{ text: '🛒 Groceries', callback_data: 'manual_category_Groceries' }, { text: '🛍️ Shopping', callback_data: 'manual_category_Shopping' }],
+            [{ text: '🏠 Utilities', callback_data: 'manual_category_Bills' }, { text: '🎬 Entertainment', callback_data: 'manual_category_Entertainment' }],
+            [{ text: '🏥 Medical', callback_data: 'manual_category_Medical' }, { text: '✈️ Travel', callback_data: 'manual_category_Travel' }],
+            [{ text: 'Other', callback_data: 'manual_category_Other' }],
+          ],
+        },
+      });
     }
   }
 
-  private async handleRecurringFlow(ctx: any, text: string, session: any) {
-    // ... logic from bot.ts
-  }
-
   private async handleSearchFlow(ctx: any, text: string, session: any) {
-    // ... logic from bot.ts
+    try {
+      const transactions = await prisma.transaction.findMany({
+        where: {
+          OR: [
+            { description: { contains: text, mode: 'insensitive' } },
+            { category: { contains: text, mode: 'insensitive' } },
+          ],
+        },
+        include: { payer: true },
+        orderBy: { date: 'desc' },
+        take: 10,
+      });
+
+      if (transactions.length === 0) {
+        await ctx.reply(`🔍 No transactions found matching "${text}".`, Markup.removeKeyboard());
+      } else {
+        let message = `🔍 **Search Results for "${text}":**\n\n`;
+        transactions.forEach((t) => {
+          const dateStr = formatDate(t.date, 'dd MMM yy');
+          message += `/${t.id} ${dateStr} - ${t.description || 'No desc'} ($${t.amountSGD.toFixed(2)}) - ${t.payer.name}\n`;
+        });
+        await ctx.reply(message, { parse_mode: 'Markdown', ...Markup.removeKeyboard() });
+      }
+      session.searchMode = false;
+    } catch (error) {
+      console.error('Search error:', error);
+      await ctx.reply('Error performing search.', Markup.removeKeyboard());
+      session.searchMode = false;
+    }
   }
 }
 

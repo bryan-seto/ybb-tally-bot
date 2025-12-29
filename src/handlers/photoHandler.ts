@@ -2,6 +2,7 @@ import { Context } from 'telegraf';
 import { AIService } from '../services/ai';
 import { prisma } from '../lib/prisma';
 import { CONFIG } from '../config';
+import { getNow } from '../utils/dateHelpers';
 
 interface PendingPhoto {
   fileId: string;
@@ -90,7 +91,7 @@ export class PhotoHandler {
         return;
       }
 
-      const processingMsg = await ctx.telegram.sendMessage(chatId, 'Processing receipt(s)...');
+      const processingMsg = await ctx.telegram.sendMessage(chatId, '🧠 AI is analyzing your receipt(s)...');
       
       let receiptData;
       try {
@@ -102,27 +103,46 @@ export class PhotoHandler {
         try { await ctx.telegram.deleteMessage(chatId, processingMsg.message_id); } catch {}
       }
 
-      if (!receiptData.isValid || !receiptData.total) {
-        await ctx.telegram.sendMessage(chatId, 'Invalid receipt or total not found.');
+      if (!receiptData.isValid || receiptData.total === null || receiptData.total === undefined) {
+        await ctx.telegram.sendMessage(chatId, '❌ Could not find valid expense data in these images.');
         return;
       }
 
-      // Store in pending (this logic might need to stay in Bot or a Shared State)
-      // For now, let's just send the confirmation message
-      const amountStr = receiptData.currency === 'SGD' ? `SGD $${receiptData.total.toFixed(2)}` : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
+      // Store in session for confirmation
+      if (!ctx.session) ctx.session = {};
+      if (!ctx.session.pendingReceipts) ctx.session.pendingReceipts = {};
       
+      const receiptId = Date.now().toString();
+      ctx.session.pendingReceipts[receiptId] = {
+        amount: receiptData.total,
+        currency: receiptData.currency || 'SGD',
+        merchant: receiptData.merchant || 'Unknown Merchant',
+        category: receiptData.category || 'Other',
+        date: receiptData.date || getNow().toISOString(),
+      };
+
+      const amountStr = receiptData.currency === 'SGD' || !receiptData.currency 
+        ? `SGD $${receiptData.total.toFixed(2)}` 
+        : `${receiptData.currency} ${receiptData.total.toFixed(2)}`;
+      
+      const message = `💰 **Total:** ${amountStr}\n` +
+                      `🏪 **Merchant:** ${receiptData.merchant || 'Unknown'}\n` +
+                      `📂 **Category:** ${receiptData.category || 'Other'}\n\n` +
+                      `Is this correct?`;
+
       await ctx.telegram.sendMessage(
         chatId,
-        `Total: ${amountStr}\nMerchant: ${receiptData.merchant || 'Multiple'}\nCategory: ${receiptData.category || 'Other'}\nIs this correct?`,
+        message,
         {
           parse_mode: 'Markdown',
           reply_markup: {
-            inline_keyboard: [[{ text: 'Yes', callback_data: `confirm_amount_receipt_${chatId}_${Date.now()}` }]],
+            inline_keyboard: [[{ text: '✅ Confirm', callback_data: `confirm_receipt_${receiptId}` }]],
           },
         }
       );
     } catch (error) {
       console.error('Error processing batch:', error);
+      await ctx.telegram.sendMessage(chatId, 'Error processing receipt batch.');
     }
   }
 }
