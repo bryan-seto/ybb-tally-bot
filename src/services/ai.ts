@@ -70,6 +70,29 @@ export class AIService {
   }
 
   /**
+   * Extract JSON from AI response text
+   * Handles markdown code blocks and simple substring extraction
+   */
+  private extractJSON(text: string): string | null {
+    // First, try to extract from markdown code blocks
+    const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    if (codeBlockMatch) {
+      return codeBlockMatch[1];
+    }
+    
+    // Simple approach: find first { and last }
+    // This avoids issues with braces inside string literals
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      return null;
+    }
+    
+    return text.substring(firstBrace, lastBrace + 1);
+  }
+
+  /**
    * Check if an error is retryable (429 rate limit or 503 overload)
    */
   private isRetryableError(error: any): boolean {
@@ -179,7 +202,7 @@ Extract the following information in JSON format:
   "category": "string" (Main category or "Multiple Categories")
 }
 
-Return ONLY valid JSON, no additional text.`;
+Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks), no conversational text, no explanations. The response must be pure, parseable JSON starting with { and ending with }.`;
 
       // Prepare image parts
       const imageParts = buffers.map(buffer => ({
@@ -193,13 +216,31 @@ Return ONLY valid JSON, no additional text.`;
       const text = aiResponse.text;
       const usedModel = aiResponse.usedModel;
 
-      // Parse JSON response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extract and parse JSON response
+      const extractedJSON = this.extractJSON(text);
+      if (!extractedJSON) {
+        console.error('[processReceipt] No JSON found in response:', text.substring(0, 500));
         throw new Error('No JSON found in response');
       }
 
-      const rawData = JSON.parse(jsonMatch[0]);
+      let rawData;
+      try {
+        rawData = JSON.parse(extractedJSON);
+      } catch (parseError: any) {
+        console.error('[processReceipt] JSON parse error:', {
+          error: parseError.message,
+          position: parseError.message.match(/position (\d+)/)?.[1],
+          extractedJSON: extractedJSON.substring(0, 200),
+          fullResponse: text.substring(0, 500)
+        });
+        Sentry.captureException(parseError, {
+          extra: {
+            extractedJSON: extractedJSON.substring(0, 500),
+            fullResponse: text.substring(0, 1000)
+          }
+        });
+        throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+      }
       const receiptData = ReceiptDataSchema.parse(rawData);
       
       // Ensure merchants array exists
@@ -360,14 +401,16 @@ TIME PARSING (STRICT 24-HOUR FORMAT):
 - **DO NOT return AM/PM format - only 24-hour format is allowed**
 - Use leading zeros for hours < 10 (e.g., "09:15" not "9:15")
 
-Return ONLY valid JSON, no additional text.`;
+Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks), no conversational text, no explanations. The response must be pure, parseable JSON starting with { and ending with }.`;
 
     try {
       const aiResponse = await this.generateContentWithFallback(prompt, onFallback);
       const responseText = aiResponse.text;
 
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extract JSON from response
+      const extractedJSON = this.extractJSON(responseText);
+      if (!extractedJSON) {
+        console.error('[processCorrection] No JSON found in response:', responseText.substring(0, 500));
         return { 
           confidence: 'low',
           actions: [{ 
@@ -378,7 +421,31 @@ Return ONLY valid JSON, no additional text.`;
         };
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      let parsed;
+      try {
+        parsed = JSON.parse(extractedJSON);
+      } catch (parseError: any) {
+        console.error('[processCorrection] JSON parse error:', {
+          error: parseError.message,
+          position: parseError.message.match(/position (\d+)/)?.[1],
+          extractedJSON: extractedJSON.substring(0, 200),
+          fullResponse: responseText.substring(0, 500)
+        });
+        Sentry.captureException(parseError, {
+          extra: {
+            extractedJSON: extractedJSON.substring(0, 500),
+            fullResponse: responseText.substring(0, 1000)
+          }
+        });
+        return { 
+          confidence: 'low',
+          actions: [{ 
+            action: 'UNKNOWN',
+            transactionId: BigInt(0),
+            statusMessage: 'Processing your request...' 
+          }]
+        };
+      }
       
       // Transform to match CorrectionResult interface
       // Ensure transactionIds are bigints and required (not optional)
