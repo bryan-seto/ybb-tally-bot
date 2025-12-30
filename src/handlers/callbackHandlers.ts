@@ -214,6 +214,7 @@ export class CallbackHandlers {
           {
             reply_markup: {
               inline_keyboard: [
+                [{ text: '➕ Add New', callback_data: 'recurring_add_new' }],
                 [{ text: '📋 View Active', callback_data: 'recurring_view' }],
                 [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
               ],
@@ -221,6 +222,112 @@ export class CallbackHandlers {
             parse_mode: 'Markdown',
           }
         );
+        return;
+      }
+
+      // Recurring Add Wizard Callbacks
+      if (callbackData === 'recurring_add_new') {
+        await ctx.answerCbQuery();
+        if (!session.recurringData) session.recurringData = {};
+        session.recurringMode = true;
+        session.recurringStep = 'description';
+        await ctx.reply(
+          'What is the description for this recurring expense?',
+          Markup.keyboard([['❌ Cancel']]).resize()
+        );
+        return;
+      }
+
+      if (callbackData.startsWith('recurring_add_payer_')) {
+        await ctx.answerCbQuery();
+        const payerRole = callbackData.replace('recurring_add_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+        if (!session.recurringData) session.recurringData = {};
+        session.recurringData.payer = payerRole;
+        session.recurringStep = 'confirm';
+
+        const { description, amount, day, payer } = session.recurringData;
+        const user = await prisma.user.findFirst({ where: { role: payerRole } });
+        const payerName = user ? USER_NAMES[user.id.toString()] || payerRole : payerRole;
+
+        const summary = 
+          `📋 **Recurring Expense Summary**\n\n` +
+          `Description: ${description}\n` +
+          `Amount: SGD $${amount?.toFixed(2)}\n` +
+          `Day of month: ${day}\n` +
+          `Payer: ${payerName}\n\n` +
+          `Confirm to save?`;
+
+        await ctx.reply(summary, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ Confirm', callback_data: 'recurring_confirm' }],
+              [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
+            ],
+          },
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+
+      if (callbackData === 'recurring_confirm') {
+        await ctx.answerCbQuery();
+        try {
+          const { description, amount, day, payer } = session.recurringData || {};
+          
+          if (!description || !amount || !day || !payer) {
+            await ctx.reply('❌ Error: Missing required information. Please start over.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
+          const user = await prisma.user.findFirst({
+            where: { role: payer as 'Bryan' | 'HweiYeen' },
+          });
+
+          if (!user) {
+            await ctx.reply('❌ Error: User not found in database.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
+          const recurringExpense = await prisma.recurringExpense.create({
+            data: {
+              description,
+              amountOriginal: amount,
+              payerId: user.id,
+              dayOfMonth: day,
+              isActive: true,
+            },
+          });
+
+          const payerName = USER_NAMES[user.id.toString()] || payer;
+          const ordinalSuffix = this.getOrdinalSuffix(day);
+
+          await ctx.reply(
+            `✅ Recurring expense added!\n\n` +
+            `Description: ${description}\n` +
+            `Amount: SGD $${amount.toFixed(2)}\n` +
+            `Day of month: ${day}\n` +
+            `Payer: ${payerName}\n\n` +
+            `This expense will be automatically processed on the ${day}${ordinalSuffix} of each month at 09:00 SGT.`,
+            Markup.removeKeyboard()
+          );
+
+          // Clear session state
+          session.recurringMode = false;
+          session.recurringStep = undefined;
+          session.recurringData = undefined;
+        } catch (error: any) {
+          console.error('Error adding recurring expense:', error);
+          await ctx.reply('❌ Sorry, I encountered an error adding the recurring expense. Please try again.');
+          session.recurringMode = false;
+          session.recurringStep = undefined;
+          session.recurringData = undefined;
+        }
         return;
       }
 
@@ -276,7 +383,15 @@ export class CallbackHandlers {
 
       if (callbackData === 'recurring_cancel') {
         await ctx.answerCbQuery();
-        await ctx.editMessageText('Action cancelled.');
+        // Clear recurring session state
+        session.recurringMode = false;
+        session.recurringStep = undefined;
+        session.recurringData = undefined;
+        try {
+          await ctx.editMessageText('❌ Action cancelled.', Markup.removeKeyboard());
+        } catch {
+          await ctx.reply('❌ Action cancelled.', Markup.removeKeyboard());
+        }
         return;
       }
 
@@ -444,6 +559,18 @@ export class CallbackHandlers {
     } catch (error: any) {
       console.error('Callback error:', error);
       await ctx.answerCbQuery('Error processing request', { show_alert: true });
+    }
+  }
+
+  private getOrdinalSuffix(day: number): string {
+    if (day >= 11 && day <= 13) {
+      return 'th';
+    }
+    switch (day % 10) {
+      case 1: return 'st';
+      case 2: return 'nd';
+      case 3: return 'rd';
+      default: return 'th';
     }
   }
 }

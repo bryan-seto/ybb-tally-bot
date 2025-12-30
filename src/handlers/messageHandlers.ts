@@ -98,6 +98,13 @@ export class MessageHandlers {
         return;
       }
 
+      // PRIORITY 4.5: Handle recurring add flow
+      if (session.recurringMode) {
+        console.log('[handleText] Recurring add mode detected');
+        await this.handleRecurringAddFlow(ctx, text, session);
+        return;
+      }
+
       // PRIORITY 5: Handle search flow
       if (session.searchMode) {
         console.log('[handleText] Search mode detected');
@@ -156,6 +163,45 @@ export class MessageHandlers {
             [{ text: '🏠 Utilities', callback_data: 'manual_category_Bills' }, { text: '🎬 Entertainment', callback_data: 'manual_category_Entertainment' }],
             [{ text: '🏥 Medical', callback_data: 'manual_category_Medical' }, { text: '✈️ Travel', callback_data: 'manual_category_Travel' }],
             [{ text: 'Other', callback_data: 'manual_category_Other' }],
+          ],
+        },
+      });
+    }
+  }
+
+  private async handleRecurringAddFlow(ctx: any, text: string, session: any) {
+    if (!session.recurringData) session.recurringData = {};
+
+    if (session.recurringStep === 'description') {
+      if (!text || text.trim().length === 0) {
+        await ctx.reply('Please enter a valid description:');
+        return;
+      }
+      session.recurringData.description = text.trim();
+      session.recurringStep = 'amount';
+      await ctx.reply(`Description: ${text}\n\nWhat is the amount in SGD?`);
+    } else if (session.recurringStep === 'amount') {
+      const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
+      if (isNaN(amount) || amount <= 0) {
+        await ctx.reply('Invalid amount. Please enter a positive number:');
+        return;
+      }
+      session.recurringData.amount = amount;
+      session.recurringStep = 'day';
+      await ctx.reply(`Amount: SGD $${amount.toFixed(2)}\n\nWhich day of the month should this expense be processed? (1-31)`);
+    } else if (session.recurringStep === 'day') {
+      const day = parseInt(text.trim());
+      if (isNaN(day) || day < 1 || day > 31) {
+        await ctx.reply('Invalid day. Please enter a number between 1 and 31:');
+        return;
+      }
+      session.recurringData.day = day;
+      session.recurringStep = 'payer';
+      await ctx.reply(`Day of month: ${day}\n\nWho pays for this expense?`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Bryan', callback_data: 'recurring_add_payer_bryan' }],
+            [{ text: 'Hwei Yeen', callback_data: 'recurring_add_payer_hweiyeen' }],
           ],
         },
       });

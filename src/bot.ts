@@ -41,7 +41,7 @@ interface BotSession {
   manualCategory?: string;
   manualDescription?: string;
   recurringMode?: boolean;
-  recurringStep?: 'description' | 'amount' | 'day' | 'payer';
+  recurringStep?: 'description' | 'amount' | 'day' | 'payer' | 'confirm';
   recurringData?: {
     description?: string;
     amount?: number;
@@ -390,213 +390,16 @@ export class YBBTallyBot {
       }
     });
 
-    // Recurring expense command
+    // Recurring expense command - now redirects to menu
     this.bot.command('recurring', async (ctx) => {
-      const args = ctx.message.text.split(' ').slice(1);
-      
-      if (args.length === 0 || args[0] !== 'add') {
-        await ctx.reply(
-          '**Recurring Expense Commands:**\n\n' +
-          'To add a recurring expense:\n' +
-          '`/recurring add <description> <amount> <day_of_month> <payer>`\n\n' +
-          'Example:\n' +
-          '`/recurring add "Internet Bill" 50 15 bryan`\n\n' +
-          'Parameters:\n' +
-          '• Description: Name of the expense (use quotes if it contains spaces)\n' +
-          '• Amount: Amount in SGD\n' +
-          '• Day of month: 1-31 (when to process each month)\n' +
-          '• Payer: "bryan" or "hweiyeen"',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      try {
-        // Parse arguments
-        // Reconstruct the full command text to handle quoted descriptions
-        const fullText = ctx.message.text;
-        const commandMatch = fullText.match(/^\/recurring\s+add\s+(.+)$/i);
-        
-        if (!commandMatch) {
-          await ctx.reply(
-            'Incorrect format. Use:\n' +
-            '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
-            'Example: `/recurring add "Internet Bill" 50 15 bryan`',
-            { parse_mode: 'Markdown' }
-          );
-          return;
-        }
-        
-        const restOfCommand = commandMatch[1].trim();
-        
-        // Parse: "Description" amount day payer
-        // Handle both regular quotes (") and smart quotes ("")
-        // Also handle descriptions without quotes (single word)
-        // Try to match quoted description first (both regular and smart quotes)
-        const quotedMatchRegular = restOfCommand.match(/^"([^"]+)"\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
-        const quotedMatchSmart = restOfCommand.match(/^[""]([^""]+)[""]\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
-        const quotedMatch = quotedMatchRegular || quotedMatchSmart;
-        const unquotedMatch = restOfCommand.match(/^(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\w+)$/i);
-        
-        // Debug: log what we're trying to parse
-        console.log('Parsing recurring command:', {
-          fullText: ctx.message.text,
-          restOfCommand,
-          restOfCommandLength: restOfCommand.length,
-          restOfCommandChars: restOfCommand.split('').map(c => c.charCodeAt(0)),
-          quotedMatchRegular: !!quotedMatchRegular,
-          quotedMatchSmart: !!quotedMatchSmart,
-          quotedMatch: !!quotedMatch,
-          unquotedMatch: !!unquotedMatch
-        });
-        
-        let description: string = '';
-        let amountStr: string = '';
-        let dayStr: string = '';
-        let payerStr: string = '';
-        
-        if (quotedMatch) {
-          // Quoted description
-          [, description, amountStr, dayStr, payerStr] = quotedMatch;
-        } else if (unquotedMatch) {
-          // Unquoted description (single word)
-          [, description, amountStr, dayStr, payerStr] = unquotedMatch;
-        } else {
-          // Fallback: try to parse manually by splitting on spaces
-          // This handles cases where quotes might be different or formatting is off
-          const parts = restOfCommand.split(/\s+/);
-          if (parts.length >= 4) {
-            // Try to reconstruct: if first part starts with quote, combine until we find closing quote
-            if (parts[0].startsWith('"') || parts[0].startsWith('"')) {
-              // Find where description ends
-              let descEnd = 0;
-              for (let i = 0; i < parts.length; i++) {
-                if (parts[i].endsWith('"') || parts[i].endsWith('"')) {
-                  descEnd = i;
-                  break;
-                }
-              }
-              description = parts.slice(0, descEnd + 1).join(' ').replace(/^[""]|[""]$/g, '');
-              if (descEnd + 1 < parts.length) amountStr = parts[descEnd + 1];
-              if (descEnd + 2 < parts.length) dayStr = parts[descEnd + 2];
-              if (descEnd + 3 < parts.length) payerStr = parts[descEnd + 3];
-            } else {
-              // No quotes, single word description
-              description = parts[0];
-              amountStr = parts[1];
-              dayStr = parts[2];
-              payerStr = parts[3];
-            }
-            
-            console.log('Fallback parsing:', { description, amountStr, dayStr, payerStr });
-          } else {
-            // Debug: show what we're trying to parse
-            console.error('Failed to parse recurring command:', restOfCommand, 'Parts:', parts);
-            await ctx.reply(
-              'Incorrect format. Use:\n' +
-              '`/recurring add "Description" <amount> <day> <payer>`\n\n' +
-              'Example: `/recurring add "Internet Bill" 50 15 bryan`\n\n' +
-              `Debug: Could not parse "${restOfCommand}" (${parts.length} parts found)`,
-              { parse_mode: 'Markdown' }
-            );
-            return;
-          }
-        }
-
-        // Trim all values and validate they exist
-        description = description?.trim() || '';
-        amountStr = amountStr?.trim() || '';
-        dayStr = dayStr?.trim() || '';
-        payerStr = payerStr?.trim() || '';
-
-        // Debug logging
-        console.log('Parsed values:', { description, amountStr, dayStr, payerStr });
-
-        if (!amountStr) {
-          await ctx.reply(
-            'Error: Could not extract amount from command.\n\n' +
-            `Received: \`${ctx.message.text}\`\n` +
-            `Parsed: description="${description}", amount="${amountStr}", day="${dayStr}", payer="${payerStr}"`,
-            { parse_mode: 'Markdown' }
-          );
-          return;
-        }
-
-        const amount = parseFloat(amountStr);
-        const dayOfMonth = parseInt(dayStr);
-        payerStr = payerStr.toLowerCase();
-        
-        // Debug logging
-        console.log('Parsed numeric values:', { amount, dayOfMonth, payerStr, amountIsNaN: isNaN(amount) });
-
-        // Validate
-        if (isNaN(amount) || amount <= 0) {
-          console.error('Amount validation failed:', { 
-            amount, 
-            amountStr, 
-            parsed: parseFloat(amountStr),
-            fullText: ctx.message.text,
-            restOfCommand,
-            quotedMatch: !!quotedMatch,
-            unquotedMatch: !!unquotedMatch
-          });
-          await ctx.reply(
-            `Invalid amount "${amountStr}". Please provide a positive number.\n\n` +
-            `Received: \`${ctx.message.text}\`\n` +
-            `Parsed: description="${description}", amount="${amountStr}", day="${dayStr}", payer="${payerStr}"`,
-            { parse_mode: 'Markdown' }
-          );
-          return;
-        }
-
-        if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
-          await ctx.reply('Invalid day of month. Please provide a number between 1 and 31.');
-          return;
-        }
-
-        let payerRole: 'Bryan' | 'HweiYeen' | null = null;
-        if (payerStr.includes('bryan')) {
-          payerRole = 'Bryan';
-        } else if (payerStr.includes('hwei') || payerStr.includes('yeen')) {
-          payerRole = 'HweiYeen';
-        } else {
-          await ctx.reply('Invalid payer. Use "bryan" or "hweiyeen".');
-          return;
-        }
-
-        // Get user
-        const user = await prisma.user.findFirst({
-          where: { role: payerRole },
-        });
-
-        if (!user) {
-          await ctx.reply('Error: User not found in database.');
-          return;
-        }
-
-        // Create recurring expense
-        const recurringExpense = await prisma.recurringExpense.create({
-          data: {
-            description,
-            amountOriginal: amount,
-            payerId: user.id,
-            dayOfMonth,
-            isActive: true,
-          },
-        });
-
-        await ctx.reply(
-          `✅ Recurring expense added!\n\n` +
-          `Description: ${description}\n` +
-          `Amount: SGD $${amount.toFixed(2)}\n` +
-          `Day of month: ${dayOfMonth}\n` +
-          `Payer: ${USER_NAMES[user.id.toString()] || payerRole}\n\n` +
-          `This expense will be automatically processed on the ${dayOfMonth}${this.getOrdinalSuffix(dayOfMonth)} of each month at 09:00 SGT.`
-        );
-      } catch (error: any) {
-        console.error('Error adding recurring expense:', error);
-        await ctx.reply('Sorry, I encountered an error adding the recurring expense. Please try again.');
-      }
+      await ctx.reply(
+        '🔄 **Recurring Expenses**\n\n' +
+        'Use the menu button to manage recurring expenses:\n' +
+        '• Click "🔄 Recurring" in the main menu\n' +
+        '• Select "➕ Add New" to create a recurring expense\n\n' +
+        'Or use `/menu` to open the main menu.',
+        { parse_mode: 'Markdown' }
+      );
     });
   }
 
