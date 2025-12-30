@@ -116,13 +116,31 @@ export class HistoryService {
   }
 
   /**
+   * Format amount string based on currency (for list items)
+   */
+  private formatAmountString(amount: number, currency: string): string {
+    if (currency === 'SGD') {
+      return `$${amount.toFixed(2)}`;
+    }
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+
+  /**
+   * Format amount string for detail view (includes currency prefix for SGD)
+   */
+  private formatAmountStringForDetail(amount: number, currency: string): string {
+    if (currency === 'SGD') {
+      return `SGD $${amount.toFixed(2)}`;
+    }
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+
+  /**
    * Format transaction list item
    */
   formatTransactionListItem(tx: TransactionListItem): string {
     const statusEmoji = this.getStatusEmoji(tx.status);
-    const amountStr = tx.currency === 'SGD' 
-      ? `$${tx.amount.toFixed(2)}`
-      : `${tx.currency} ${tx.amount.toFixed(2)}`;
+    const amountStr = this.formatAmountString(tx.amount, tx.currency);
     
     // Escape merchant name to prevent Markdown parsing errors
     const merchant = this.escapeMarkdown(tx.merchant);
@@ -131,26 +149,39 @@ export class HistoryService {
   }
 
   /**
+   * Get status text from status
+   */
+  private getStatusText(status: 'settled' | 'unsettled'): string {
+    return status === 'settled' ? 'Settled' : 'Unsettled';
+  }
+
+  /**
+   * Format split details for transaction
+   * Note: FULL split type is intentionally not displayed (per original comment)
+   */
+  private formatSplitDetails(tx: TransactionDetail): string {
+    if (tx.splitType === 'FIFTY_FIFTY') {
+      return '⚖️ **Split:** 50% / 50%';
+    }
+
+    if (tx.bryanPercentage !== undefined && tx.hweiYeenPercentage !== undefined) {
+      const bryanPercent = Math.round(tx.bryanPercentage * 100);
+      const hweiYeenPercent = Math.round(tx.hweiYeenPercentage * 100);
+      return `⚖️ **Split:** ${bryanPercent}% (Bryan) / ${hweiYeenPercent}% (HY)`;
+    }
+
+    return '';
+  }
+
+  /**
    * Format transaction detail card
    */
   formatTransactionDetail(tx: TransactionDetail): string {
     const statusEmoji = this.getStatusEmoji(tx.status);
-    const statusText = tx.status === 'settled' ? 'Settled' : 'Unsettled';
+    const statusText = this.getStatusText(tx.status);
     const dateStr = formatDate(tx.date, 'dd MMM yyyy, hh:mm a');
-    const amountStr = tx.currency === 'SGD'
-      ? `SGD $${tx.amount.toFixed(2)}`
-      : `${tx.currency} ${tx.amount.toFixed(2)}`;
-
-    // Format split details (skip FULL split type)
-    let splitDetails = '';
-    if (tx.splitType === 'FIFTY_FIFTY') {
-      splitDetails = '⚖️ **Split:** 50% / 50%';
-    } else if (tx.bryanPercentage !== undefined && tx.hweiYeenPercentage !== undefined) {
-      const bryanPercent = Math.round(tx.bryanPercentage * 100);
-      const hweiYeenPercent = Math.round(tx.hweiYeenPercentage * 100);
-      splitDetails = `⚖️ **Split:** ${bryanPercent}% (Bryan) / ${hweiYeenPercent}% (HY)`;
-    }
-    // Note: FULL split type is intentionally not displayed
+    const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
+    const splitDetails = this.formatSplitDetails(tx);
 
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +
