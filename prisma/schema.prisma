@@ -40,15 +40,16 @@ model Transaction {
 }
 
 model RecurringExpense {
-  id             BigInt   @id @default(autoincrement())
-  description    String
-  amountOriginal Float
-  payerId        BigInt
-  dayOfMonth     Int
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  payer          User     @relation(fields: [payerId], references: [id])
+  id                BigInt    @id @default(autoincrement())
+  description       String
+  amountOriginal    Float
+  payerId           BigInt
+  dayOfMonth        Int
+  isActive          Boolean   @default(true)
+  lastProcessedDate DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  payer             User      @relation(fields: [payerId], references: [id])
 
   @@map("recurring_expenses")
 }
