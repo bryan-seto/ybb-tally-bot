@@ -2,14 +2,16 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
+import { RecurringExpenseService } from '../services/recurringExpenseService';
 import { USER_NAMES } from '../config';
-import { getNow, getMonthsAgo, formatDate } from '../utils/dateHelpers';
+import { getNow, getMonthsAgo, formatDate, getNextRecurringDate } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 
 export class CallbackHandlers {
   constructor(
     private expenseService: ExpenseService,
-    private historyService: HistoryService
+    private historyService: HistoryService,
+    private recurringExpenseService: RecurringExpenseService
   ) {}
 
   async handleCallback(ctx: any) {

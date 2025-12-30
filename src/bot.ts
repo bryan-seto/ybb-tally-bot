@@ -4,6 +4,7 @@ import { AIService } from './services/ai';
 import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
 import { BackupService } from './services/backupService';
+import { RecurringExpenseService } from './services/recurringExpenseService';
 import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { prisma } from './lib/prisma';
@@ -103,6 +104,7 @@ export class YBBTallyBot {
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
+    const recurringExpenseService = new RecurringExpenseService(this.expenseService);
     this.commandHandlers = new CommandHandlers(this.expenseService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
     this.messageHandlers = new MessageHandlers(
@@ -111,7 +113,7 @@ export class YBBTallyBot {
       this.historyService,
       () => this.botUsername
     );
-    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService);
+    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, recurringExpenseService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
