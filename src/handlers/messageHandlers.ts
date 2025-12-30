@@ -5,6 +5,10 @@ import { AIService, CorrectionAction } from '../services/ai';
 import { HistoryService, TransactionDetail } from '../services/historyService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES } from '../config';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { format, parseISO } from 'date-fns';
+
+const TIMEZONE = 'Asia/Singapore';
 
 export class MessageHandlers {
   constructor(
@@ -294,32 +298,48 @@ export class MessageHandlers {
             throw new Error('Transaction not found');
           }
           
+          // Step A: Get current transaction date in Singapore timezone
+          const currentZoned = toZonedTime(currentTx.date, TIMEZONE);
+          
+          // Step B: Extract time portion strictly (HH:mm:ss.SSS)
+          const timeString = format(currentZoned, 'HH:mm:ss.SSS');
+          
+          // Step C: Validate input date format (YYYY-MM-DD)
           const dateStr = step.data.date;
-          // Parse date string (YYYY-MM-DD format)
-          const newDate = new Date(dateStr);
-          if (isNaN(newDate.getTime())) {
-            throw new Error(`Invalid date format: ${dateStr}`);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD`);
           }
           
-          // Preserve time components from existing transaction
-          const existingHours = currentTx.date.getHours();
-          const existingMinutes = currentTx.date.getMinutes();
-          const existingSeconds = currentTx.date.getSeconds();
-          const existingMs = currentTx.date.getMilliseconds();
+          // Step D: Compose ISO string with Singapore timezone offset
+          const isoString = `${dateStr}T${timeString}+08:00`;
           
-          // Set preserved time on new date
-          newDate.setHours(existingHours, existingMinutes, existingSeconds, existingMs);
+          // Step E: Parse ISO string and convert from Singapore timezone to UTC
+          // parseISO correctly parses the string with +08:00 timezone and converts to UTC
+          // This preserves the exact wall-clock time in Singapore timezone
+          const parsedDate = parseISO(isoString);
+          // Use fromZonedTime to ensure proper timezone handling
+          // First convert the parsed UTC date back to Singapore view to verify,
+          // then convert back to UTC (this ensures consistency)
+          const verifyZoned = toZonedTime(parsedDate, TIMEZONE);
+          const finalDate = fromZonedTime(verifyZoned, TIMEZONE);
           
+          // Observability logging
+          console.log('[UPDATE_DATE] Input Date:', dateStr);
+          console.log('[UPDATE_DATE] Frozen Time (SG):', timeString);
+          console.log('[UPDATE_DATE] Combined String:', isoString);
+          console.log('[UPDATE_DATE] Final UTC:', finalDate.toISOString());
+          
+          // Step F: Save to database
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
-            data: { date: newDate },
+            data: { date: finalDate },
             include: {
               payer: true,
             },
           });
           updatedTransaction = updated;
           const { formatDate } = await import('../utils/dateHelpers');
-          results.push(`✅ Date updated to ${formatDate(newDate, 'dd MMM yyyy')}`);
+          results.push(`✅ Date updated to ${formatDate(finalDate, 'dd MMM yyyy')}`);
         } else if (step.action === 'UPDATE_TIME' && step.transactionId && step.data?.time) {
           // Fetch current transaction to preserve date components
           const currentTx = await prisma.transaction.findUnique({
