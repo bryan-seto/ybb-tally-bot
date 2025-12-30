@@ -349,16 +349,23 @@ export class CallbackHandlers {
         try {
           const recurringExpenseId = BigInt(callbackData.replace('recurring_test_', ''));
           
-          // Process the recurring expense immediately
-          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpenseId);
-          
-          // Get the recurring expense to show next run date
+          // Get the recurring expense to pass to the service
           const recurringExpense = await prisma.recurringExpense.findUnique({
             where: { id: recurringExpenseId },
+            include: { payer: true },
           });
           
           if (!recurringExpense) {
             await ctx.reply('❌ Error: Recurring expense not found.');
+            return;
+          }
+          
+          // Process the recurring expense immediately
+          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpense);
+          
+          // Check if processing was successful
+          if (!result) {
+            await ctx.reply('❌ Error: Unable to process recurring expense (may have already been processed today).');
             return;
           }
           
@@ -370,10 +377,10 @@ export class CallbackHandlers {
           message += `✅ **Transaction Created:**\n`;
           message += `• Description: ${result.transaction.description}\n`;
           message += `• Amount: SGD $${result.transaction.amountSGD.toFixed(2)}\n`;
-          message += `• Category: ${result.transaction.category}\n`;
-          message += `• Payer: ${result.transaction.payerName}\n`;
+          message += `• Category: ${result.transaction.category || 'Bills'}\n`;
+          message += `• Payer: ${recurringExpense.payer.name}\n`;
           message += `• Split Type: FULL\n\n`;
-          message += `${result.balanceMessage}\n\n`;
+          message += `${result.message}\n\n`;
           message += `✅ This expense is active and will trigger again on ${nextRunDateStr}.`;
           
           await ctx.reply(message, { parse_mode: 'Markdown' });
