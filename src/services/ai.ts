@@ -25,9 +25,18 @@ const ReceiptDataSchema = z.object({
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
 export interface CorrectionAction {
-  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UNKNOWN';
+  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UPDATE_PAYER' | 'UPDATE_STATUS' | 'UPDATE_DATE' | 'UPDATE_DESCRIPTION' | 'UNKNOWN';
   transactionId: bigint;
-  data?: any;
+  data?: {
+    bryanPercentage?: number;
+    hweiYeenPercentage?: number;
+    amountSGD?: number;
+    category?: string;
+    payerKey?: 'BRYAN' | 'HWEI_YEEN';
+    isSettled?: boolean;
+    date?: string; // ISO format YYYY-MM-DD
+    description?: string;
+  };
   statusMessage: string;
 }
 
@@ -185,6 +194,10 @@ Return ONLY valid JSON, no additional text.`;
       category: string;
       bryanPercentage: number;
       hweiYeenPercentage: number;
+      paidBy?: string;
+      payerRole?: string;
+      status?: 'settled' | 'unsettled';
+      date?: string; // ISO format YYYY-MM-DD
     }>
   ): Promise<CorrectionResult> {
     const prompt = `You are a financial assistant bot. A user has sent correction command(s).
@@ -193,19 +206,35 @@ The user might request MULTIPLE changes in one message. Identify ALL actions req
 User's command: "${text}"
 
 Recent transactions (most recent first):
-${recentTransactions.map((tx, i) => `${i + 1}. ID: ${tx.id}, Description: "${tx.description}", Amount: $${tx.amountSGD}, Category: ${tx.category}, Split: ${Math.round(tx.bryanPercentage * 100)}-${Math.round(tx.hweiYeenPercentage * 100)}`).join('\n')}
+${recentTransactions.map((tx, i) => {
+      const parts = [
+        `${i + 1}. ID: ${tx.id}`,
+        `Description: "${tx.description}"`,
+        `Amount: $${tx.amountSGD}`,
+        `Category: ${tx.category}`,
+        `Split: ${Math.round(tx.bryanPercentage * 100)}-${Math.round(tx.hweiYeenPercentage * 100)}`
+      ];
+      if (tx.paidBy) parts.push(`Payer: ${tx.paidBy}`);
+      if (tx.status) parts.push(`Status: ${tx.status === 'settled' ? 'Settled' : 'Unsettled'}`);
+      if (tx.date) parts.push(`Date: ${tx.date}`);
+      return parts.join(', ');
+    }).join('\n')}
 
 Analyze the user's intent and respond in JSON format:
 {
   "actions": [
     {
-      "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UNKNOWN",
+      "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UPDATE_PAYER" | "UPDATE_STATUS" | "UPDATE_DATE" | "UPDATE_DESCRIPTION" | "UNKNOWN",
       "transactionId": number (best matching transaction ID),
       "data": {
         "bryanPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
         "hweiYeenPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
         "amountSGD": number (only for UPDATE_AMOUNT),
-        "category": string (only for UPDATE_CATEGORY)
+        "category": string (only for UPDATE_CATEGORY),
+        "payerKey": "BRYAN" | "HWEI_YEEN" (only for UPDATE_PAYER),
+        "isSettled": boolean (only for UPDATE_STATUS, true for settled, false for unsettled),
+        "date": string (only for UPDATE_DATE, format: YYYY-MM-DD),
+        "description": string (only for UPDATE_DESCRIPTION)
       },
       "statusMessage": "string (A friendly message in present continuous tense, e.g., 'Updating split for Venchi to 50-50...')"
     }
@@ -218,11 +247,30 @@ Examples:
 - "delete last two" → Two DELETE actions for the two most recent transactions
 - "make the $20 one food and delete the coffee" → Two actions: UPDATE_CATEGORY for the $20 transaction, and DELETE for "coffee"
 - "change amount to $15" → One action: UPDATE_AMOUNT for most recent, statusMessage: "Updating amount to $15.00..."
+- "paid by Hwei Yeen" or "change payer to HY" → One action: UPDATE_PAYER, payerKey: "HWEI_YEEN", statusMessage: "Updating payer to Hwei Yeen..."
+- "paid by Bryan" → One action: UPDATE_PAYER, payerKey: "BRYAN", statusMessage: "Updating payer to Bryan..."
+- "settle this" or "mark as settled" → One action: UPDATE_STATUS, isSettled: true, statusMessage: "Marking transaction as settled..."
+- "unsettle" or "mark as unsettled" → One action: UPDATE_STATUS, isSettled: false, statusMessage: "Marking transaction as unsettled..."
+- "change date to Dec 30" or "date: 2025-12-30" → One action: UPDATE_DATE, date: "2025-12-30", statusMessage: "Updating date to 2025-12-30..."
+- "change description to Taxi to Airport" → One action: UPDATE_DESCRIPTION, description: "Taxi to Airport", statusMessage: "Updating description to Taxi to Airport..."
 
 IMPORTANT:
 - For each action, create a user-friendly statusMessage in present continuous tense
 - If user says "last two" or "last 3", create that many DELETE actions
 - Match transactions by description keywords, amounts, or position (last, first, etc.)
+
+PAYER MAPPING (canonical):
+- If user says "paid by HY", "Hwei Yeen", "HweiYeen", "Hwei", etc. → return payerKey: "HWEI_YEEN"
+- If user says "Bryan", "paid by Bryan", etc. → return payerKey: "BRYAN"
+
+STATUS MAPPING:
+- "settle", "mark as settled", "mark settled" → isSettled: true
+- "unsettle", "mark as unsettled", "mark unsettled" → isSettled: false
+
+DATE PARSING:
+- Parse natural language dates: "yesterday", "last friday", "Dec 30", "2025-12-30", "today", etc.
+- Always output in YYYY-MM-DD format (e.g., "2025-12-30")
+- If relative date like "yesterday", calculate the actual date
 
 Return ONLY valid JSON, no additional text.`;
 

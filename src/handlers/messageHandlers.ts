@@ -245,6 +245,43 @@ export class MessageHandlers {
             where: { id: step.transactionId },
           });
           results.push(`🗑️ Deleted "${deleted.description}"`);
+        } else if (step.action === 'UPDATE_PAYER' && step.transactionId && step.data?.payerKey) {
+          const payerRole = step.data.payerKey === 'BRYAN' ? 'Bryan' : 'HweiYeen';
+          const user = await prisma.user.findFirst({ where: { role: payerRole } });
+          if (!user) {
+            throw new Error(`User with role ${payerRole} not found`);
+          }
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { payerId: user.id },
+          });
+          results.push(`✅ Payer updated to ${payerRole}`);
+        } else if (step.action === 'UPDATE_STATUS' && step.transactionId && step.data?.isSettled !== undefined) {
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { isSettled: step.data.isSettled },
+          });
+          const statusText = step.data.isSettled ? 'settled' : 'unsettled';
+          results.push(`✅ Status updated to ${statusText}`);
+        } else if (step.action === 'UPDATE_DATE' && step.transactionId && step.data?.date) {
+          const dateStr = step.data.date;
+          // Parse date string (YYYY-MM-DD format)
+          const newDate = new Date(dateStr);
+          if (isNaN(newDate.getTime())) {
+            throw new Error(`Invalid date format: ${dateStr}`);
+          }
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { date: newDate },
+          });
+          const { formatDate } = await import('../utils/dateHelpers');
+          results.push(`✅ Date updated to ${formatDate(newDate, 'dd MMM yyyy')}`);
+        } else if (step.action === 'UPDATE_DESCRIPTION' && step.transactionId && step.data?.description) {
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { description: step.data.description },
+          });
+          results.push(`✅ Description updated to "${updated.description}"`);
         }
       } catch (dbError: any) {
         console.error('Database error during action execution:', dbError);
@@ -264,13 +301,8 @@ export class MessageHandlers {
         where: { isSettled: false },
         orderBy: { date: 'desc' },
         take: 10,
-        select: {
-          id: true,
-          description: true,
-          amountSGD: true,
-          category: true,
-          bryanPercentage: true,
-          hweiYeenPercentage: true,
+        include: {
+          payer: true,
         },
       });
 
@@ -297,6 +329,10 @@ export class MessageHandlers {
           category: tx.category || 'Other',
           bryanPercentage: tx.bryanPercentage ?? 0.7,
           hweiYeenPercentage: tx.hweiYeenPercentage ?? 0.3,
+          paidBy: tx.payer.name,
+          payerRole: tx.payer.role,
+          status: tx.isSettled ? 'settled' as const : 'unsettled' as const,
+          date: tx.date.toISOString().split('T')[0], // YYYY-MM-DD format
         }))
       );
 
@@ -379,6 +415,10 @@ export class MessageHandlers {
         category: transaction.category || 'Other',
         bryanPercentage: transaction.bryanPercentage ?? 0.7,
         hweiYeenPercentage: transaction.hweiYeenPercentage ?? 0.3,
+        paidBy: transaction.payer.name,
+        payerRole: transaction.payer.role,
+        status: transaction.isSettled ? 'settled' as const : 'unsettled' as const,
+        date: transaction.date.toISOString().split('T')[0], // YYYY-MM-DD format
       };
 
       // Send thinking message
