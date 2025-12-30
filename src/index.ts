@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
 import { YBBTallyBot } from './bot';
-import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { prisma } from './lib/prisma';
 import { CONFIG, BOT_USERS } from './config';
@@ -22,7 +21,6 @@ if (global.isBooting) {
 
 global.isBooting = true;
 
-const analyticsService = new AnalyticsService();
 const expenseService = new ExpenseService();
 
 const bot = new YBBTallyBot(
@@ -80,7 +78,7 @@ async function main() {
     await initializeDatabase();
     
     setupServer(bot);
-    setupJobs(bot, expenseService, analyticsService);
+    setupJobs(bot, expenseService);
 
     const environment = CONFIG.NODE_ENV || 'development';
     const isProduction = environment === 'production';

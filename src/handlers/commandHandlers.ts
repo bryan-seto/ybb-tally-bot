@@ -1,15 +1,13 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
-import { AnalyticsService } from '../services/analyticsService';
 import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { USER_NAMES, CONFIG } from '../config';
 
 export class CommandHandlers {
   constructor(
-    private expenseService: ExpenseService,
-    private analyticsService: AnalyticsService
+    private expenseService: ExpenseService
   ) {}
 
   async handleBalance(ctx: Context) {
@@ -99,13 +97,7 @@ export class CommandHandlers {
     }
 
     try {
-      if (CONFIG.FEATURE_FLAGS.ENABLE_NEW_REPORT_FEATURE) {
-        await ctx.reply('🚀 [New Feature Enabled] Generating advanced monthly report...');
-        // Your new feature logic would go here.
-        // For now, we continue to the standard report as well.
-      } else {
-        await ctx.reply('Generating monthly report... At your service!');
-      }
+      await ctx.reply('Generating monthly report... At your service!');
 
       const report = await this.expenseService.getMonthlyReport(monthOffset);
       const reportDate = getMonthsAgo(monthOffset);

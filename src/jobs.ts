@@ -2,22 +2,11 @@ import cron from 'node-cron';
 import { prisma } from './lib/prisma';
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
-import { AnalyticsService } from './services/analyticsService';
 import { getDayOfMonth, getNow, formatDate, getMonthsAgo } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { CONFIG, USER_IDS } from './config';
 
-export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService, analyticsService: AnalyticsService) {
-  // Daily stats at midnight (00:00) Asia/Singapore time = 16:00 UTC
-  cron.schedule('0 16 * * *', async () => {
-    try {
-      await analyticsService.calculateDailyStats();
-      console.log('Daily stats calculated');
-    } catch (error) {
-      console.error('Error calculating daily stats:', error);
-    }
-  });
-
+export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
   // Recurring expenses at 09:00 Asia/Singapore time = 01:00 UTC
   cron.schedule('0 1 * * *', async () => {
     try {

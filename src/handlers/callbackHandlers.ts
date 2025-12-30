@@ -2,7 +2,6 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
-import { AnalyticsService } from '../services/analyticsService';
 import { USER_NAMES } from '../config';
 import { getNow, getMonthsAgo, formatDate } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
@@ -10,8 +9,7 @@ import QuickChart from 'quickchart-js';
 export class CallbackHandlers {
   constructor(
     private expenseService: ExpenseService,
-    private historyService: HistoryService,
-    private analyticsService: AnalyticsService
+    private historyService: HistoryService
   ) {}
 
   async handleCallback(ctx: any) {

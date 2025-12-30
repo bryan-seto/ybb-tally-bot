@@ -1,7 +1,6 @@
 import { Telegraf, Context, session, Markup } from 'telegraf';
 import * as Sentry from '@sentry/node';
 import { AIService } from './services/ai';
-import { AnalyticsService } from './services/analyticsService';
 import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
 import { BackupService } from './services/backupService';
@@ -87,7 +86,6 @@ interface PhotoCollection {
 export class YBBTallyBot {
   private bot: Telegraf<Context & { session?: BotSession }>;
   private aiService: AIService;
-  private analyticsService: AnalyticsService;
   private expenseService: ExpenseService;
   private historyService: HistoryService;
   private backupService: BackupService;
@@ -102,11 +100,10 @@ export class YBBTallyBot {
   constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
     this.bot = new Telegraf(token);
     this.aiService = new AIService(geminiApiKey);
-    this.analyticsService = new AnalyticsService();
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
-    this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService);
+    this.commandHandlers = new CommandHandlers(this.expenseService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
     this.messageHandlers = new MessageHandlers(
       this.expenseService, 
@@ -114,7 +111,7 @@ export class YBBTallyBot {
       this.historyService,
       () => this.botUsername
     );
-    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, this.analyticsService);
+    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
@@ -365,54 +362,8 @@ export class YBBTallyBot {
     // Settle all expenses command
     this.bot.command('settle', async (ctx) => await this.commandHandlers.handleSettle(ctx));
 
-    // Admin stats command
-    this.bot.command('admin_stats', async (ctx) => {
-      const stats = await this.analyticsService.getAdminStats();
-      await ctx.reply(stats, { parse_mode: 'Markdown' });
-    });
-
     // Monthly report command
     this.bot.command('report', async (ctx) => await this.commandHandlers.handleReport(ctx));
-
-    // Admin: Broadcast fix to all broken groups
-    this.bot.command('fixed', async (ctx) => {
-      const userId = ctx.from?.id?.toString();
-      if (userId !== USER_IDS.BRYAN) return;
-
-      try {
-        const setting = await prisma.settings.findUnique({ where: { key: 'broken_groups' } });
-        if (!setting || !setting.value) {
-          await ctx.reply('No groups are currently waiting for a fix.');
-          return;
-        }
-
-        const groups = setting.value.split(',');
-        const message = `✅ <b>Issue Resolved!</b>\n\n` +
-          `Thanks for your patience. @bryanseto has fixed the glitch and I'm fully operational again! 🚀`;
-
-        let successCount = 0;
-        for (const chatId of groups) {
-          try {
-            await this.bot.telegram.sendMessage(chatId, message, { parse_mode: 'HTML' });
-            successCount++;
-          } catch (sendErr) {
-            console.error(`Failed to notify group ${chatId}:`, sendErr);
-          }
-        }
-
-        // Clear the list
-        await prisma.settings.update({
-          where: { key: 'broken_groups' },
-          data: { value: '' },
-        });
-
-        await ctx.reply(`Successfully broadcasted "fixed" message to ${successCount} groups.`);
-      } catch (error: any) {
-        console.error('Error in /fixed command:', error);
-        await ctx.reply(`Error broadcasting fix: ${error.message}`);
-      }
-    });
-
 
     // Manual add command
     this.bot.command('add', async (ctx) => {
@@ -912,9 +863,7 @@ export class YBBTallyBot {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '➕ Add New', callback_data: 'recurring_add' }],
             [{ text: '📋 View Active', callback_data: 'recurring_view' }],
-            [{ text: '❌ Remove', callback_data: 'recurring_remove' }],
             [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
           ],
         },
@@ -949,9 +898,6 @@ export class YBBTallyBot {
         {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '📝 Edit Amount', callback_data: `edit_last_amount_${lastTransaction.id}` }],
-                [{ text: '🏷️ Edit Category', callback_data: `edit_last_category_${lastTransaction.id}` }],
-                [{ text: '📊 Edit Split %', callback_data: `edit_last_split_${lastTransaction.id}` }],
                 [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
                 [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
               ],

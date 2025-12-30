@@ -15,10 +15,9 @@ export const CONFIG = {
    * Feature Flags
    * Use these to toggle experimental or clashing features.
    * To enable a feature, add the corresponding environment variable to your .env file:
-   * e.g., ENABLE_NEW_REPORT_FEATURE=true
+   * e.g., ENABLE_XYZ_FEATURE=true
    */
   FEATURE_FLAGS: {
-    ENABLE_NEW_REPORT_FEATURE: process.env.ENABLE_NEW_REPORT_FEATURE === 'true',
     // Add new flags here:
     // ENABLE_XYZ_FEATURE: process.env.ENABLE_XYZ_FEATURE === 'true',
   },
