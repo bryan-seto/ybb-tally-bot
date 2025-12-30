@@ -25,7 +25,7 @@ const ReceiptDataSchema = z.object({
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
 export interface CorrectionAction {
-  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UPDATE_PAYER' | 'UPDATE_STATUS' | 'UPDATE_DATE' | 'UPDATE_DESCRIPTION' | 'UNKNOWN';
+  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UPDATE_PAYER' | 'UPDATE_STATUS' | 'UPDATE_DATE' | 'UPDATE_TIME' | 'UPDATE_DESCRIPTION' | 'UNKNOWN';
   transactionId: bigint;
   data?: {
     bryanPercentage?: number;
@@ -35,6 +35,7 @@ export interface CorrectionAction {
     payerKey?: 'BRYAN' | 'HWEI_YEEN';
     isSettled?: boolean;
     date?: string; // ISO format YYYY-MM-DD
+    time?: string; // 24-hour format HH:MM (e.g., "14:30", "21:00")
     description?: string;
   };
   statusMessage: string;
@@ -224,7 +225,7 @@ Analyze the user's intent and respond in JSON format:
 {
   "actions": [
     {
-      "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UPDATE_PAYER" | "UPDATE_STATUS" | "UPDATE_DATE" | "UPDATE_DESCRIPTION" | "UNKNOWN",
+      "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UPDATE_PAYER" | "UPDATE_STATUS" | "UPDATE_DATE" | "UPDATE_TIME" | "UPDATE_DESCRIPTION" | "UNKNOWN",
       "transactionId": number (best matching transaction ID),
       "data": {
         "bryanPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
@@ -234,6 +235,7 @@ Analyze the user's intent and respond in JSON format:
         "payerKey": "BRYAN" | "HWEI_YEEN" (only for UPDATE_PAYER),
         "isSettled": boolean (only for UPDATE_STATUS, true for settled, false for unsettled),
         "date": string (only for UPDATE_DATE, format: YYYY-MM-DD),
+        "time": string (only for UPDATE_TIME, format: HH:MM in 24-hour format, e.g., "14:30", "21:00", "09:15" - NO AM/PM),
         "description": string (only for UPDATE_DESCRIPTION)
       },
       "statusMessage": "string (A friendly message in present continuous tense, e.g., 'Updating split for Venchi to 50-50...')"
@@ -252,7 +254,10 @@ Examples:
 - "settle this" or "mark as settled" → One action: UPDATE_STATUS, isSettled: true, statusMessage: "Marking transaction as settled..."
 - "unsettle" or "mark as unsettled" → One action: UPDATE_STATUS, isSettled: false, statusMessage: "Marking transaction as unsettled..."
 - "change date to Dec 30" or "date: 2025-12-30" → One action: UPDATE_DATE, date: "2025-12-30", statusMessage: "Updating date to 2025-12-30..."
+- "change time to 2:30 PM" or "time: 14:30" → One action: UPDATE_TIME, time: "14:30", statusMessage: "Updating time to 14:30..."
 - "change description to Taxi to Airport" → One action: UPDATE_DESCRIPTION, description: "Taxi to Airport", statusMessage: "Updating description to Taxi to Airport..."
+- "edit merchant to VENCHI and amount to $14" → Two actions: UPDATE_DESCRIPTION with description: "VENCHI", and UPDATE_AMOUNT with amountSGD: 14
+- "change date to Dec 30 and category to Food" → Two actions: UPDATE_DATE and UPDATE_CATEGORY
 
 IMPORTANT:
 - For each action, create a user-friendly statusMessage in present continuous tense
@@ -271,6 +276,13 @@ DATE PARSING:
 - Parse natural language dates: "yesterday", "last friday", "Dec 30", "2025-12-30", "today", etc.
 - Always output in YYYY-MM-DD format (e.g., "2025-12-30")
 - If relative date like "yesterday", calculate the actual date
+
+TIME PARSING (STRICT 24-HOUR FORMAT):
+- Parse time inputs and convert to 24-hour format (HH:MM)
+- Examples: "2:30 PM" → "14:30", "9:15 AM" → "09:15", "21:00" → "21:00", "midnight" → "00:00", "noon" → "12:00"
+- **CRITICAL: Always return time in 24-hour format HH:MM (e.g., "14:30", "09:15", "21:00")**
+- **DO NOT return AM/PM format - only 24-hour format is allowed**
+- Use leading zeros for hours < 10 (e.g., "09:15" not "9:15")
 
 Return ONLY valid JSON, no additional text.`;
 
@@ -329,6 +341,32 @@ Return ONLY valid JSON, no additional text.`;
       };
     } catch (error: any) {
       console.error('Error processing correction:', error);
+      
+      // Check for rate limit errors (429) - check both message and status/code
+      const isRateLimit = 
+        error.message?.includes('429') || 
+        error.message?.includes('quota') || 
+        error.message?.includes('rate limit') ||
+        error.message?.includes('Too Many Requests') ||
+        error.status === 429 ||
+        error.code === 429 ||
+        (error.response && error.response.status === 429);
+      
+      if (isRateLimit) {
+        Sentry.captureException(error, {
+          tags: { error_type: 'rate_limit' },
+          extra: { api: 'gemini' }
+        });
+        return {
+          confidence: 'low',
+          actions: [{
+            action: 'UNKNOWN',
+            transactionId: BigInt(0),
+            statusMessage: '⚠️ Rate limit exceeded. The AI service has temporary usage limits. Please wait a moment and try again.'
+          }]
+        };
+      }
+      
       Sentry.captureException(error);
       return { 
         confidence: 'low',

@@ -130,17 +130,16 @@ export class HistoryService {
       ? `SGD $${tx.amount.toFixed(2)}`
       : `${tx.currency} ${tx.amount.toFixed(2)}`;
 
-    // Format split details
+    // Format split details (skip FULL split type)
     let splitDetails = '';
-    if (tx.splitType === 'FULL') {
-      splitDetails = '⚖️ **Split:** Full (Payer Only)';
-    } else if (tx.splitType === 'FIFTY_FIFTY') {
+    if (tx.splitType === 'FIFTY_FIFTY') {
       splitDetails = '⚖️ **Split:** 50% / 50%';
     } else if (tx.bryanPercentage !== undefined && tx.hweiYeenPercentage !== undefined) {
       const bryanPercent = Math.round(tx.bryanPercentage * 100);
       const hweiYeenPercent = Math.round(tx.hweiYeenPercentage * 100);
       splitDetails = `⚖️ **Split:** ${bryanPercent}% (Bryan) / ${hweiYeenPercent}% (HY)`;
     }
+    // Note: FULL split type is intentionally not displayed
 
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +

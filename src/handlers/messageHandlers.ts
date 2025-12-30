@@ -264,18 +264,84 @@ export class MessageHandlers {
           const statusText = step.data.isSettled ? 'settled' : 'unsettled';
           results.push(`✅ Status updated to ${statusText}`);
         } else if (step.action === 'UPDATE_DATE' && step.transactionId && step.data?.date) {
+          // Fetch current transaction to preserve time components
+          const currentTx = await prisma.transaction.findUnique({
+            where: { id: step.transactionId },
+          });
+          if (!currentTx) {
+            throw new Error('Transaction not found');
+          }
+          
           const dateStr = step.data.date;
           // Parse date string (YYYY-MM-DD format)
           const newDate = new Date(dateStr);
           if (isNaN(newDate.getTime())) {
             throw new Error(`Invalid date format: ${dateStr}`);
           }
+          
+          // Preserve time components from existing transaction
+          const existingHours = currentTx.date.getHours();
+          const existingMinutes = currentTx.date.getMinutes();
+          const existingSeconds = currentTx.date.getSeconds();
+          const existingMs = currentTx.date.getMilliseconds();
+          
+          // Set preserved time on new date
+          newDate.setHours(existingHours, existingMinutes, existingSeconds, existingMs);
+          
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { date: newDate },
           });
           const { formatDate } = await import('../utils/dateHelpers');
           results.push(`✅ Date updated to ${formatDate(newDate, 'dd MMM yyyy')}`);
+        } else if (step.action === 'UPDATE_TIME' && step.transactionId && step.data?.time) {
+          // Fetch current transaction to preserve date components
+          const currentTx = await prisma.transaction.findUnique({
+            where: { id: step.transactionId },
+          });
+          if (!currentTx) {
+            throw new Error('Transaction not found');
+          }
+          
+          const timeStr = step.data.time; // Expected format: HH:MM (24-hour, e.g., "14:30", "21:00")
+          
+          // Validate and parse time string (HH:MM format)
+          const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+          if (!timeMatch) {
+            throw new Error(`Invalid time format: ${timeStr}. Expected HH:MM (24-hour format)`);
+          }
+          
+          const hours = parseInt(timeMatch[1], 10);
+          const minutes = parseInt(timeMatch[2], 10);
+          
+          if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+            throw new Error(`Invalid time values: ${timeStr}. Hours must be 0-23, minutes must be 0-59`);
+          }
+          
+          // Get existing date in Singapore timezone
+          const existingDate = currentTx.date;
+          const year = existingDate.getFullYear();
+          const month = String(existingDate.getMonth() + 1).padStart(2, '0');
+          const day = String(existingDate.getDate()).padStart(2, '0');
+          const hoursStr = String(hours).padStart(2, '0');
+          const minutesStr = String(minutes).padStart(2, '0');
+          
+          // Construct date string in Singapore timezone (GMT+8)
+          // Format: YYYY-MM-DDTHH:mm:00+08:00
+          const singaporeDateStr = `${year}-${month}-${day}T${hoursStr}:${minutesStr}:00+08:00`;
+          
+          // Parse the date string - JavaScript will convert to UTC automatically
+          const newDate = new Date(singaporeDateStr);
+          if (isNaN(newDate.getTime())) {
+            throw new Error(`Failed to parse date with timezone: ${singaporeDateStr}`);
+          }
+          
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { date: newDate },
+          });
+          const { formatDate } = await import('../utils/dateHelpers');
+          results.push(`✅ Time updated to ${timeStr}`);
         } else if (step.action === 'UPDATE_DESCRIPTION' && step.transactionId && step.data?.description) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -337,11 +403,20 @@ export class MessageHandlers {
       );
 
       if (result.confidence === 'low' || result.actions.every(a => a.action === 'UNKNOWN')) {
+        // Check if the error message indicates a rate limit
+        const firstAction = result.actions[0];
+        const isRateLimit = firstAction?.statusMessage?.includes('Rate limit') || 
+                          firstAction?.statusMessage?.includes('rate limit');
+        
+        const errorMessage = isRateLimit 
+          ? firstAction.statusMessage
+          : '🤔 Sorry, I didn\'t understand those instructions. Try: "@bot split venchi 50-50"';
+        
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          '🤔 Sorry, I didn\'t understand those instructions. Try: "@bot split venchi 50-50"'
+          errorMessage
         );
         return;
       }
@@ -428,11 +503,20 @@ export class MessageHandlers {
       const result = await this.aiService.processCorrection(text, [formattedTransaction]);
 
       if (result.confidence === 'low' || result.actions.every(a => a.action === 'UNKNOWN')) {
+        // Check if the error message indicates a rate limit
+        const firstAction = result.actions[0];
+        const isRateLimit = firstAction?.statusMessage?.includes('Rate limit') || 
+                          firstAction?.statusMessage?.includes('rate limit');
+        
+        const errorMessage = isRateLimit 
+          ? firstAction.statusMessage
+          : '🤔 Sorry, I didn\'t understand those instructions. Try: "change amount to $50" or "split 50-50"';
+        
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          '🤔 Sorry, I didn\'t understand those instructions. Try: "change amount to $50" or "split 50-50"'
+          errorMessage
         );
         this.clearSession(session);
         return;
