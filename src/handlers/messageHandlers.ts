@@ -2,7 +2,7 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { AIService, CorrectionAction } from '../services/ai';
-import { HistoryService } from '../services/historyService';
+import { HistoryService, TransactionDetail } from '../services/historyService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES } from '../config';
 
@@ -192,14 +192,15 @@ export class MessageHandlers {
 
   /**
    * Execute correction actions returned by AI service
-   * Returns array of result messages
+   * Returns array of result messages and the updated transaction (if any)
    */
   private async executeCorrectionActions(
     ctx: any,
     actions: CorrectionAction[],
     statusMsg: any
-  ): Promise<string[]> {
+  ): Promise<{ results: string[]; updatedTransaction?: any }> {
     const results: string[] = [];
+    let updatedTransaction: any = undefined;
     for (const step of actions) {
       if (step.action === 'UNKNOWN') continue;
 
@@ -224,7 +225,11 @@ export class MessageHandlers {
               bryanPercentage: step.data.bryanPercentage,
               hweiYeenPercentage: step.data.hweiYeenPercentage,
             },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           const bryanSplit = Math.round((step.data.bryanPercentage ?? 0.7) * 100);
           const hweiYeenSplit = Math.round((step.data.hweiYeenPercentage ?? 0.3) * 100);
           results.push(`✅ Split updated for "${updated.description}" to ${bryanSplit}-${hweiYeenSplit}`);
@@ -232,18 +237,27 @@ export class MessageHandlers {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { amountSGD: step.data.amountSGD },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           results.push(`✅ Amount updated for "${updated.description}" to $${updated.amountSGD.toFixed(2)}`);
         } else if (step.action === 'UPDATE_CATEGORY' && step.transactionId && step.data) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { category: step.data.category },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           results.push(`✅ Category updated for "${updated.description}" to ${updated.category}`);
         } else if (step.action === 'DELETE' && step.transactionId) {
           const deleted = await prisma.transaction.delete({
             where: { id: step.transactionId },
           });
+          // Don't set updatedTransaction for DELETE actions
           results.push(`🗑️ Deleted "${deleted.description}"`);
         } else if (step.action === 'UPDATE_PAYER' && step.transactionId && step.data?.payerKey) {
           const payerRole = step.data.payerKey === 'BRYAN' ? 'Bryan' : 'HweiYeen';
@@ -254,13 +268,21 @@ export class MessageHandlers {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { payerId: user.id },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           results.push(`✅ Payer updated to ${payerRole}`);
         } else if (step.action === 'UPDATE_STATUS' && step.transactionId && step.data?.isSettled !== undefined) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { isSettled: step.data.isSettled },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           const statusText = step.data.isSettled ? 'settled' : 'unsettled';
           results.push(`✅ Status updated to ${statusText}`);
         } else if (step.action === 'UPDATE_DATE' && step.transactionId && step.data?.date) {
@@ -291,7 +313,11 @@ export class MessageHandlers {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { date: newDate },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           const { formatDate } = await import('../utils/dateHelpers');
           results.push(`✅ Date updated to ${formatDate(newDate, 'dd MMM yyyy')}`);
         } else if (step.action === 'UPDATE_TIME' && step.transactionId && step.data?.time) {
@@ -339,14 +365,22 @@ export class MessageHandlers {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { date: newDate },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           const { formatDate } = await import('../utils/dateHelpers');
           results.push(`✅ Time updated to ${timeStr}`);
         } else if (step.action === 'UPDATE_DESCRIPTION' && step.transactionId && step.data?.description) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
             data: { description: step.data.description },
+            include: {
+              payer: true,
+            },
           });
+          updatedTransaction = updated;
           results.push(`✅ Description updated to "${updated.description}"`);
         }
       } catch (dbError: any) {
@@ -354,7 +388,7 @@ export class MessageHandlers {
         results.push(`❌ Failed to execute action: ${dbError.message}`);
       }
     }
-    return results;
+    return { results, updatedTransaction };
   }
 
   private async handleAICorrection(ctx: any, text: string) {
@@ -455,7 +489,7 @@ export class MessageHandlers {
       }
 
       // 6. Execute actions using shared method
-      const results = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
+      const { results } = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
 
       // 7. Final summary replace
       const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
@@ -588,7 +622,7 @@ export class MessageHandlers {
       }
 
       // Execute actions using shared method
-      const results = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
+      const { results, updatedTransaction: rawUpdatedTransaction } = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
 
       if (results.length === 0) {
         await ctx.telegram.editMessageText(
@@ -601,16 +635,24 @@ export class MessageHandlers {
         return;
       }
 
-      // Fetch updated transaction and show updated card
-      const updatedTransaction = await this.historyService.getTransactionById(transactionId);
-      if (updatedTransaction) {
+      // Use the returned transaction if available, otherwise fall back to fetching
+      let transactionDetail: TransactionDetail | null = null;
+      if (rawUpdatedTransaction) {
+        // Format the transaction returned from the update operation
+        transactionDetail = this.historyService.formatTransactionModel(rawUpdatedTransaction);
+      } else {
+        // Fallback: fetch from database (e.g., after delete or no changes)
+        transactionDetail = await this.historyService.getTransactionById(transactionId);
+      }
+
+      if (transactionDetail) {
         // Delete the status message and show the updated transaction card
         try {
           await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
         } catch (deleteError) {
           // If deletion fails, continue anyway
         }
-        await this.showTransactionDetail(ctx, transactionId);
+        await this.showTransactionDetail(ctx, transactionId, transactionDetail);
       } else {
         // If transaction was deleted, show summary
         await ctx.telegram.editMessageText(
@@ -731,10 +773,14 @@ export class MessageHandlers {
 
   /**
    * Show transaction detail card
+   * @param ctx - Telegram context
+   * @param transactionId - Transaction ID to fetch (if transactionDetail not provided)
+   * @param transactionDetail - Optional pre-fetched transaction detail to avoid re-fetching
    */
-  private async showTransactionDetail(ctx: any, transactionId: bigint) {
+  private async showTransactionDetail(ctx: any, transactionId: bigint, transactionDetail?: TransactionDetail) {
     try {
-      const transaction = await this.historyService.getTransactionById(transactionId);
+      // Use provided transaction detail or fetch from database
+      const transaction = transactionDetail || await this.historyService.getTransactionById(transactionId);
 
       if (!transaction) {
         const message = `❌ Transaction \`/${transactionId}\` not found.`;
@@ -783,5 +829,6 @@ export class MessageHandlers {
       await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
     }
   }
+
 }
 

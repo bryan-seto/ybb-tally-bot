@@ -58,6 +58,32 @@ export class HistoryService {
   }
 
   /**
+   * Format a Prisma transaction model (with payer relation) into TransactionDetail
+   */
+  formatTransactionModel(rawTx: any): TransactionDetail {
+    if (!rawTx || !rawTx.payer) {
+      throw new Error('Transaction must include payer relation');
+    }
+
+    return {
+      id: rawTx.id,
+      date: rawTx.date,
+      merchant: rawTx.description || 'No description',
+      amount: rawTx.amountSGD,
+      currency: rawTx.currency,
+      status: rawTx.isSettled ? 'settled' : 'unsettled',
+      category: rawTx.category || 'Other',
+      description: rawTx.description || 'No description',
+      paidBy: rawTx.payer.name,
+      payerId: rawTx.payerId,
+      payerRole: rawTx.payer.role,
+      splitType: rawTx.splitType || undefined,
+      bryanPercentage: rawTx.bryanPercentage ?? undefined,
+      hweiYeenPercentage: rawTx.hweiYeenPercentage ?? undefined,
+    };
+  }
+
+  /**
    * Get transaction by ID
    */
   async getTransactionById(id: bigint): Promise<TransactionDetail | null> {
@@ -72,22 +98,7 @@ export class HistoryService {
       return null;
     }
 
-    return {
-      id: transaction.id,
-      date: transaction.date,
-      merchant: transaction.description || 'No description',
-      amount: transaction.amountSGD,
-      currency: transaction.currency,
-      status: transaction.isSettled ? 'settled' : 'unsettled',
-      category: transaction.category || 'Other',
-      description: transaction.description || 'No description',
-      paidBy: transaction.payer.name,
-      payerId: transaction.payerId,
-      payerRole: transaction.payer.role,
-      splitType: transaction.splitType || undefined,
-      bryanPercentage: transaction.bryanPercentage ?? undefined,
-      hweiYeenPercentage: transaction.hweiYeenPercentage ?? undefined,
-    };
+    return this.formatTransactionModel(transaction);
   }
 
   /**
