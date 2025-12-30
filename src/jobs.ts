@@ -2,11 +2,14 @@ import cron from 'node-cron';
 import { prisma } from './lib/prisma';
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
+import { RecurringExpenseService } from './services/recurringExpenseService';
 import { getDayOfMonth, getNow, formatDate, getMonthsAgo } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { CONFIG, USER_IDS } from './config';
 
 export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
+  const recurringExpenseService = new RecurringExpenseService(expenseService);
+
   // Recurring expenses at 09:00 Asia/Singapore time = 01:00 UTC
   cron.schedule('0 1 * * *', async () => {
     try {
@@ -22,23 +25,14 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
 
       // Process all recurring expenses and collect saved transactions
       const savedTransactions = [];
+      let balanceMessage = '';
       for (const expense of recurringExpenses) {
-        const transaction = await prisma.transaction.create({
-          data: {
-            amountSGD: expense.amountOriginal,
-            currency: 'SGD',
-            category: 'Bills',
-            description: expense.description,
-            payerId: expense.payerId,
-            date: getNow(),
-            splitType: 'FULL',
-          },
-        });
-        savedTransactions.push(transaction);
+        const result = await recurringExpenseService.processSingleRecurringExpense(expense);
+        if (result) {
+          savedTransactions.push(result.transaction);
+          balanceMessage = result.message; // Use the last message (they should all be the same)
+        }
       }
-
-      // Get balance message after all transactions are created
-      const balanceMessage = await expenseService.getOutstandingBalanceMessage();
 
       // Build the standard format message
       let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
