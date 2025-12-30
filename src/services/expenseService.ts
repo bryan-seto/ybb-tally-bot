@@ -212,26 +212,6 @@ export class ExpenseService {
   }
 
   /**
-   * Format transaction-specific amount owed message
-   */
-  getTransactionOwedMessage(
-    amount: number, 
-    payerRole: 'Bryan' | 'HweiYeen',
-    bryanPercentage?: number,
-    hweiYeenPercentage?: number
-  ): string {
-    const owed = this.calculateTransactionOwed(amount, payerRole, bryanPercentage, hweiYeenPercentage);
-    
-    if (owed.bryanOwes > 0) {
-      return `From this transaction: Bryan owes Hwei Yeen SGD $${owed.bryanOwes.toFixed(2)}`;
-    } else if (owed.hweiYeenOwes > 0) {
-      return `From this transaction: Hwei Yeen owes Bryan SGD $${owed.hweiYeenOwes.toFixed(2)}`;
-    }
-    
-    return '';
-  }
-
-  /**
    * Get all pending (unsettled) transactions
    */
   async getAllPendingTransactions(): Promise<Array<{
@@ -289,23 +269,32 @@ export class ExpenseService {
   async getOutstandingBalanceMessage(): Promise<string> {
     const balance = await this.calculateOutstandingBalance();
 
+    // Guard clause: Happy path - all settled
     if (balance.bryanOwes === 0 && balance.hweiYeenOwes === 0) {
       return '✅ All expenses are settled! No outstanding balance.';
     }
 
-    let message = '💰 **Outstanding (amount owed):**\n';
-    
+    // Guard clause: Both owe each other (edge case)
     if (balance.bryanOwes > 0 && balance.hweiYeenOwes > 0) {
-      // Both owe each other (shouldn't happen with 70/30 split, but handle it)
-      message += `Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n`;
-      message += `Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
-    } else if (balance.bryanOwes > 0) {
-      message += `Bryan owes Hwei Yeen SGD $${balance.bryanOwes.toFixed(2)}\n`;
-    } else if (balance.hweiYeenOwes > 0) {
-      message += `Hwei Yeen owes Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+      return '💰 **Outstanding (amount owed):**\n' +
+        `Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n` +
+        `Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     }
 
-    return message;
+    // Guard clause: Bryan owes HweiYeen
+    if (balance.bryanOwes > 0) {
+      return '💰 **Outstanding (amount owed):**\n' +
+        `Bryan owes Hwei Yeen SGD $${balance.bryanOwes.toFixed(2)}\n`;
+    }
+
+    // Guard clause: HweiYeen owes Bryan
+    if (balance.hweiYeenOwes > 0) {
+      return '💰 **Outstanding (amount owed):**\n' +
+        `Hwei Yeen owes Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+    }
+
+    // Fallback (should never reach here, but for safety)
+    return '💰 **Outstanding (amount owed):**\n';
   }
 
   /**

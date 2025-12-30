@@ -1,0 +1,282 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with custom split percentages 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 50,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with default 70/30 split when Bryan paid 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 30,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with default 70/30 split when HweiYeen paid 1`] = `
+{
+  "bryanOwes": 70,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with multiple mixed transactions 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 40,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should return zero balance when no unsettled transactions 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should return zero balance when no users found 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with custom 50/50 split when Bryan paid 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 50,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with custom 80/20 split when HweiYeen paid 1`] = `
+{
+  "bryanOwes": 120.4,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with default 70/30 split when Bryan paid 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 30,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with default 70/30 split when HweiYeen paid 1`] = `
+{
+  "bryanOwes": 70,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should handle decimal amounts 1`] = `
+{
+  "bryanOwes": 86.41499999999999,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should handle zero amount 1`] = `
+{
+  "bryanOwes": 0,
+  "hweiYeenOwes": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should calculate category breakdowns with custom splits 1`] = `
+{
+  "bryanCategories": [
+    {
+      "amount": 140,
+      "category": "Food",
+    },
+  ],
+  "bryanPaid": 100,
+  "hweiYeenCategories": [
+    {
+      "amount": 60,
+      "category": "Food",
+    },
+  ],
+  "hweiYeenPaid": 100,
+  "topCategories": [
+    {
+      "amount": 200,
+      "category": "Food",
+    },
+  ],
+  "totalSpend": 200,
+  "transactionCount": 2,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should handle monthOffset parameter 1`] = `
+{
+  "bryanCategories": [
+    {
+      "amount": 70,
+      "category": "Food",
+    },
+  ],
+  "bryanPaid": 100,
+  "hweiYeenCategories": [
+    {
+      "amount": 30,
+      "category": "Food",
+    },
+  ],
+  "hweiYeenPaid": 0,
+  "topCategories": [
+    {
+      "amount": 100,
+      "category": "Food",
+    },
+  ],
+  "totalSpend": 100,
+  "transactionCount": 1,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should handle transactions with null category as Other 1`] = `
+{
+  "bryanCategories": [
+    {
+      "amount": 35,
+      "category": "Other",
+    },
+  ],
+  "bryanPaid": 50,
+  "hweiYeenCategories": [
+    {
+      "amount": 15,
+      "category": "Other",
+    },
+  ],
+  "hweiYeenPaid": 0,
+  "topCategories": [
+    {
+      "amount": 50,
+      "category": "Other",
+    },
+  ],
+  "totalSpend": 50,
+  "transactionCount": 1,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should return empty report when no transactions found 1`] = `
+{
+  "bryanCategories": [],
+  "bryanPaid": 0,
+  "hweiYeenCategories": [],
+  "hweiYeenPaid": 0,
+  "topCategories": [],
+  "totalSpend": 0,
+  "transactionCount": 0,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should return report with multiple transactions and categories 1`] = `
+{
+  "bryanCategories": [
+    {
+      "amount": 170,
+      "category": "Food",
+    },
+    {
+      "amount": 45,
+      "category": "Shopping",
+    },
+    {
+      "amount": 35,
+      "category": "Transport",
+    },
+  ],
+  "bryanPaid": 300,
+  "hweiYeenCategories": [
+    {
+      "amount": 130,
+      "category": "Food",
+    },
+    {
+      "amount": 30,
+      "category": "Shopping",
+    },
+    {
+      "amount": 15,
+      "category": "Transport",
+    },
+  ],
+  "hweiYeenPaid": 125,
+  "topCategories": [
+    {
+      "amount": 300,
+      "category": "Food",
+    },
+    {
+      "amount": 75,
+      "category": "Shopping",
+    },
+    {
+      "amount": 50,
+      "category": "Transport",
+    },
+  ],
+  "totalSpend": 425,
+  "transactionCount": 4,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getMonthlyReport > should return report with single transaction 1`] = `
+{
+  "bryanCategories": [
+    {
+      "amount": 70,
+      "category": "Food",
+    },
+  ],
+  "bryanPaid": 100,
+  "hweiYeenCategories": [
+    {
+      "amount": 30,
+      "category": "Food",
+    },
+  ],
+  "hweiYeenPaid": 0,
+  "topCategories": [
+    {
+      "amount": 100,
+      "category": "Food",
+    },
+  ],
+  "totalSpend": 100,
+  "transactionCount": 1,
+}
+`;
+
+exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should format decimal amounts correctly 1`] = `
+"💰 **Outstanding (amount owed):**
+Bryan owes Hwei Yeen SGD $86.42
+"
+`;
+
+exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return message when Bryan owes HweiYeen 1`] = `
+"💰 **Outstanding (amount owed):**
+Bryan owes Hwei Yeen SGD $70.00
+"
+`;
+
+exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return message when HweiYeen owes Bryan 1`] = `
+"💰 **Outstanding (amount owed):**
+Hwei Yeen owes Bryan SGD $30.00
+"
+`;
+
+exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return message when both owe each other 1`] = `
+"💰 **Outstanding (amount owed):**
+Bryan owes Hwei Yeen SGD $10.00
+"
+`;
+
+exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return settled message when balance is zero 1`] = `"✅ All expenses are settled! No outstanding balance."`;
