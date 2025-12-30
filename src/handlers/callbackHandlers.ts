@@ -383,6 +383,60 @@ export class CallbackHandlers {
         return;
       }
 
+      // Transaction action callbacks
+      if (callbackData.startsWith('tx_settle_')) {
+        await ctx.answerCbQuery();
+        const id = BigInt(callbackData.replace('tx_settle_', ''));
+        
+        try {
+          await prisma.transaction.update({
+            where: { id },
+            data: { isSettled: true },
+          });
+          
+          // Re-fetch to get updated status
+          const transaction = await this.historyService.getTransactionById(id);
+          if (transaction) {
+            const card = this.historyService.formatTransactionDetail(transaction);
+            // Update keyboard (remove settle button, keep edit/delete)
+            const keyboard = [
+              [
+                Markup.button.callback('✏️ Edit', `tx_edit_${id}`),
+                Markup.button.callback('🗑️ Delete', `tx_delete_${id}`),
+              ],
+            ];
+            await ctx.editMessageText(card, {
+              parse_mode: 'Markdown',
+              reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+            });
+          }
+        } catch (error: any) {
+          console.error('Error settling transaction:', error);
+          await ctx.answerCbQuery('Error settling transaction', { show_alert: true });
+        }
+        return;
+      }
+
+      if (callbackData.startsWith('tx_delete_')) {
+        await ctx.answerCbQuery();
+        const id = BigInt(callbackData.replace('tx_delete_', ''));
+        
+        try {
+          await prisma.transaction.delete({ where: { id } });
+          await ctx.deleteMessage();
+          await ctx.reply('🗑️ Transaction deleted.');
+        } catch (error: any) {
+          console.error('Error deleting transaction:', error);
+          await ctx.answerCbQuery('Error deleting transaction', { show_alert: true });
+        }
+        return;
+      }
+
+      if (callbackData.startsWith('tx_edit_')) {
+        await ctx.answerCbQuery('Edit feature coming soon', { show_alert: true });
+        return;
+      }
+
     } catch (error: any) {
       console.error('Callback error:', error);
       await ctx.answerCbQuery('Error processing request', { show_alert: true });

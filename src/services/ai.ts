@@ -24,18 +24,17 @@ const ReceiptDataSchema = z.object({
 
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
-export interface AIAction {
+export interface CorrectionAction {
   action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UNKNOWN';
-  transactionId?: bigint;
-  data?: {
-    bryanPercentage?: number;
-    hweiYeenPercentage?: number;
-    amountSGD?: number;
-    category?: string;
-  };
+  transactionId: bigint;
+  data?: any;
   statusMessage: string;
 }
 
+export interface CorrectionResult {
+  confidence: 'low' | 'medium' | 'high';
+  actions: CorrectionAction[];
+}
 export class AIService {
   private genAI: GoogleGenerativeAI;
   private model: any;
@@ -187,10 +186,7 @@ Return ONLY valid JSON, no additional text.`;
       bryanPercentage: number;
       hweiYeenPercentage: number;
     }>
-  ): Promise<{
-    actions: AIAction[];
-    confidence: 'high' | 'medium' | 'low';
-  }> {
+  ): Promise<CorrectionResult> {
     const prompt = `You are a financial assistant bot. A user has sent correction command(s).
 The user might request MULTIPLE changes in one message. Identify ALL actions requested.
 
@@ -238,39 +234,61 @@ Return ONLY valid JSON, no additional text.`;
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         return { 
+          confidence: 'low',
           actions: [{ 
-            action: 'UNKNOWN', 
+            action: 'UNKNOWN',
+            transactionId: BigInt(0),
             statusMessage: 'Processing your request...' 
-          }], 
-          confidence: 'low' 
+          }]
         };
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
       
-      // Ensure transactionIds are bigints
+      // Transform to match CorrectionResult interface
+      // Ensure transactionIds are bigints and required (not optional)
+      const transformedActions: CorrectionAction[] = [];
       if (parsed.actions && Array.isArray(parsed.actions)) {
-        parsed.actions.forEach((a: any) => {
-          if (a.transactionId) {
-            a.transactionId = BigInt(a.transactionId);
+        for (const a of parsed.actions) {
+          // Ensure transactionId exists and is a bigint
+          if (!a.transactionId) {
+            // If no transactionId provided, skip this action or use 0 as fallback
+            continue;
           }
-          // Ensure statusMessage exists
-          if (!a.statusMessage) {
-            a.statusMessage = 'Processing...';
-          }
-        });
+          
+          transformedActions.push({
+            action: a.action || 'UNKNOWN',
+            transactionId: BigInt(a.transactionId), // Required, convert to BigInt
+            data: a.data || undefined,
+            statusMessage: a.statusMessage || 'Processing...'
+          });
+        }
       }
 
-      return parsed;
+      // Ensure confidence matches the interface
+      const confidence: 'low' | 'medium' | 'high' = 
+        parsed.confidence === 'high' || parsed.confidence === 'medium' || parsed.confidence === 'low'
+          ? parsed.confidence
+          : 'low';
+
+      return {
+        confidence,
+        actions: transformedActions.length > 0 ? transformedActions : [{
+          action: 'UNKNOWN',
+          transactionId: BigInt(0),
+          statusMessage: 'Processing your request...'
+        }]
+      };
     } catch (error: any) {
       console.error('Error processing correction:', error);
       Sentry.captureException(error);
       return { 
+        confidence: 'low',
         actions: [{ 
-          action: 'UNKNOWN', 
+          action: 'UNKNOWN',
+          transactionId: BigInt(0),
           statusMessage: 'Processing your request...' 
-        }], 
-        confidence: 'low' 
+        }]
       };
     }
   }

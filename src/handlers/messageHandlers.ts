@@ -2,6 +2,7 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { AIService } from '../services/ai';
+import { HistoryService } from '../services/historyService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES } from '../config';
 
@@ -9,7 +10,8 @@ export class MessageHandlers {
   constructor(
     private expenseService: ExpenseService,
     private aiService: AIService,
-    private getBotUsername: () => string
+    private historyService: HistoryService,
+    private getBotUsername?: () => string
   ) {}
 
   async handleText(ctx: any) {
@@ -20,6 +22,20 @@ export class MessageHandlers {
       const session = ctx.session;
       console.log('[handleText] Text received:', text);
 
+      // Handle transaction ID commands (e.g., /77, /74)
+      const txIdMatch = text.match(/^\/(\d+)$/);
+      if (txIdMatch) {
+        try {
+          const transactionId = BigInt(txIdMatch[1]);
+          await this.showTransactionDetail(ctx, transactionId);
+          return;
+        } catch (error: any) {
+          console.error('Error parsing transaction ID:', error);
+          await ctx.reply(`❌ Invalid transaction ID: ${txIdMatch[1]}`);
+          return;
+        }
+      }
+
       // Handle cancel
       if (text === '❌ Cancel') {
         this.clearSession(session);
@@ -28,8 +44,16 @@ export class MessageHandlers {
       }
 
       // --- PRIORITY 1: Check for bot tag FIRST (AI commands override everything) ---
-      const botUsername = this.getBotUsername();
-      console.log('[handleText] Bot username:', botUsername);
+      let botUsername: string | undefined;
+      if (this.getBotUsername) {
+        botUsername = this.getBotUsername();
+        console.log('[handleText] Bot username (cached):', botUsername);
+      } else {
+        // Fallback: fetch from Telegram API if getter not provided
+        const botInfo = await ctx.telegram.getMe();
+        botUsername = botInfo.username;
+        console.log('[handleText] Bot username (fetched):', botUsername);
+      }
       
       if (botUsername) {
         console.log('[handleText] Checking for tag:', `@${botUsername}`);
@@ -47,7 +71,7 @@ export class MessageHandlers {
           return;
         }
       } else {
-        console.log('[handleText] Bot username not yet cached, skipping AI correction check');
+        console.log('[handleText] Bot username not available, skipping AI correction check');
       }
       // ---------------------------------------------------------------------------
 
@@ -384,6 +408,61 @@ export class MessageHandlers {
       console.error('Error handling transaction edit:', error);
       this.clearSession(session);
       await ctx.reply('❌ Sorry, something went wrong updating the transaction.', Markup.removeKeyboard());
+    }
+  }
+
+  /**
+   * Show transaction detail card
+   */
+  private async showTransactionDetail(ctx: any, transactionId: bigint) {
+    try {
+      const transaction = await this.historyService.getTransactionById(transactionId);
+
+      if (!transaction) {
+        const message = `❌ Transaction \`/${transactionId}\` not found.`;
+        if (ctx.message) {
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } else if (ctx.callbackQuery) {
+          await ctx.answerCbQuery('Transaction not found', { show_alert: true });
+        }
+        return;
+      }
+
+      const card = this.historyService.formatTransactionDetail(transaction);
+
+      // Build inline keyboard buttons
+      const keyboard: any[] = [];
+
+      // Only show "Settle Up" if transaction is unsettled
+      if (transaction.status === 'unsettled') {
+        keyboard.push([
+          Markup.button.callback('✅ Settle', `tx_settle_${transactionId}`)
+        ]);
+      }
+
+      // Edit and Delete buttons
+      keyboard.push([
+        Markup.button.callback('✏️ Edit', `tx_edit_${transactionId}`),
+        Markup.button.callback('🗑️ Delete', `tx_delete_${transactionId}`),
+      ]);
+
+      const replyMarkup = Markup.inlineKeyboard(keyboard);
+
+      if (ctx.message) {
+        await ctx.reply(card, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup.reply_markup,
+        });
+      } else if (ctx.callbackQuery) {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(card, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing transaction detail:', error);
+      await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
     }
   }
 }
