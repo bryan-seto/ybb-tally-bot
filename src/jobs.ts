@@ -2,11 +2,14 @@ import cron from 'node-cron';
 import { prisma } from './lib/prisma';
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
+import { RecurringExpenseService } from './services/recurringExpenseService';
 import { getDayOfMonth, getNow, formatDate, getMonthsAgo } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 import { CONFIG, USER_IDS } from './config';
 
 export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
+  const recurringExpenseService = new RecurringExpenseService(expenseService);
+
   // Recurring expenses at 09:00 Asia/Singapore time = 01:00 UTC
   cron.schedule('0 1 * * *', async () => {
     try {
@@ -20,21 +23,20 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
         return; // No recurring expenses to process today
       }
 
-      // Process all recurring expenses and collect saved transactions
+      // Process all recurring expenses using the shared service method
       const savedTransactions = [];
       for (const expense of recurringExpenses) {
-        const transaction = await prisma.transaction.create({
-          data: {
-            amountSGD: expense.amountOriginal,
-            currency: 'SGD',
-            category: 'Bills',
-            description: expense.description,
-            payerId: expense.payerId,
-            date: getNow(),
-            splitType: 'FULL',
-          },
-        });
-        savedTransactions.push(transaction);
+        try {
+          const result = await recurringExpenseService.processSingleRecurringExpense(expense.id);
+          savedTransactions.push(result.transaction);
+        } catch (error: any) {
+          console.error(`Error processing recurring expense ${expense.id}:`, error);
+          // Continue processing other expenses even if one fails
+        }
+      }
+
+      if (savedTransactions.length === 0) {
+        return; // No transactions were successfully created
       }
 
       // Get balance message after all transactions are created
@@ -44,7 +46,7 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
       let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
       
       savedTransactions.forEach(tx => {
-        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (Bills)\n`;
+        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})\n`;
       });
 
       summary += `\n${balanceMessage}`;

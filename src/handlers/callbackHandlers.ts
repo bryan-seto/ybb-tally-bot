@@ -2,14 +2,16 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
+import { RecurringExpenseService } from '../services/recurringExpenseService';
 import { USER_NAMES } from '../config';
-import { getNow, getMonthsAgo, formatDate } from '../utils/dateHelpers';
+import { getNow, getMonthsAgo, formatDate, getNextRecurringDate } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 
 export class CallbackHandlers {
   constructor(
     private expenseService: ExpenseService,
-    private historyService: HistoryService
+    private historyService: HistoryService,
+    private recurringExpenseService: RecurringExpenseService
   ) {}
 
   async handleCallback(ctx: any) {
@@ -305,7 +307,8 @@ export class CallbackHandlers {
           });
 
           const payerName = USER_NAMES[user.id.toString()] || payer;
-          const ordinalSuffix = this.getOrdinalSuffix(day);
+          const nextRunDate = getNextRecurringDate(day);
+          const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
 
           await ctx.reply(
             `✅ Recurring expense added!\n\n` +
@@ -313,8 +316,17 @@ export class CallbackHandlers {
             `Amount: SGD $${amount.toFixed(2)}\n` +
             `Day of month: ${day}\n` +
             `Payer: ${payerName}\n\n` +
-            `This expense will be automatically processed on the ${day}${ordinalSuffix} of each month at 09:00 SGT.`,
-            Markup.removeKeyboard()
+            `📅 **Next Run:** ${nextRunDateStr}\n` +
+            `🆔 **ID:** ${recurringExpense.id.toString()}\n\n` +
+            `Will create transaction: **${description}** - SGD $${amount.toFixed(2)} (Bills, FULL split)`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '⚡ Test Now', callback_data: `recurring_test_${recurringExpense.id.toString()}` }],
+                ],
+              },
+              parse_mode: 'Markdown',
+            }
           );
 
           // Clear session state
@@ -327,6 +339,47 @@ export class CallbackHandlers {
           session.recurringMode = false;
           session.recurringStep = undefined;
           session.recurringData = undefined;
+        }
+        return;
+      }
+
+      // Test recurring expense handler
+      if (callbackData.startsWith('recurring_test_')) {
+        await ctx.answerCbQuery();
+        try {
+          const recurringExpenseId = BigInt(callbackData.replace('recurring_test_', ''));
+          
+          // Process the recurring expense immediately
+          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpenseId);
+          
+          // Get the recurring expense to show next run date
+          const recurringExpense = await prisma.recurringExpense.findUnique({
+            where: { id: recurringExpenseId },
+          });
+          
+          if (!recurringExpense) {
+            await ctx.reply('❌ Error: Recurring expense not found.');
+            return;
+          }
+          
+          const nextRunDate = getNextRecurringDate(recurringExpense.dayOfMonth);
+          const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
+          
+          // Build response message
+          let message = `⚡ **Test Run Successful!**\n\n`;
+          message += `✅ **Transaction Created:**\n`;
+          message += `• Description: ${result.transaction.description}\n`;
+          message += `• Amount: SGD $${result.transaction.amountSGD.toFixed(2)}\n`;
+          message += `• Category: ${result.transaction.category}\n`;
+          message += `• Payer: ${result.transaction.payerName}\n`;
+          message += `• Split Type: FULL\n\n`;
+          message += `${result.balanceMessage}\n\n`;
+          message += `✅ This expense is active and will trigger again on ${nextRunDateStr}.`;
+          
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } catch (error: any) {
+          console.error('Error testing recurring expense:', error);
+          await ctx.reply(`❌ Error testing recurring expense: ${error.message || 'Unknown error'}`);
         }
         return;
       }
