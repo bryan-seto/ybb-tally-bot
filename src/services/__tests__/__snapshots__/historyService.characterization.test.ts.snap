@@ -1,0 +1,184 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format settled transaction 1`] = `
+"💳 **Transaction Details**
+
+✅ **Status:** Settled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Restaurant
+💰 **Amount:** SGD $50.50
+📂 **Category:** Food
+👤 **Paid By:** Bryan
+📝 **Description:** Lunch"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format transaction with FIFTY_FIFTY split 1`] = `
+"💳 **Transaction Details**
+
+🔴 **Status:** Unsettled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Grocery Store
+💰 **Amount:** SGD $100.00
+📂 **Category:** Groceries
+👤 **Paid By:** Bryan
+⚖️ **Split:** 50% / 50%
+📝 **Description:** Weekly groceries"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format transaction with FULL split (no split details shown) 1`] = `
+"💳 **Transaction Details**
+
+✅ **Status:** Settled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Bills Payment
+💰 **Amount:** SGD $150.00
+📂 **Category:** Bills
+👤 **Paid By:** Bryan
+⚖️ **Split:** 100% (Bryan) / 0% (HY)
+📝 **Description:** Utility bill"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format transaction with custom split percentages 1`] = `
+"💳 **Transaction Details**
+
+🔴 **Status:** Unsettled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Shopping Mall
+💰 **Amount:** SGD $200.00
+📂 **Category:** Shopping
+👤 **Paid By:** Hwei Yeen
+⚖️ **Split:** 70% (Bryan) / 30% (HY)
+📝 **Description:** Clothes shopping"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format transaction with no split 1`] = `
+"💳 **Transaction Details**
+
+✅ **Status:** Settled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Coffee Shop
+💰 **Amount:** SGD $5.50
+📂 **Category:** Food
+👤 **Paid By:** Bryan
+📝 **Description:** Coffee"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format transaction with non-SGD currency 1`] = `
+"💳 **Transaction Details**
+
+🔴 **Status:** Unsettled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** International Store
+💰 **Amount:** USD 50.00
+📂 **Category:** Shopping
+👤 **Paid By:** Bryan
+⚖️ **Split:** 60% (Bryan) / 40% (HY)
+📝 **Description:** Online purchase"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionDetail > should format unsettled transaction 1`] = `
+"💳 **Transaction Details**
+
+🔴 **Status:** Unsettled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** Grab
+💰 **Amount:** SGD $25.75
+📂 **Category:** Transport
+👤 **Paid By:** Hwei Yeen
+📝 **Description:** Taxi ride"
+`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Store\\_with\\_underscores\\*and\\*special\\[chars\\]* - $100.00"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format SGD currency transaction 1`] = `"/1 ✅ *Restaurant* - $50.50"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format non-SGD currency transaction 1`] = `"/2 🔴 *International Store* - USD 25.75"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format settled transaction 1`] = `"/3 ✅ *Grab* - $15.00"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format unsettled transaction 1`] = `"/4 🔴 *Coffee Shop* - $5.50"`;
+
+exports[`HistoryService - Characterization Tests > getRecentTransactions > should handle transactions with null description and category 1`] = `
+[
+  {
+    "amount": 100,
+    "category": "Other",
+    "currency": "SGD",
+    "date": 2024-01-15T12:00:00.000Z,
+    "description": "No description",
+    "id": 3n,
+    "merchant": "No description",
+    "paidBy": "Bryan",
+    "status": "unsettled",
+  },
+]
+`;
+
+exports[`HistoryService - Characterization Tests > getRecentTransactions > should return empty array when no transactions (empty state) 1`] = `[]`;
+
+exports[`HistoryService - Characterization Tests > getRecentTransactions > should return formatted transactions (happy path) 1`] = `
+[
+  {
+    "amount": 50.5,
+    "category": "Food",
+    "currency": "SGD",
+    "date": 2024-01-15T12:00:00.000Z,
+    "description": "Lunch at Restaurant",
+    "id": 1n,
+    "merchant": "Lunch at Restaurant",
+    "paidBy": "Bryan",
+    "status": "unsettled",
+  },
+  {
+    "amount": 25.75,
+    "category": "Transport",
+    "currency": "SGD",
+    "date": 2024-01-15T12:00:00.000Z,
+    "description": "Grab ride",
+    "id": 2n,
+    "merchant": "Grab ride",
+    "paidBy": "Hwei Yeen",
+    "status": "settled",
+  },
+]
+`;
+
+exports[`HistoryService - Characterization Tests > getTransactionById > should handle transaction with custom split percentages 1`] = `
+{
+  "amount": 100,
+  "bryanPercentage": 0.7,
+  "category": "Shopping",
+  "currency": "SGD",
+  "date": 2024-01-15T12:00:00.000Z,
+  "description": "Grocery shopping",
+  "hweiYeenPercentage": 0.3,
+  "id": 2n,
+  "merchant": "Grocery shopping",
+  "paidBy": "Hwei Yeen",
+  "payerId": 424894363n,
+  "payerRole": "HweiYeen",
+  "splitType": "CUSTOM",
+  "status": "unsettled",
+}
+`;
+
+exports[`HistoryService - Characterization Tests > getTransactionById > should return formatted transaction when found 1`] = `
+{
+  "amount": 50.5,
+  "bryanPercentage": 0.5,
+  "category": "Food",
+  "currency": "SGD",
+  "date": 2024-01-15T12:00:00.000Z,
+  "description": "Lunch",
+  "hweiYeenPercentage": 0.5,
+  "id": 1n,
+  "merchant": "Lunch",
+  "paidBy": "Bryan",
+  "payerId": 109284773n,
+  "payerRole": "Bryan",
+  "splitType": "FIFTY_FIFTY",
+  "status": "settled",
+}
+`;
+
+exports[`HistoryService - Characterization Tests > getTransactionById > should return null when transaction not found 1`] = `null`;
