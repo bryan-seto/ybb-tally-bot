@@ -107,7 +107,7 @@ export class YBBTallyBot {
     this.backupService = new BackupService();
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
-    this.messageHandlers = new MessageHandlers(this.expenseService);
+    this.messageHandlers = new MessageHandlers(this.expenseService, this.aiService, this.historyService);
     this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, this.analyticsService);
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
@@ -1055,61 +1055,6 @@ export class YBBTallyBot {
       } else {
         await ctx.reply(errorMessage);
       }
-    }
-  }
-
-  /**
-   * Show transaction detail card
-   */
-  private async showTransactionDetail(ctx: any, transactionId: bigint) {
-    try {
-      const transaction = await this.historyService.getTransactionById(transactionId);
-
-      if (!transaction) {
-        const message = `❌ Transaction \`/${transactionId}\` not found.`;
-        if (ctx.message) {
-          await ctx.reply(message, { parse_mode: 'Markdown' });
-        } else if (ctx.callbackQuery) {
-          await ctx.answerCbQuery('Transaction not found', { show_alert: true });
-        }
-        return;
-      }
-
-      const card = this.historyService.formatTransactionDetail(transaction);
-
-      // Build inline keyboard buttons
-      const keyboard: any[] = [];
-
-      // Only show "Settle Up" if transaction is unsettled
-      if (transaction.status === 'unsettled') {
-        keyboard.push([
-          Markup.button.callback('✅ Settle', `tx_settle_${transactionId}`)
-        ]);
-      }
-
-      // Edit and Delete buttons
-      keyboard.push([
-        Markup.button.callback('✏️ Edit', `tx_edit_${transactionId}`),
-        Markup.button.callback('🗑️ Delete', `tx_delete_${transactionId}`),
-      ]);
-
-      const replyMarkup = Markup.inlineKeyboard(keyboard);
-
-      if (ctx.message) {
-        await ctx.reply(card, {
-          parse_mode: 'Markdown',
-          reply_markup: replyMarkup.reply_markup,
-        });
-      } else if (ctx.callbackQuery) {
-        await ctx.answerCbQuery();
-        await ctx.editMessageText(card, {
-          parse_mode: 'Markdown',
-          reply_markup: replyMarkup.reply_markup,
-        });
-      }
-    } catch (error: any) {
-      console.error('Error showing transaction detail:', error);
-      await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
     }
   }
 

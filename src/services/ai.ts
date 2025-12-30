@@ -24,6 +24,18 @@ const ReceiptDataSchema = z.object({
 
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
+export interface CorrectionAction {
+  action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UNKNOWN';
+  transactionId: bigint;
+  data?: any;
+  statusMessage: string;
+}
+
+export interface CorrectionResult {
+  confidence: 'low' | 'medium' | 'high';
+  actions: CorrectionAction[];
+}
+
 export class AIService {
   private genAI: GoogleGenerativeAI;
   private model: any;
@@ -159,6 +171,24 @@ Return ONLY valid JSON, no additional text.`;
 
       throw error;
     }
+  }
+
+  /**
+   * Process natural language correction instructions
+   * STUB: Returns low confidence to indicate feature not yet implemented
+   * @param text - User's natural language instruction (e.g., "@bot split venchi 50-50")
+   * @param recentTransactions - Array of recent transactions to potentially modify
+   * @returns CorrectionResult with actions to perform
+   */
+  async processCorrection(text: string, recentTransactions: any[]): Promise<CorrectionResult> {
+    console.warn(`[AIService] processCorrection called but not implemented. Text: ${text}`);
+    
+    // Return a safe "low confidence" response
+    // This will trigger the "I'm not sure what you mean" flow in the handler
+    return {
+      confidence: 'low',
+      actions: []
+    };
   }
 }
 
