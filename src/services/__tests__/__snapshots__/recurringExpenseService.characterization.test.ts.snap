@@ -1,0 +1,24 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`RecurringExpenseService - Characterization Tests > processSingleRecurringExpense > should process recurring expense that is due today 1`] = `
+{
+  "message": "👉 Hwei Yeen owes Bryan: SGD $30.00",
+  "transaction": {
+    "amountSGD": 50,
+    "bryanPercentage": null,
+    "category": "Bills",
+    "currency": "SGD",
+    "date": 2024-01-15T12:00:00.000Z,
+    "description": "Internet Bill",
+    "hweiYeenPercentage": null,
+    "id": 100n,
+    "isSettled": false,
+    "payerId": 109284773n,
+    "splitType": "FULL",
+  },
+}
+`;
+
+exports[`RecurringExpenseService - Characterization Tests > processSingleRecurringExpense > should skip expense that has already been processed 1`] = `null`;
+
+exports[`RecurringExpenseService - Characterization Tests > processSingleRecurringExpense > should skip recurring expense that is NOT due yet 1`] = `null`;

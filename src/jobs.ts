@@ -23,30 +23,22 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
         return; // No recurring expenses to process today
       }
 
-      // Process all recurring expenses using the shared service method
+      // Process all recurring expenses and collect saved transactions
       const savedTransactions = [];
+      let balanceMessage = '';
       for (const expense of recurringExpenses) {
-        try {
-          const result = await recurringExpenseService.processSingleRecurringExpense(expense.id);
+        const result = await recurringExpenseService.processSingleRecurringExpense(expense);
+        if (result) {
           savedTransactions.push(result.transaction);
-        } catch (error: any) {
-          console.error(`Error processing recurring expense ${expense.id}:`, error);
-          // Continue processing other expenses even if one fails
+          balanceMessage = result.message; // Use the last message (they should all be the same)
         }
       }
-
-      if (savedTransactions.length === 0) {
-        return; // No transactions were successfully created
-      }
-
-      // Get balance message after all transactions are created
-      const balanceMessage = await expenseService.getOutstandingBalanceMessage();
 
       // Build the standard format message
       let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
       
       savedTransactions.forEach(tx => {
-        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})\n`;
+        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (Bills)\n`;
       });
 
       summary += `\n${balanceMessage}`;

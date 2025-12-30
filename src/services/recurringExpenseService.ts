@@ -1,71 +1,54 @@
+import { getNow, getDayOfMonth, getStartOfDay } from '../utils/dateHelpers';
 import { prisma } from '../lib/prisma';
-import { getNow } from '../utils/dateHelpers';
 import { ExpenseService } from './expenseService';
-
-export interface ProcessRecurringExpenseResult {
-  transaction: {
-    id: bigint;
-    description: string;
-    amountSGD: number;
-    category: string;
-    payerName: string;
-    payerRole: string;
-  };
-  balanceMessage: string;
-}
 
 export class RecurringExpenseService {
   constructor(private expenseService: ExpenseService) {}
 
   /**
-   * Process a single recurring expense by creating a transaction
-   * This method is used by both the cron job and the "Test Now" feature
+   * Process a single recurring expense
+   * Returns the created transaction with balance message if processed, null if skipped
    */
-  async processSingleRecurringExpense(recurringExpenseId: bigint): Promise<ProcessRecurringExpenseResult> {
-    // Fetch the recurring expense with payer information
-    const recurringExpense = await prisma.recurringExpense.findUnique({
-      where: { id: recurringExpenseId },
-      include: { payer: true },
-    });
-
-    if (!recurringExpense) {
-      throw new Error(`Recurring expense with ID ${recurringExpenseId} not found`);
+  async processSingleRecurringExpense(expense: any): Promise<{ transaction: any; message: string } | null> {
+    const today = getDayOfMonth();
+    
+    // Check if expense is due today
+    if (expense.dayOfMonth !== today) {
+      return null;
     }
-
-    if (!recurringExpense.isActive) {
-      throw new Error(`Recurring expense with ID ${recurringExpenseId} is not active`);
+    
+    // Check if already processed today
+    if (expense.lastProcessedDate) {
+      const lastProcessed = getStartOfDay(expense.lastProcessedDate);
+      const todayStart = getStartOfDay(getNow());
+      
+      if (lastProcessed.getTime() === todayStart.getTime()) {
+        return null; // Already processed today
+      }
     }
-
-    // Create the transaction using the same logic as the cron job
+    
+    // Create transaction
     const transaction = await prisma.transaction.create({
       data: {
-        amountSGD: recurringExpense.amountOriginal,
+        amountSGD: expense.amountOriginal,
         currency: 'SGD',
         category: 'Bills',
-        description: recurringExpense.description,
-        payerId: recurringExpense.payerId,
+        description: expense.description,
+        payerId: expense.payerId,
         date: getNow(),
         splitType: 'FULL',
       },
-      include: {
-        payer: true,
-      },
     });
-
-    // Get the updated balance message
-    const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
-
-    return {
-      transaction: {
-        id: transaction.id,
-        description: transaction.description || recurringExpense.description,
-        amountSGD: transaction.amountSGD,
-        category: transaction.category || 'Bills',
-        payerName: transaction.payer.name,
-        payerRole: transaction.payer.role,
-      },
-      balanceMessage,
-    };
+    
+    // Update lastProcessedDate
+    await prisma.recurringExpense.update({
+      where: { id: expense.id },
+      data: { lastProcessedDate: getNow() },
+    });
+    
+    // Get balance message using the injected service
+    const message = await this.expenseService.getOutstandingBalanceMessage();
+    
+    return { transaction, message };
   }
 }
-
