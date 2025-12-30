@@ -105,14 +105,50 @@ export class PhotoHandler {
 
       const processingMsg = await ctx.telegram.sendMessage(chatId, '🧠 AI is analyzing your receipt(s)...');
       
+      // Set up fallback callback for real-time status updates
+      let fallbackMsgId: number | null = null;
+      
+      const onFallback = async (failed: string, next: string) => {
+        // If we haven't sent a status message yet, send one
+        if (!fallbackMsgId) {
+          const msg = await ctx.telegram.sendMessage(chatId, `⚠️ Limit hit for ${failed}. Switching to ${next}...`);
+          fallbackMsgId = msg.message_id;
+        } else {
+          // Optional: Edit existing message if multiple switches happen
+          try {
+            await ctx.telegram.editMessageText(
+              chatId,
+              fallbackMsgId,
+              undefined,
+              `⚠️ Limit hit for ${failed}. Switching to ${next}...`
+            );
+          } catch (e) {
+            // Ignore edit errors
+          }
+        }
+      };
+      
       let receiptData;
       try {
-        receiptData = await this.aiService.processReceipt(imageBuffers, collection.userId, 'image/jpeg');
+        receiptData = await this.aiService.processReceipt(imageBuffers, collection.userId, 'image/jpeg', onFallback);
       } catch (error: any) {
+        // Cleanup fallback warning on error
+        if (fallbackMsgId) {
+          try { await ctx.telegram.deleteMessage(chatId, fallbackMsgId); } catch {}
+        }
         // Re-throw so the global error handler in bot.ts handles Sentry, Founder alert, and user apology
         throw error;
       } finally {
         try { await ctx.telegram.deleteMessage(chatId, processingMsg.message_id); } catch {}
+      }
+
+      // Cleanup fallback warning before sending final result
+      if (fallbackMsgId) {
+        try {
+          await ctx.telegram.deleteMessage(chatId, fallbackMsgId);
+        } catch (e) {
+          // Ignore delete errors (msg might be too old or already deleted)
+        }
       }
 
       if (!receiptData.isValid || (!receiptData.transactions?.length && !receiptData.total)) {

@@ -24,6 +24,14 @@ const ReceiptDataSchema = z.object({
 
 export type ReceiptData = z.infer<typeof ReceiptDataSchema>;
 
+// Callback type for real-time fallback notifications
+export type FallbackCallback = (failedModel: string, nextModel: string) => void | Promise<void>;
+
+export interface AIResponse {
+  text: string;           // The actual AI answer
+  usedModel: string;      // The model that successfully answered
+}
+
 export interface CorrectionAction {
   action: 'UPDATE_SPLIT' | 'UPDATE_AMOUNT' | 'UPDATE_CATEGORY' | 'DELETE' | 'UPDATE_PAYER' | 'UPDATE_STATUS' | 'UPDATE_DATE' | 'UPDATE_TIME' | 'UPDATE_DESCRIPTION' | 'UNKNOWN';
   transactionId: bigint;
@@ -45,21 +53,86 @@ export interface CorrectionResult {
   confidence: 'low' | 'medium' | 'high';
   actions: CorrectionAction[];
 }
+// Model priority list for waterfall fallback
+const MODEL_PRIORITY = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite'
+] as const;
+
 export class AIService {
   private genAI: GoogleGenerativeAI;
-  private model: any;
 
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
+    // Models are created on-demand in generateContentWithFallback
+  }
+
+  /**
+   * Check if an error is retryable (429 rate limit or 503 overload)
+   */
+  private isRetryableError(error: any): boolean {
+    const msg = (error.message?.toLowerCase() || '');
+    const status = error.status || error.code || error.response?.status;
     
-    // Old (Deprecated)
-    // this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    return (
+      status === 429 ||
+      status === 503 ||
+      msg.includes('429') ||
+      msg.includes('503') ||
+      msg.includes('quota') ||
+      msg.includes('rate limit') ||
+      msg.includes('too many requests') ||
+      msg.includes('overloaded') ||
+      msg.includes('resource exhausted')
+    );
+  }
 
-    // Stable (Good)
-    this.model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-    // Best (Recommended for New Features) but expensive
-    // this.model = this.genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  /**
+   * Generate content with waterfall fallback across multiple models
+   */
+  private async generateContentWithFallback(
+    prompt: string | Array<string | { inlineData: { data: string; mimeType: string } }>,
+    onFallback?: FallbackCallback
+  ): Promise<AIResponse> {
+    for (let i = 0; i < MODEL_PRIORITY.length; i++) {
+      const modelName = MODEL_PRIORITY[i];
+      try {
+        const model = this.genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        // Success - return with model info
+        return {
+          text,
+          usedModel: modelName
+        };
+      } catch (error: any) {
+        const isRetryable = this.isRetryableError(error);
+        
+        if (!isRetryable) {
+          // Non-retryable error - throw immediately
+          throw error;
+        }
+        
+        // Retryable error - notify via callback BEFORE trying next model
+        if (i < MODEL_PRIORITY.length - 1) {
+          const nextModel = MODEL_PRIORITY[i + 1];
+          if (onFallback) {
+            await onFallback(modelName, nextModel); // Real-time notification
+          }
+          console.log(`Model ${modelName} failed with retryable error, switching to ${nextModel}...`);
+          continue;
+        } else {
+          // All models exhausted
+          throw new Error(`All models exhausted. Last error: ${error.message}`);
+        }
+      }
+    }
+    
+    throw new Error('No models available');
   }
 
   /**
@@ -70,7 +143,8 @@ export class AIService {
   async processReceipt(
     imageBuffers: Buffer | Buffer[],
     userId: bigint,
-    mimeType: string = 'image/jpeg'
+    mimeType: string = 'image/jpeg',
+    onFallback?: FallbackCallback
   ): Promise<ReceiptData> {
     const startTime = Date.now();
     const buffers = Array.isArray(imageBuffers) ? imageBuffers : [imageBuffers];
@@ -115,9 +189,9 @@ Return ONLY valid JSON, no additional text.`;
         },
       }));
 
-      const result = await this.model.generateContent([prompt, ...imageParts]);
-      const response = await result.response;
-      const text = response.text();
+      const aiResponse = await this.generateContentWithFallback([prompt, ...imageParts], onFallback);
+      const text = aiResponse.text;
+      const usedModel = aiResponse.usedModel;
 
       // Parse JSON response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -140,7 +214,7 @@ Return ONLY valid JSON, no additional text.`;
 
       const latencyMs = Date.now() - startTime;
 
-      // Log to SystemLog
+      // Log to SystemLog (include model info)
       await prisma.systemLog.create({
         data: {
           userId,
@@ -149,6 +223,7 @@ Return ONLY valid JSON, no additional text.`;
             latencyMs,
             isValid: receiptData.isValid,
             success: true,
+            usedModel,
           },
         },
       });
@@ -199,7 +274,8 @@ Return ONLY valid JSON, no additional text.`;
       payerRole?: string;
       status?: 'settled' | 'unsettled';
       date?: string; // ISO format YYYY-MM-DD
-    }>
+    }>,
+    onFallback?: FallbackCallback
   ): Promise<CorrectionResult> {
     const prompt = `You are a financial assistant bot. A user has sent correction command(s).
 The user might request MULTIPLE changes in one message. Identify ALL actions requested.
@@ -287,9 +363,8 @@ TIME PARSING (STRICT 24-HOUR FORMAT):
 Return ONLY valid JSON, no additional text.`;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const responseText = response.text();
+      const aiResponse = await this.generateContentWithFallback(prompt, onFallback);
+      const responseText = aiResponse.text;
 
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
@@ -342,31 +417,8 @@ Return ONLY valid JSON, no additional text.`;
     } catch (error: any) {
       console.error('Error processing correction:', error);
       
-      // Check for rate limit errors (429) - check both message and status/code
-      const isRateLimit = 
-        error.message?.includes('429') || 
-        error.message?.includes('quota') || 
-        error.message?.includes('rate limit') ||
-        error.message?.includes('Too Many Requests') ||
-        error.status === 429 ||
-        error.code === 429 ||
-        (error.response && error.response.status === 429);
-      
-      if (isRateLimit) {
-        Sentry.captureException(error, {
-          tags: { error_type: 'rate_limit' },
-          extra: { api: 'gemini' }
-        });
-        return {
-          confidence: 'low',
-          actions: [{
-            action: 'UNKNOWN',
-            transactionId: BigInt(0),
-            statusMessage: '⚠️ Rate limit exceeded. The AI service has temporary usage limits. Please wait a moment and try again.'
-          }]
-        };
-      }
-      
+      // Note: Rate limit errors are now handled by fallback mechanism
+      // Only log non-retryable errors here
       Sentry.captureException(error);
       return { 
         confidence: 'low',

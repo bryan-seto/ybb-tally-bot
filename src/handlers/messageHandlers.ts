@@ -385,7 +385,30 @@ export class MessageHandlers {
       statusMsg = await ctx.reply('🔍 <i>Thinking...</i>', { parse_mode: 'HTML' });
       console.log('[handleAICorrection] Thinking message sent, ID:', statusMsg.message_id);
 
-      // 3. Process with AI
+      // 3. Set up fallback callback for real-time status updates
+      let statusMsgId: number | null = null;
+      
+      const onFallback = async (failed: string, next: string) => {
+        // If we haven't sent a status message yet, send one
+        if (!statusMsgId) {
+          const msg = await ctx.reply(`⚠️ Limit hit for ${failed}. Switching to ${next}...`);
+          statusMsgId = msg.message_id;
+        } else {
+          // Optional: Edit existing message if multiple switches happen
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsgId,
+              undefined,
+              `⚠️ Limit hit for ${failed}. Switching to ${next}...`
+            );
+          } catch (e) {
+            // Ignore edit errors
+          }
+        }
+      };
+
+      // 4. Process with AI
       const result = await this.aiService.processCorrection(
         text,
         recentTransactions.map(tx => ({
@@ -399,32 +422,42 @@ export class MessageHandlers {
           payerRole: tx.payer.role,
           status: tx.isSettled ? 'settled' as const : 'unsettled' as const,
           date: tx.date.toISOString().split('T')[0], // YYYY-MM-DD format
-        }))
+        })),
+        onFallback
       );
 
       if (result.confidence === 'low' || result.actions.every(a => a.action === 'UNKNOWN')) {
-        // Check if the error message indicates a rate limit
-        const firstAction = result.actions[0];
-        const isRateLimit = firstAction?.statusMessage?.includes('Rate limit') || 
-                          firstAction?.statusMessage?.includes('rate limit');
-        
-        const errorMessage = isRateLimit 
-          ? firstAction.statusMessage
-          : '🤔 Sorry, I didn\'t understand those instructions. Try: "@bot split venchi 50-50"';
+        // Cleanup fallback warning if it exists
+        if (statusMsgId) {
+          try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, statusMsgId);
+          } catch (e) {
+            // Ignore delete errors
+          }
+        }
         
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          errorMessage
+          '🤔 Sorry, I didn\'t understand those instructions. Try: "@bot split venchi 50-50"'
         );
         return;
       }
 
-      // 4. Execute actions using shared method
+      // 5. Cleanup fallback warning before sending final result
+      if (statusMsgId) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, statusMsgId);
+        } catch (e) {
+          // Ignore delete errors (msg might be too old or already deleted)
+        }
+      }
+
+      // 6. Execute actions using shared method
       const results = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
 
-      // 5. Final summary replace
+      // 7. Final summary replace
       const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
       const finalMessage = results.length > 0
         ? `<b>Summary:</b>\n${results.join('\n')}\n\n${balanceMessage}`
@@ -499,27 +532,59 @@ export class MessageHandlers {
       // Send thinking message
       statusMsg = await ctx.reply('🔍 <i>Processing your edit...</i>', { parse_mode: 'HTML' });
 
+      // Set up fallback callback for real-time status updates
+      let fallbackMsgId: number | null = null;
+      
+      const onFallback = async (failed: string, next: string) => {
+        // If we haven't sent a status message yet, send one
+        if (!fallbackMsgId) {
+          const msg = await ctx.reply(`⚠️ Limit hit for ${failed}. Switching to ${next}...`);
+          fallbackMsgId = msg.message_id;
+        } else {
+          // Optional: Edit existing message if multiple switches happen
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              fallbackMsgId,
+              undefined,
+              `⚠️ Limit hit for ${failed}. Switching to ${next}...`
+            );
+          } catch (e) {
+            // Ignore edit errors
+          }
+        }
+      };
+
       // Process with AI
-      const result = await this.aiService.processCorrection(text, [formattedTransaction]);
+      const result = await this.aiService.processCorrection(text, [formattedTransaction], onFallback);
 
       if (result.confidence === 'low' || result.actions.every(a => a.action === 'UNKNOWN')) {
-        // Check if the error message indicates a rate limit
-        const firstAction = result.actions[0];
-        const isRateLimit = firstAction?.statusMessage?.includes('Rate limit') || 
-                          firstAction?.statusMessage?.includes('rate limit');
-        
-        const errorMessage = isRateLimit 
-          ? firstAction.statusMessage
-          : '🤔 Sorry, I didn\'t understand those instructions. Try: "change amount to $50" or "split 50-50"';
+        // Cleanup fallback warning if it exists
+        if (fallbackMsgId) {
+          try {
+            await ctx.telegram.deleteMessage(ctx.chat.id, fallbackMsgId);
+          } catch (e) {
+            // Ignore delete errors
+          }
+        }
         
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          errorMessage
+          '🤔 Sorry, I didn\'t understand those instructions. Try: "change amount to $50" or "split 50-50"'
         );
         this.clearSession(session);
         return;
+      }
+
+      // Cleanup fallback warning before processing results
+      if (fallbackMsgId) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, fallbackMsgId);
+        } catch (e) {
+          // Ignore delete errors (msg might be too old or already deleted)
+        }
       }
 
       // Execute actions using shared method
