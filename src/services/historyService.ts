@@ -16,6 +16,9 @@ export interface TransactionListItem {
 export interface TransactionDetail extends TransactionListItem {
   payerId: bigint;
   payerRole: string;
+  splitType?: string;
+  bryanPercentage?: number;
+  hweiYeenPercentage?: number;
 }
 
 export class HistoryService {
@@ -81,6 +84,9 @@ export class HistoryService {
       paidBy: transaction.payer.name,
       payerId: transaction.payerId,
       payerRole: transaction.payer.role,
+      splitType: transaction.splitType || undefined,
+      bryanPercentage: transaction.bryanPercentage ?? undefined,
+      hweiYeenPercentage: transaction.hweiYeenPercentage ?? undefined,
     };
   }
 
@@ -124,6 +130,18 @@ export class HistoryService {
       ? `SGD $${tx.amount.toFixed(2)}`
       : `${tx.currency} ${tx.amount.toFixed(2)}`;
 
+    // Format split details
+    let splitDetails = '';
+    if (tx.splitType === 'FULL') {
+      splitDetails = '⚖️ **Split:** Full (Payer Only)';
+    } else if (tx.splitType === 'FIFTY_FIFTY') {
+      splitDetails = '⚖️ **Split:** 50% / 50%';
+    } else if (tx.bryanPercentage !== undefined && tx.hweiYeenPercentage !== undefined) {
+      const bryanPercent = Math.round(tx.bryanPercentage * 100);
+      const hweiYeenPercent = Math.round(tx.hweiYeenPercentage * 100);
+      splitDetails = `⚖️ **Split:** ${bryanPercent}% (Bryan) / ${hweiYeenPercent}% (HY)`;
+    }
+
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +
       `📅 **Date:** ${dateStr}\n` +
@@ -131,6 +149,7 @@ export class HistoryService {
       `💰 **Amount:** ${amountStr}\n` +
       `📂 **Category:** ${tx.category}\n` +
       `👤 **Paid By:** ${tx.paidBy}\n` +
+      (splitDetails ? `${splitDetails}\n` : '') +
       `📝 **Description:** ${tx.description}`;
   }
 }

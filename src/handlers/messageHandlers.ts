@@ -1,7 +1,7 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
-import { AIService } from '../services/ai';
+import { AIService, CorrectionAction } from '../services/ai';
 import { HistoryService } from '../services/historyService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES } from '../config';
@@ -75,20 +75,26 @@ export class MessageHandlers {
       }
       // ---------------------------------------------------------------------------
 
-      // PRIORITY 2: Handle transaction edit mode
+      // PRIORITY 2: Handle AI edit mode
+      if (session.editMode === 'ai_natural_language' && session.editingTxId) {
+        await this.handleAIEditMode(ctx, text, session);
+        return;
+      }
+
+      // PRIORITY 3: Handle transaction edit mode
       if (session.editingTxId && session.editingField) {
         await this.handleTransactionEdit(ctx, text, session);
         return;
       }
 
-      // PRIORITY 3: Handle manual add flow
+      // PRIORITY 4: Handle manual add flow
       if (session.manualAddMode) {
         console.log('[handleText] Manual add mode detected');
         await this.handleManualAddFlow(ctx, text, session);
         return;
       }
 
-      // PRIORITY 4: Handle search flow
+      // PRIORITY 5: Handle search flow
       if (session.searchMode) {
         console.log('[handleText] Search mode detected');
         await this.handleSearchFlow(ctx, text, session);
@@ -121,6 +127,7 @@ export class MessageHandlers {
     session.awaitingPayer = false;
     session.editingTxId = undefined;
     session.editingField = undefined;
+    session.editMode = undefined;
   }
 
   private async handleManualAddFlow(ctx: any, text: string, session: any) {
@@ -183,6 +190,70 @@ export class MessageHandlers {
     }
   }
 
+  /**
+   * Execute correction actions returned by AI service
+   * Returns array of result messages
+   */
+  private async executeCorrectionActions(
+    ctx: any,
+    actions: CorrectionAction[],
+    statusMsg: any
+  ): Promise<string[]> {
+    const results: string[] = [];
+    for (const step of actions) {
+      if (step.action === 'UNKNOWN') continue;
+
+      // Update status message for current action
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `⏳ <i>${step.statusMessage}</i>`,
+        { parse_mode: 'HTML' }
+      );
+
+      // Small delay for natural feel
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Execute DB logic
+      try {
+        if (step.action === 'UPDATE_SPLIT' && step.transactionId && step.data) {
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: {
+              bryanPercentage: step.data.bryanPercentage,
+              hweiYeenPercentage: step.data.hweiYeenPercentage,
+            },
+          });
+          const bryanSplit = Math.round((step.data.bryanPercentage ?? 0.7) * 100);
+          const hweiYeenSplit = Math.round((step.data.hweiYeenPercentage ?? 0.3) * 100);
+          results.push(`✅ Split updated for "${updated.description}" to ${bryanSplit}-${hweiYeenSplit}`);
+        } else if (step.action === 'UPDATE_AMOUNT' && step.transactionId && step.data) {
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { amountSGD: step.data.amountSGD },
+          });
+          results.push(`✅ Amount updated for "${updated.description}" to $${updated.amountSGD.toFixed(2)}`);
+        } else if (step.action === 'UPDATE_CATEGORY' && step.transactionId && step.data) {
+          const updated = await prisma.transaction.update({
+            where: { id: step.transactionId },
+            data: { category: step.data.category },
+          });
+          results.push(`✅ Category updated for "${updated.description}" to ${updated.category}`);
+        } else if (step.action === 'DELETE' && step.transactionId) {
+          const deleted = await prisma.transaction.delete({
+            where: { id: step.transactionId },
+          });
+          results.push(`🗑️ Deleted "${deleted.description}"`);
+        }
+      } catch (dbError: any) {
+        console.error('Database error during action execution:', dbError);
+        results.push(`❌ Failed to execute action: ${dbError.message}`);
+      }
+    }
+    return results;
+  }
+
   private async handleAICorrection(ctx: any, text: string) {
     console.log('[handleAICorrection] Called with text:', text);
     let statusMsg: any = null;
@@ -239,59 +310,8 @@ export class MessageHandlers {
         return;
       }
 
-      // 4. Execute actions one by one with status updates
-      const results: string[] = [];
-      for (const step of result.actions) {
-        if (step.action === 'UNKNOWN') continue;
-
-        // Update status message for current action
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `⏳ <i>${step.statusMessage}</i>`,
-          { parse_mode: 'HTML' }
-        );
-
-        // Small delay for natural feel
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Execute DB logic
-        try {
-          if (step.action === 'UPDATE_SPLIT' && step.transactionId && step.data) {
-            const updated = await prisma.transaction.update({
-              where: { id: step.transactionId },
-              data: {
-                bryanPercentage: step.data.bryanPercentage,
-                hweiYeenPercentage: step.data.hweiYeenPercentage,
-              },
-            });
-            const bryanSplit = Math.round((step.data.bryanPercentage ?? 0.7) * 100);
-            const hweiYeenSplit = Math.round((step.data.hweiYeenPercentage ?? 0.3) * 100);
-            results.push(`✅ Split updated for "${updated.description}" to ${bryanSplit}-${hweiYeenSplit}`);
-          } else if (step.action === 'UPDATE_AMOUNT' && step.transactionId && step.data) {
-            const updated = await prisma.transaction.update({
-              where: { id: step.transactionId },
-              data: { amountSGD: step.data.amountSGD },
-            });
-            results.push(`✅ Amount updated for "${updated.description}" to $${updated.amountSGD.toFixed(2)}`);
-          } else if (step.action === 'UPDATE_CATEGORY' && step.transactionId && step.data) {
-            const updated = await prisma.transaction.update({
-              where: { id: step.transactionId },
-              data: { category: step.data.category },
-            });
-            results.push(`✅ Category updated for "${updated.description}" to ${updated.category}`);
-          } else if (step.action === 'DELETE' && step.transactionId) {
-            const deleted = await prisma.transaction.delete({
-              where: { id: step.transactionId },
-            });
-            results.push(`🗑️ Deleted "${deleted.description}"`);
-          }
-        } catch (dbError: any) {
-          console.error('Database error during action execution:', dbError);
-          results.push(`❌ Failed to execute action: ${dbError.message}`);
-        }
-      }
+      // 4. Execute actions using shared method
+      const results = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
 
       // 5. Final summary replace
       const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
@@ -323,6 +343,115 @@ export class MessageHandlers {
       } else {
         await ctx.reply('❌ Sorry, something went wrong while processing your request.');
       }
+    }
+  }
+
+  private async handleAIEditMode(ctx: any, text: string, session: any) {
+    console.log('[handleAIEditMode] Called with text:', text);
+    let statusMsg: any = null;
+    try {
+      // Cancellation handling (FIRST STEP)
+      const normalizedText = text.trim().toLowerCase();
+      if (normalizedText === 'cancel' || normalizedText === 'stop' || normalizedText === 'exit') {
+        this.clearSession(session);
+        await ctx.reply('Edit cancelled.');
+        return;
+      }
+
+      // Fetch the specific transaction
+      const transactionId = BigInt(session.editingTxId);
+      const transaction = await prisma.transaction.findUnique({
+        where: { id: transactionId },
+        include: { payer: true },
+      });
+
+      if (!transaction) {
+        this.clearSession(session);
+        await ctx.reply('❌ Transaction not found.');
+        return;
+      }
+
+      // Format transaction for AI context (matching handleAICorrection format)
+      const formattedTransaction = {
+        id: transaction.id,
+        description: transaction.description || 'Unknown',
+        amountSGD: transaction.amountSGD,
+        category: transaction.category || 'Other',
+        bryanPercentage: transaction.bryanPercentage ?? 0.7,
+        hweiYeenPercentage: transaction.hweiYeenPercentage ?? 0.3,
+      };
+
+      // Send thinking message
+      statusMsg = await ctx.reply('🔍 <i>Processing your edit...</i>', { parse_mode: 'HTML' });
+
+      // Process with AI
+      const result = await this.aiService.processCorrection(text, [formattedTransaction]);
+
+      if (result.confidence === 'low' || result.actions.every(a => a.action === 'UNKNOWN')) {
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          '🤔 Sorry, I didn\'t understand those instructions. Try: "change amount to $50" or "split 50-50"'
+        );
+        this.clearSession(session);
+        return;
+      }
+
+      // Execute actions using shared method
+      const results = await this.executeCorrectionActions(ctx, result.actions, statusMsg);
+
+      if (results.length === 0) {
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          '🤔 I found no valid actions to take.'
+        );
+        this.clearSession(session);
+        return;
+      }
+
+      // Fetch updated transaction and show updated card
+      const updatedTransaction = await this.historyService.getTransactionById(transactionId);
+      if (updatedTransaction) {
+        // Delete the status message and show the updated transaction card
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+        } catch (deleteError) {
+          // If deletion fails, continue anyway
+        }
+        await this.showTransactionDetail(ctx, transactionId);
+      } else {
+        // If transaction was deleted, show summary
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          results.join('\n'),
+          { parse_mode: 'HTML' }
+        );
+      }
+
+      // Clear session state
+      this.clearSession(session);
+    } catch (error: any) {
+      console.error('Error handling AI edit mode:', error);
+      if (statusMsg) {
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            statusMsg.message_id,
+            undefined,
+            '❌ Sorry, something went wrong while processing your request.'
+          );
+        } catch (editError) {
+          await ctx.reply('❌ Sorry, something went wrong while processing your request.');
+        }
+      } else {
+        await ctx.reply('❌ Sorry, something went wrong while processing your request.');
+      }
+      this.clearSession(session);
     }
   }
 
@@ -442,7 +571,7 @@ export class MessageHandlers {
 
       // Edit and Delete buttons
       keyboard.push([
-        Markup.button.callback('✏️ Edit', `tx_edit_${transactionId}`),
+        Markup.button.callback('✨ AI Edit', `tx_edit_${transactionId}`),
         Markup.button.callback('🗑️ Delete', `tx_delete_${transactionId}`),
       ]);
 

@@ -433,7 +433,13 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('tx_edit_')) {
-        await ctx.answerCbQuery('Edit feature coming soon', { show_alert: true });
+        await ctx.answerCbQuery();
+        const id = callbackData.replace('tx_edit_', '');
+        session.editingTxId = id;
+        session.editMode = 'ai_natural_language';
+        await ctx.reply('What would you like to change for this transaction?', {
+          reply_markup: { force_reply: true }
+        });
         return;
       }
 
