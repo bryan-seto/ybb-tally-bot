@@ -16,8 +16,14 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
         include: { payer: true },
       });
 
+      if (recurringExpenses.length === 0) {
+        return; // No recurring expenses to process today
+      }
+
+      // Process all recurring expenses and collect saved transactions
+      const savedTransactions = [];
       for (const expense of recurringExpenses) {
-        await prisma.transaction.create({
+        const transaction = await prisma.transaction.create({
           data: {
             amountSGD: expense.amountOriginal,
             currency: 'SGD',
@@ -28,9 +34,22 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
             splitType: 'FULL',
           },
         });
-        
-        await bot.sendToPrimaryGroup(`💰 Recurring Expense Processed: ${expense.description} - SGD $${expense.amountOriginal.toFixed(2)}`);
+        savedTransactions.push(transaction);
       }
+
+      // Get balance message after all transactions are created
+      const balanceMessage = await expenseService.getOutstandingBalanceMessage();
+
+      // Build the standard format message
+      let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
+      
+      savedTransactions.forEach(tx => {
+        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (Bills)\n`;
+      });
+
+      summary += `\n${balanceMessage}`;
+
+      await bot.sendToPrimaryGroup(summary, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Error processing recurring expenses:', error);
     }
