@@ -1,33 +1,41 @@
-# YBB Tally Bot - AI Assistant Rules
+cat <<'EOF' > .cursorrules
+# 🧠 META-INSTRUCTIONS
+- **Model Preference:** Use 'auto' (standard) model context. Be concise but thorough.
+- **Timezone:** Current context is `Asia/Singapore`. Use `date-fns-tz` for date operations.
 
-Follow these rules strictly when working on this project. These combine local setup requirements, testing protocols, and the new feature flag system.
+# 📝 CODING WORKFLOW (The "Think First" Protocol)
+Before writing or changing any code:
+1. **The Plan:** Output a brief plan detailing your thoughts, context, and the files you intend to touch.
+2. **Test Strategy:** Identify if this change requires new tests or updates to existing ones.
+   - *Rule:* Always add/update tests for logic changes and bug fixes.
+   - *Rule:* Only refactor tests if the feature behavior changes (avoid unnecessary churn).
+   - *Rule:* Include Test Strategy in the plan at (1)
 
-## 1. Local Setup & Environment
-- **Environment Variables:** Always check if new features require new environment variables. Remind the user to add them to their local `.env` file.
-- **Prisma:** If the database schema (`prisma/schema.prisma`) is modified, remind the user to run:
-  - `npm run prisma:generate`
-  - `npm run prisma:migrate`
-- **Dependencies:** If new packages are added, remind the user to run `npm install`.
+3. **Docs:** If this adds a new command/feature, flag `README.md` or `USER_GUIDE.md` for update.
 
-## 2. Development & Testing Protocol
-- **Build Check:** Before finishing any task, suggest running `npm run build` to ensure TypeScript compilation passes.
-- **Manual Testing:** After implementing a feature, prompt the user to test it locally using `npm run dev`.
-- **Timezone:** Always remember that this bot operates in `Asia/Singapore` timezone. Use `date-fns-tz` for all date operations.
+> Wait for my confirmation on the plan if the change is complex. Otherwise, proceed.
 
-## 3. Feature Flag Protocol
-- **Clash Detection (CRITICAL):** Whenever a requested feature is "somewhat similar" to an existing one or would overlap/replace its functionality, you MUST NOT proceed immediately.
-- **User Consultation:** Use the `ask_question` tool to consult the user:
-    - Should the old flow be disabled?
-    - Should the new feature be enabled by default?
-    - Should a new feature flag be created to toggle between them?
-- **Implementation:** Wrap all clashing features in a flag from `src/config.ts`:
-  ```typescript
-  if (CONFIG.FEATURE_FLAGS.ENABLE_NEW_FEATURE) {
-    // New implementation
-  } else {
-    // Original implementation
-  }
-  ```
+# 🧪 TESTING PROTOCOL
+- **Automated:** Run unit tests (`npm test` or equivalent) to ensure logic is sound.
+- **Manual Verification:** AFTER coding, prompt me strictly:
+  > "Please manually verify this on the Telegram Staging Bot: https://web.telegram.org/k/#-3370162727"
 
-## 4. Documentation
-- Keep the `README.md` and `USER_GUIDE.md` updated if new commands or major features are added.
+# 🚀 DEPLOYMENT & GIT WORKFLOW
+# Trigger: When I say "push", "deploy", "ship it", or "release"
+
+## STEP 1: THE PRE-FLIGHT PLAN
+Before running git commands, output this block:
+1. **Goal:** [Business intent]
+2. **Files:** [Files to stage]
+3. **Tests:** [Command to run]
+4. **Commit Message:** [Draft message focusing on "Why", not "What"]
+5. **Target:** [Staging vs Production]
+
+## STEP 2: EXECUTION
+1. Run the test command.
+   - IF FAIL: Stop.
+   - IF PASS: Proceed.
+2. `git add .`
+3. `git commit -m "THE_APPROVED_MESSAGE"`
+4. `git push origin [TARGET_BRANCH]`
+EOF
