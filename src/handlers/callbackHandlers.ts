@@ -111,28 +111,7 @@ export class CallbackHandlers {
 
       if (callbackData === 'menu_history') {
         await ctx.answerCbQuery();
-        const transactions = await this.historyService.getRecentTransactions(20, 0);
-        const totalCount = await this.historyService.getTotalTransactionCount();
-
-        if (transactions.length === 0) {
-          await ctx.reply('📜 **Transaction History**\n\nNo transactions found.', { parse_mode: 'Markdown' });
-          return;
-        }
-
-        const lines = ['📜 **Transaction History**\n'];
-        for (const tx of transactions) {
-          lines.push(this.historyService.formatTransactionListItem(tx));
-        }
-
-        const keyboard: any[] = [];
-        if (20 < totalCount) {
-          keyboard.push([Markup.button.callback('⬇️ Load More', `history_load_20`)]);
-        }
-
-        await ctx.reply(lines.join('\n'), {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard.length > 0 ? Markup.inlineKeyboard(keyboard).reply_markup : undefined,
-        });
+        await this.showHistory(ctx, 0);
         return;
       }
 
@@ -197,11 +176,25 @@ export class CallbackHandlers {
           `Transactions: ${report.transactionCount}\n\n` +
           `**Top Categories - Bryan:**\n` +
           (report.bryanCategories.length > 0
-            ? report.bryanCategories.map(c => `${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+            ? report.bryanCategories
+                .map((c) => {
+                  const percentage = report.bryanPaid > 0 
+                    ? Math.round((c.amount / report.bryanPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
+                .join('\n')
             : 'No categories found') +
           `\n\n**Top Categories - Hwei Yeen:**\n` +
           (report.hweiYeenCategories.length > 0
-            ? report.hweiYeenCategories.map(c => `${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+            ? report.hweiYeenCategories
+                .map((c) => {
+                  const percentage = report.hweiYeenPaid > 0 
+                    ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                    : 0;
+                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+                })
+                .join('\n')
             : 'No categories found') +
           `\n\n[View Chart](${chartUrl})`;
 
@@ -470,24 +463,9 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('history_load_')) {
+        await ctx.answerCbQuery();
         const offset = parseInt(callbackData.replace('history_load_', ''));
-        const transactions = await this.historyService.getRecentTransactions(20, offset);
-        const totalCount = await this.historyService.getTotalTransactionCount();
-
-        const lines = ['📜 **Transaction History**\n'];
-        for (const tx of transactions) {
-          lines.push(this.historyService.formatTransactionListItem(tx));
-        }
-
-        const keyboard: any[] = [];
-        if (offset + 20 < totalCount) {
-          keyboard.push([Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)]);
-        }
-
-        await ctx.editMessageText(lines.join('\n'), {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard.length > 0 ? Markup.inlineKeyboard(keyboard).reply_markup : undefined,
-        });
+        await this.showHistory(ctx, offset);
         return;
       }
 
@@ -619,6 +597,95 @@ export class CallbackHandlers {
     } catch (error: any) {
       console.error('Callback error:', error);
       await ctx.answerCbQuery('Error processing request', { show_alert: true });
+    }
+  }
+
+  /**
+   * Show transaction history list
+   * Handles both callback query context (edit message) and regular message context (reply)
+   */
+  async showHistory(ctx: any, offset: number = 0) {
+    try {
+      const transactions = await this.historyService.getRecentTransactions(20, offset);
+      const totalCount = await this.historyService.getTotalTransactionCount();
+
+      if (transactions.length === 0) {
+        const message = '📜 **Transaction History**\n\nNo transactions found.';
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery();
+          try {
+            await ctx.editMessageText(message, { parse_mode: 'Markdown' });
+          } catch (editError) {
+            // If edit fails, send a new message
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+          }
+        } else {
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+        return;
+      }
+
+      // Build the list message
+      const lines = ['📜 **Transaction History**\n'];
+      
+      for (const tx of transactions) {
+        const line = this.historyService.formatTransactionListItem(tx);
+        lines.push(line);
+      }
+
+      const message = lines.join('\n');
+
+      // Add pagination button if there are more transactions
+      const keyboard: any[] = [];
+      if (offset + 20 < totalCount) {
+        keyboard.push([
+          Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
+        ]);
+      }
+
+      const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
+
+      if (ctx.callbackQuery) {
+        await ctx.answerCbQuery();
+        try {
+          await ctx.editMessageText(
+            message,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: replyMarkup?.reply_markup,
+            }
+          );
+        } catch (editError: any) {
+          // If edit fails, send a new message
+          console.error('Error editing history message:', editError);
+          await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            reply_markup: replyMarkup?.reply_markup,
+          });
+        }
+      } else {
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup?.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing history:', error);
+      console.error('Error stack:', error.stack);
+      const errorMessage = ctx.callbackQuery 
+        ? 'Sorry, I encountered an error retrieving history. Please try again.'
+        : 'Sorry, I encountered an error retrieving history. Please try again.';
+      
+      if (ctx.callbackQuery) {
+        await ctx.answerCbQuery('Error retrieving history', { show_alert: true });
+        try {
+          await ctx.editMessageText(errorMessage);
+        } catch {
+          await ctx.reply(errorMessage);
+        }
+      } else {
+        await ctx.reply(errorMessage);
+      }
     }
   }
 
