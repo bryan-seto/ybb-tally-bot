@@ -13,6 +13,7 @@ import { CommandHandlers } from './handlers/commandHandlers';
 import { PhotoHandler } from './handlers/photoHandler';
 import { MessageHandlers } from './handlers/messageHandlers';
 import { CallbackHandlers } from './handlers/callbackHandlers';
+import { getRandomWakeUpMessage } from './services/vibeService';
 
 // Helper function for dynamic greeting
 function getGreeting(userId: string): string {
@@ -72,6 +73,7 @@ export class YBBTallyBot {
   private callbackHandlers: CallbackHandlers;
   private allowedUserIds: Set<string>;
   private botUsername: string = '';
+  private isColdStart: boolean = true;
 
   constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
     this.bot = new Telegraf(token);
@@ -106,6 +108,7 @@ export class YBBTallyBot {
     this.bot.use(session());
 
     this.setupMiddleware();
+    this.setupColdStartMiddleware();
     this.setupCommands();
     this.setupHandlers();
     this.setupGlobalErrorHandler();
@@ -226,6 +229,20 @@ export class YBBTallyBot {
         return;
       }
 
+      return next();
+    });
+  }
+
+  /**
+   * Cold start middleware - sends a "wake up" message on first interaction after boot
+   */
+  private setupColdStartMiddleware(): void {
+    this.bot.use(async (ctx, next) => {
+      if (this.isColdStart) {
+        const message = getRandomWakeUpMessage();
+        await ctx.reply(message).catch(err => console.error('Cold start notify failed:', err));
+        this.isColdStart = false;
+      }
       return next();
     });
   }
