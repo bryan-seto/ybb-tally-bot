@@ -7,18 +7,20 @@ export class RecurringExpenseService {
 
   /**
    * Process a single recurring expense
-   * Returns the created transaction with balance message if processed, null if skipped
+   * @param expense - The recurring expense to process
+   * @param force - If true, bypasses day-of-month and already-processed checks (for testing)
+   * @returns The created transaction with balance message if processed, null if skipped
    */
-  async processSingleRecurringExpense(expense: any): Promise<{ transaction: any; message: string } | null> {
+  async processSingleRecurringExpense(expense: any, force: boolean = false): Promise<{ transaction: any; message: string } | null> {
     const today = getDayOfMonth();
     
-    // Check if expense is due today
-    if (expense.dayOfMonth !== today) {
+    // Check if expense is due today (skip if force mode)
+    if (!force && expense.dayOfMonth !== today) {
       return null;
     }
     
-    // Check if already processed today
-    if (expense.lastProcessedDate) {
+    // Check if already processed today (skip if force mode)
+    if (!force && expense.lastProcessedDate) {
       const lastProcessed = getStartOfDay(expense.lastProcessedDate);
       const todayStart = getStartOfDay(getNow());
       

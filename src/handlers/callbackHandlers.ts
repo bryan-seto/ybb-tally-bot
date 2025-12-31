@@ -179,6 +179,12 @@ export class CallbackHandlers {
         return;
       }
 
+      if (callbackData === 'recurring_view') {
+        await ctx.answerCbQuery();
+        await this.showActiveRecurringExpenses(ctx);
+        return;
+      }
+
       // Recurring Add Wizard Callbacks
       if (callbackData === 'recurring_add_new') {
         await ctx.answerCbQuery();
@@ -236,6 +242,26 @@ export class CallbackHandlers {
             return;
           }
 
+          // Validate and convert day to number if needed
+          const dayOfMonth = typeof day === 'number' ? day : parseInt(String(day));
+          if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
+            await ctx.reply('❌ Error: Invalid day of month. Please start over.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
+          // Validate amount
+          const amountValue = typeof amount === 'number' ? amount : parseFloat(String(amount));
+          if (isNaN(amountValue) || amountValue <= 0) {
+            await ctx.reply('❌ Error: Invalid amount. Please start over.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
           const user = await prisma.user.findFirst({
             where: { role: payer as 'Bryan' | 'HweiYeen' },
           });
@@ -250,27 +276,27 @@ export class CallbackHandlers {
 
           const recurringExpense = await prisma.recurringExpense.create({
             data: {
-              description,
-              amountOriginal: amount,
+              description: String(description).trim(),
+              amountOriginal: amountValue,
               payerId: user.id,
-              dayOfMonth: day,
+              dayOfMonth: dayOfMonth,
               isActive: true,
             },
           });
 
           const payerName = USER_NAMES[user.id.toString()] || payer;
-          const nextRunDate = getNextRecurringDate(day);
+          const nextRunDate = getNextRecurringDate(dayOfMonth);
           const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
 
           await ctx.reply(
             `✅ Recurring expense added!\n\n` +
             `Description: ${description}\n` +
-            `Amount: SGD $${amount.toFixed(2)}\n` +
-            `Day of month: ${day}\n` +
+            `Amount: SGD $${amountValue.toFixed(2)}\n` +
+            `Day of month: ${dayOfMonth}\n` +
             `Payer: ${payerName}\n\n` +
             `📅 **Next Run:** ${nextRunDateStr}\n` +
             `🆔 **ID:** ${recurringExpense.id.toString()}\n\n` +
-            `Will create transaction: **${description}** - SGD $${amount.toFixed(2)} (Bills, FULL split)`,
+            `Will create transaction: **${description}** - SGD $${amountValue.toFixed(2)} (Bills, FULL split)`,
             {
               reply_markup: {
                 inline_keyboard: [
@@ -287,7 +313,24 @@ export class CallbackHandlers {
           session.recurringData = undefined;
         } catch (error: any) {
           console.error('Error adding recurring expense:', error);
-          await ctx.reply('❌ Sorry, I encountered an error adding the recurring expense. Please try again.');
+          console.error('Error details:', {
+            code: error.code,
+            meta: error.meta,
+            message: error.message,
+            sessionData: session.recurringData,
+          });
+          
+          // Provide more specific error message
+          let errorMessage = '❌ Sorry, I encountered an error adding the recurring expense. Please try again.';
+          if (error.code === 'P2002') {
+            errorMessage = '❌ Error: A recurring expense with these details already exists.';
+          } else if (error.code === 'P2003') {
+            errorMessage = '❌ Error: Invalid payer reference. Please try again.';
+          } else if (error.message) {
+            errorMessage = `❌ Error: ${error.message}`;
+          }
+          
+          await ctx.reply(errorMessage);
           session.recurringMode = false;
           session.recurringStep = undefined;
           session.recurringData = undefined;
@@ -312,8 +355,8 @@ export class CallbackHandlers {
             return;
           }
           
-          // Process the recurring expense immediately
-          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpense);
+          // Process the recurring expense immediately (force mode to bypass day-of-month and already-processed checks)
+          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpense, true);
           
           // Check if processing was successful
           if (!result) {
@@ -769,6 +812,80 @@ export class CallbackHandlers {
     } catch (error: any) {
       console.error('Error showing history view:', error);
       await ctx.answerCbQuery('Error loading history', { show_alert: true });
+    }
+  }
+
+  /**
+   * Show active recurring expenses list
+   */
+  private async showActiveRecurringExpenses(ctx: any) {
+    try {
+      const recurringExpenses = await prisma.recurringExpense.findMany({
+        where: { isActive: true },
+        include: { payer: true },
+        orderBy: { dayOfMonth: 'asc' },
+      });
+
+      if (recurringExpenses.length === 0) {
+        const message = '🔄 **Active Recurring Expenses**\n\nNo active recurring expenses found.';
+        const keyboard = Markup.inlineKeyboard([
+          [{ text: '« Back', callback_data: 'menu_recurring' }],
+        ]);
+        
+        if (ctx.callbackQuery) {
+          await ctx.editMessageText(message, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else {
+          await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        }
+        return;
+      }
+
+      // Build message with all active recurring expenses
+      let message = '🔄 **Active Recurring Expenses**\n\n';
+      
+      for (const expense of recurringExpenses) {
+        const payerName = USER_NAMES[expense.payer.id.toString()] || expense.payer.name;
+        const nextRunDate = getNextRecurringDate(expense.dayOfMonth);
+        const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy');
+        
+        message += `• **${expense.description}**\n`;
+        message += `  Amount: SGD $${expense.amountOriginal.toFixed(2)}\n`;
+        message += `  Payer: ${payerName}\n`;
+        message += `  Day of month: ${expense.dayOfMonth}\n`;
+        message += `  Next run: ${nextRunDateStr}\n`;
+        
+        if (expense.lastProcessedDate) {
+          const lastProcessedStr = formatDate(expense.lastProcessedDate, 'dd MMM yyyy');
+          message += `  Last processed: ${lastProcessedStr}\n`;
+        }
+        
+        message += '\n';
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [{ text: '« Back', callback_data: 'menu_recurring' }],
+      ]);
+
+      if (ctx.callbackQuery) {
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      } else {
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing active recurring expenses:', error);
+      await ctx.answerCbQuery('Error loading recurring expenses', { show_alert: true });
     }
   }
 }
