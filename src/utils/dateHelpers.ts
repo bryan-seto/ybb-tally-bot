@@ -91,7 +91,7 @@ export function getDayOfMonth(date: Date = getNow()): number {
 }
 
 /**
- * Get the next occurrence date for a recurring expense based on day of month
+ * Calculate the next date when a recurring expense should be processed
  * Handles edge cases where dayOfMonth > days in target month (e.g., 31st for Feb)
  * @param dayOfMonth - Day of month (1-31)
  * @param timezone - Timezone string (default: 'Asia/Singapore')
