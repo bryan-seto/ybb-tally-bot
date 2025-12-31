@@ -1000,16 +1000,16 @@ export class CallbackHandlers {
   }
 
   /**
-   * Show history view with inline buttons for last 5 transactions
+   * Show history view with text list of last 10 transactions
    */
   private async showHistoryView(ctx: any) {
     try {
-      const transactions = await this.historyService.getRecentTransactions(5, 0);
+      const transactions = await this.historyService.getRecentTransactions(10, 0);
 
       if (transactions.length === 0) {
-        const message = '📜 **Transaction History**\n\nNo transactions found.';
+        const message = '📜 **Recent History (Last 10)**\n\nNo transactions found.';
         const keyboard = Markup.inlineKeyboard([
-          [{ text: '« Back', callback_data: 'back_to_dashboard' }],
+          [{ text: '« Back to Dashboard', callback_data: 'back_to_dashboard' }],
         ]);
         await ctx.editMessageText(message, {
           parse_mode: 'Markdown',
@@ -1018,33 +1018,26 @@ export class CallbackHandlers {
         return;
       }
 
-      // Build message
-      let message = '📜 **Transaction History**\n\n';
-      message += 'Tap a transaction to view details:\n\n';
+      // Build message with header
+      let message = '📜 **Recent History (Last 10)**\n\n';
 
-      // Build inline keyboard with transaction buttons
-      const keyboard: any[] = [];
-      
-      for (const tx of transactions) {
-        const dateStr = formatDate(tx.date, 'dd MMM');
-        const amountStr = tx.currency === 'SGD' ? `$${tx.amount.toFixed(2)}` : `${tx.currency} ${tx.amount.toFixed(2)}`;
-        const merchant = tx.merchant.length > 20 ? tx.merchant.substring(0, 20) + '...' : tx.merchant;
-        const buttonLabel = `${dateStr} - ${merchant} - ${amountStr}`;
-        
-        // Use tx_view_ callback to show transaction detail
-        keyboard.push([
-          Markup.button.callback(buttonLabel, `tx_view_${tx.id}`)
-        ]);
-      }
+      // Build transaction list using formatTransactionListItem (same as Dashboard)
+      const transactionLines = transactions.map(tx => 
+        this.historyService.formatTransactionListItem(tx)
+      );
+      message += transactionLines.join('\n');
 
-      // Add back button
-      keyboard.push([
-        { text: '« Back', callback_data: 'back_to_dashboard' }
+      // Add footer tip
+      message += '\n\n💡 Tip: Tap an ID to view details. You can also type \'edit /ID\' to change an item.';
+
+      // Single back button
+      const keyboard = Markup.inlineKeyboard([
+        [{ text: '« Back to Dashboard', callback_data: 'back_to_dashboard' }],
       ]);
 
       await ctx.editMessageText(message, {
         parse_mode: 'Markdown',
-        reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+        reply_markup: keyboard.reply_markup,
       });
     } catch (error: any) {
       console.error('Error showing history view:', error);
