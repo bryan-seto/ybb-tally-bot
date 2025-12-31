@@ -4,7 +4,7 @@ import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
 import { RecurringExpenseService } from '../services/recurringExpenseService';
 import { USER_NAMES } from '../config';
-import { getNow, getMonthsAgo, formatDate, getNextRecurringDate } from '../utils/dateHelpers';
+import { getNow, getMonthsAgo, formatDate, getNextRecurringDate, getOrdinalSuffix } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 
 export class CallbackHandlers {
@@ -603,18 +603,6 @@ export class CallbackHandlers {
       } else {
         await ctx.reply(errorMessage);
       }
-    }
-  }
-
-  private getOrdinalSuffix(day: number): string {
-    if (day >= 11 && day <= 13) {
-      return 'th';
-    }
-    switch (day % 10) {
-      case 1: return 'st';
-      case 2: return 'nd';
-      case 3: return 'rd';
-      default: return 'th';
     }
   }
 }

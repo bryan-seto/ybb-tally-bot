@@ -134,7 +134,20 @@ export function getNextRecurringDate(dayOfMonth: number, timezone: string = TIME
   return fromZonedTime(targetZonedDate, timezone);
 }
 
-
-
-
+/**
+ * Get ordinal suffix for a day number (1st, 2nd, 3rd, 4th, etc.)
+ * @param day - Day of month (1-31)
+ * @returns Ordinal suffix string ('st', 'nd', 'rd', or 'th')
+ */
+export function getOrdinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) {
+    return 'th';
+  }
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
 
