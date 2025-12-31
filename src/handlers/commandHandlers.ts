@@ -142,34 +142,7 @@ export class CommandHandlers {
       chart.setHeight(400);
       const chartUrl = chart.getUrl();
 
-      const message =
-        `📊 **Monthly Report - ${monthName}**\n\n` +
-        `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
-        `Transactions: ${report.transactionCount}\n\n` +
-        `**Top Categories - Bryan:**\n` +
-        (report.bryanCategories.length > 0
-          ? report.bryanCategories
-              .map((c) => {
-                const percentage = report.bryanPaid > 0 
-                  ? Math.round((c.amount / report.bryanPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n**Top Categories - Hwei Yeen:**\n` +
-        (report.hweiYeenCategories.length > 0
-          ? report.hweiYeenCategories
-              .map((c) => {
-                const percentage = report.hweiYeenPaid > 0 
-                  ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n[View Chart](${chartUrl})`;
-
+      const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
       await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error: any) {
       console.error('Error generating report:', error);

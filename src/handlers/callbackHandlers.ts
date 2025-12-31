@@ -48,63 +48,7 @@ export class CallbackHandlers {
 
       if (callbackData === 'menu_balance') {
         await ctx.answerCbQuery();
-        // Use the logic from bot.ts's handleCheckBalance which is more detailed
-        const bryan = await prisma.user.findFirst({ where: { role: 'Bryan' } });
-        const hweiYeen = await prisma.user.findFirst({ where: { role: 'HweiYeen' } });
-
-        if (!bryan || !hweiYeen) {
-          await ctx.reply('Error: Users not found in database.');
-          return;
-        }
-
-        const transactions = await prisma.transaction.findMany({
-          where: { isSettled: false },
-          include: { payer: true },
-        });
-
-        let bryanPaid = 0;
-        let hweiYeenPaid = 0;
-        let bryanShare = 0;
-        let hweiYeenShare = 0;
-        let totalAmount = 0;
-        let weightedBryanPercent = 0;
-        let weightedHweiYeenPercent = 0;
-
-        transactions.forEach((t) => {
-          if (t.payerId === bryan.id) bryanPaid += t.amountSGD;
-          else if (t.payerId === hweiYeen.id) hweiYeenPaid += t.amountSGD;
-          
-          const bP = t.bryanPercentage ?? 0.7;
-          const hYP = t.hweiYeenPercentage ?? 0.3;
-          
-          bryanShare += t.amountSGD * bP;
-          hweiYeenShare += t.amountSGD * hYP;
-          
-          totalAmount += t.amountSGD;
-          weightedBryanPercent += t.amountSGD * bP;
-          weightedHweiYeenPercent += t.amountSGD * hYP;
-        });
-
-        const avgBP = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
-        const avgHYP = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
-        const totalSpending = bryanPaid + hweiYeenPaid;
-        const bryanNet = bryanPaid - bryanShare;
-        const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
-        
-        let message = `💰 **Balance Summary**\n\n`;
-        message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
-        message += `Total Paid by Hwei Yeen (Unsettled): SGD $${hweiYeenPaid.toFixed(2)}\n`;
-        message += `Total Group Spending: SGD $${totalSpending.toFixed(2)}\n\n`;
-        message += `**Split Calculation (${avgBP.toFixed(0)}/${avgHYP.toFixed(0)}):**\n`;
-        message += `Bryan's share (${avgBP.toFixed(0)}%): SGD $${bryanShare.toFixed(2)}\n`;
-        message += `Hwei Yeen's share (${avgHYP.toFixed(0)}%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
-        
-        if (bryanNet > 0) message += `👉 Hwei Yeen owes Bryan: SGD $${bryanNet.toFixed(2)}`;
-        else if (hweiYeenNet > 0) message += `👉 Bryan owes Hwei Yeen: SGD $${hweiYeenNet.toFixed(2)}`;
-        else if (bryanNet < 0) message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(bryanNet).toFixed(2)}`;
-        else if (hweiYeenNet < 0) message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(hweiYeenNet).toFixed(2)}`;
-        else message += `✅ All settled!`;
-        
+        const message = await this.expenseService.getDetailedBalanceMessage();
         await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
       }
@@ -170,34 +114,7 @@ export class CallbackHandlers {
         chart.setHeight(400);
         const chartUrl = chart.getUrl();
 
-        const message =
-          `📊 **Monthly Report - ${monthName}**\n\n` +
-          `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
-          `Transactions: ${report.transactionCount}\n\n` +
-          `**Top Categories - Bryan:**\n` +
-          (report.bryanCategories.length > 0
-            ? report.bryanCategories
-                .map((c) => {
-                  const percentage = report.bryanPaid > 0 
-                    ? Math.round((c.amount / report.bryanPaid) * 100) 
-                    : 0;
-                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-                })
-                .join('\n')
-            : 'No categories found') +
-          `\n\n**Top Categories - Hwei Yeen:**\n` +
-          (report.hweiYeenCategories.length > 0
-            ? report.hweiYeenCategories
-                .map((c) => {
-                  const percentage = report.hweiYeenPaid > 0 
-                    ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
-                    : 0;
-                  return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-                })
-                .join('\n')
-            : 'No categories found') +
-          `\n\n[View Chart](${chartUrl})`;
-
+        const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
         await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
       }
@@ -300,7 +217,8 @@ export class CallbackHandlers {
           });
 
           const payerName = USER_NAMES[user.id.toString()] || payer;
-          const ordinalSuffix = this.getOrdinalSuffix(day);
+          const nextRunDate = getNextRecurringDate(day);
+          const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
 
           await ctx.reply(
             `✅ Recurring expense added!\n\n` +
@@ -308,8 +226,17 @@ export class CallbackHandlers {
             `Amount: SGD $${amount.toFixed(2)}\n` +
             `Day of month: ${day}\n` +
             `Payer: ${payerName}\n\n` +
-            `This expense will be automatically processed on the ${day}${ordinalSuffix} of each month at 09:00 SGT.`,
-            Markup.removeKeyboard()
+            `📅 **Next Run:** ${nextRunDateStr}\n` +
+            `🆔 **ID:** ${recurringExpense.id.toString()}\n\n` +
+            `Will create transaction: **${description}** - SGD $${amount.toFixed(2)} (Bills, FULL split)`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '⚡ Test Now', callback_data: `recurring_test_${recurringExpense.id.toString()}` }],
+                ],
+              },
+              parse_mode: 'Markdown',
+            }
           );
 
           // Clear session state
@@ -373,6 +300,7 @@ export class CallbackHandlers {
         }
         return;
       }
+
       if (callbackData === 'menu_edit_last') {
         await ctx.answerCbQuery();
         const userId = BigInt(ctx.from.id);
