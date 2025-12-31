@@ -511,6 +511,24 @@ export class CallbackHandlers {
         return;
       }
 
+      // Handle undo expense
+      if (callbackData.startsWith('undo_expense_')) {
+        await ctx.answerCbQuery();
+        const transactionId = BigInt(callbackData.replace('undo_expense_', ''));
+        try {
+          await prisma.transaction.delete({ where: { id: transactionId } });
+          await ctx.editMessageText('❌ Expense cancelled.');
+        } catch (error: any) {
+          // Handle double-tap: Record already deleted (P2025)
+          if (error.code === 'P2025') {
+            await ctx.editMessageText('❌ Expense already cancelled.');
+            return;
+          }
+          throw error; // Re-throw other errors
+        }
+        return;
+      }
+
     } catch (error: any) {
       console.error('Callback error:', error);
       await ctx.answerCbQuery('Error processing request', { show_alert: true });

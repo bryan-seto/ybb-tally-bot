@@ -79,6 +79,14 @@ export class MessageHandlers {
       }
       // ---------------------------------------------------------------------------
 
+      // PRIORITY 1.5: Check for Quick Expense pattern (before other handlers)
+      const quickExpensePattern = /^\d+(\.\d{1,2})?\s+[a-zA-Z].*/;
+      if (quickExpensePattern.test(text)) {
+        console.log('[handleText] Quick Expense pattern detected');
+        await this.handleQuickExpense(ctx, text);
+        return;
+      }
+
       // PRIORITY 2: Handle AI edit mode
       if (session.editMode === 'ai_natural_language' && session.editingTxId) {
         await this.handleAIEditMode(ctx, text, session);
@@ -893,6 +901,112 @@ export class MessageHandlers {
     } catch (error: any) {
       console.error('Error showing transaction detail:', error);
       await ctx.reply('Sorry, I encountered an error retrieving transaction details. Please try again.');
+    }
+  }
+
+  /**
+   * Handle quick expense one-liner (e.g., "130 groceries")
+   */
+  private async handleQuickExpense(ctx: any, text: string) {
+    let statusMsg: any = null;
+    try {
+      // Send initial status message
+      statusMsg = await ctx.reply('👀 Processing expense...', { parse_mode: 'HTML' });
+
+      // Set up fallback callback for real-time status updates
+      let fallbackMsgId: number | null = null;
+      
+      const onFallback = async (failed: string, next: string) => {
+        if (!fallbackMsgId) {
+          const msg = await ctx.reply(`⚠️ Limit hit for ${failed}. Switching to ${next}...`);
+          fallbackMsgId = msg.message_id;
+        } else {
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              fallbackMsgId,
+              undefined,
+              `⚠️ Limit hit for ${failed}. Switching to ${next}...`
+            );
+          } catch (e) {
+            // Ignore edit errors
+          }
+        }
+      };
+
+      // Parse via LLM
+      const parsed = await this.aiService.processQuickExpense(text, onFallback);
+
+      // Cleanup fallback warning if it exists
+      if (fallbackMsgId) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, fallbackMsgId);
+        } catch (e) {
+          // Ignore delete errors
+        }
+      }
+
+      // Update status message
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        '⏳ Saving expense...',
+        { parse_mode: 'HTML' }
+      );
+
+      // Get user ID
+      const userId = BigInt(ctx.from.id);
+
+      // Create smart expense
+      const { transaction, balanceMessage } = await this.expenseService.createSmartExpense(
+        userId,
+        parsed.amount,
+        parsed.category,
+        parsed.description
+      );
+
+      // Get fun confirmation message
+      const funConfirmation = this.expenseService.getFunConfirmation(parsed.category);
+
+      // Generate tip footer (20% chance = 1/5 times)
+      const tipFooter = Math.random() < 0.2 ? "\n\n💡 Tip: Tap 'Undo' if you made a mistake!" : "";
+
+      // Build final message
+      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})\n\n${balanceMessage}${tipFooter}`;
+
+      // Create inline keyboard with Undo button
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('↩️ Undo', `undo_expense_${transaction.id}`)]
+      ]);
+
+      // Update status message with final result
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        finalMessage,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        }
+      );
+    } catch (error: any) {
+      console.error('Error handling quick expense:', error);
+      if (statusMsg) {
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            statusMsg.message_id,
+            undefined,
+            '❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"'
+          );
+        } catch (editError) {
+          await ctx.reply('❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"');
+        }
+      } else {
+        await ctx.reply('❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"');
+      }
     }
   }
 

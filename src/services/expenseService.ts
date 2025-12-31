@@ -467,6 +467,85 @@ export class ExpenseService {
   }
 
   /**
+   * Create a smart expense with category-based split rules
+   * Returns: { transaction, balanceMessage }
+   */
+  async createSmartExpense(
+    userId: bigint,
+    amount: number,
+    category: string,
+    description: string
+  ): Promise<{
+    transaction: any;
+    balanceMessage: string;
+  }> {
+    // Split rules based on category
+    const splitRules: Record<string, { bryan: number; hwei: number }> = {
+      'Groceries': { bryan: 0.7, hwei: 0.3 },
+      'Bills': { bryan: 0.7, hwei: 0.3 },
+      'Shopping': { bryan: 0.7, hwei: 0.3 },
+      'Food': { bryan: 0.5, hwei: 0.5 },
+      'Travel': { bryan: 0.5, hwei: 0.5 },
+      'Entertainment': { bryan: 0.5, hwei: 0.5 },
+      'Transport': { bryan: 0.5, hwei: 0.5 },
+    };
+    
+    const split = splitRules[category] || { bryan: 0.7, hwei: 0.3 }; // Default 70/30
+
+    // Look up the user/payer
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new Error(`User with id ${userId} not found`);
+    }
+
+    // Create the transaction
+    const transaction = await prisma.transaction.create({
+      data: {
+        amountSGD: amount,
+        currency: 'SGD',
+        category: category || 'Other',
+        description: description || 'No description',
+        payerId: userId,
+        date: new Date(),
+        bryanPercentage: split.bryan,
+        hweiYeenPercentage: split.hwei,
+      },
+      include: {
+        payer: true,
+      },
+    });
+
+    // Get the updated balance message
+    const balanceMessage = await this.getOutstandingBalanceMessage();
+
+    return { transaction, balanceMessage };
+  }
+
+  /**
+   * Get a fun confirmation message based on category
+   * Returns a randomized emoji/text string
+   */
+  getFunConfirmation(category: string): string {
+    const confirmations: Record<string, string[]> = {
+      'Food': ['Yum! 🍜', 'Delicious! 🍕', 'Bon appétit! 🍽️', 'Tasty! 🥘'],
+      'Bills': ['💸 Money flies!', '💰 Bills paid!', '💳 Charged!', '📄 Documented!'],
+      'Travel': ['✈️ Adventure awaits!', '🌍 Exploring!', '🎒 Packed!', '🗺️ Journey logged!'],
+      'Groceries': ['🛒 Stocked up!', '🥬 Fresh groceries!', '📦 Supplies added!', '🍎 Healthy choice!'],
+      'Shopping': ['🛍️ Shopping spree!', '💼 Purchase logged!', '🎁 New item!', '✨ Added to collection!'],
+      'Transport': ['🚗 On the move!', '🚇 Commute logged!', '🚌 Trip recorded!', '🛵 Ride saved!'],
+      'Entertainment': ['🎬 Fun times!', '🎮 Game on!', '🎭 Entertainment logged!', '🎪 Enjoyment saved!'],
+      'Medical': ['🏥 Health expense!', '💊 Medical logged!', '🩺 Care recorded!', '❤️ Wellness tracked!'],
+      'Other': ['✅ Recorded!', '📝 Saved!', '💼 Logged!', '✨ Added!'],
+    };
+
+    const options = confirmations[category] || confirmations['Other'];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  /**
    * Automatically record transactions extracted by AI
    */
   async recordAISavedTransactions(receiptData: any, userId: bigint) {

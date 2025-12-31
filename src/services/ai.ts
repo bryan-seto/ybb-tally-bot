@@ -497,6 +497,89 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
       };
     }
   }
+
+  /**
+   * Process quick expense one-liner (e.g., "130 groceries")
+   * Returns: { amount: number, description: string, category: string }
+   */
+  async processQuickExpense(
+    text: string,
+    onFallback?: FallbackCallback
+  ): Promise<{ amount: number; description: string; category: string }> {
+    const VALID_CATEGORIES = ['Food', 'Transport', 'Shopping', 'Groceries', 'Bills', 'Entertainment', 'Medical', 'Travel', 'Other'];
+
+    const prompt = `You are a financial assistant. Parse the following expense message and extract the amount, description, and category.
+
+User message: "${text}"
+
+Rules:
+1. Extract the amount as a number (in SGD).
+2. Extract a description from the text (the item/service name).
+3. Category MUST be one of: ${VALID_CATEGORIES.join(', ')}.
+4. Special mappings:
+   - If user mentions "Utilities" or "utility", map to "Bills"
+   - If user mentions "Furniture" or "furniture", map to "Shopping"
+   - If user mentions "Games" or "game", map to "Entertainment"
+5. If category is unclear, use "Other".
+
+Return ONLY valid JSON in this exact format (no markdown, no explanations):
+{
+  "amount": number,
+  "description": "string",
+  "category": "string"
+}`;
+
+    try {
+      const aiResponse = await this.generateContentWithFallback(prompt, onFallback);
+      const responseText = aiResponse.text;
+
+      // Extract JSON from response
+      const extractedJSON = this.extractJSON(responseText);
+      if (!extractedJSON) {
+        console.error('[processQuickExpense] No JSON found in response:', responseText.substring(0, 500));
+        throw new Error('No JSON found in response');
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(extractedJSON);
+      } catch (parseError: any) {
+        console.error('[processQuickExpense] JSON parse error:', {
+          error: parseError.message,
+          extractedJSON: extractedJSON.substring(0, 200),
+          fullResponse: responseText.substring(0, 500)
+        });
+        Sentry.captureException(parseError, {
+          extra: {
+            extractedJSON: extractedJSON.substring(0, 500),
+            fullResponse: responseText.substring(0, 1000)
+          }
+        });
+        throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+      }
+
+      // Validate the parsed data
+      if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
+        throw new Error('Invalid amount in response');
+      }
+      if (typeof parsed.description !== 'string' || parsed.description.trim().length === 0) {
+        throw new Error('Invalid description in response');
+      }
+      if (typeof parsed.category !== 'string' || !VALID_CATEGORIES.includes(parsed.category)) {
+        throw new Error(`Invalid category in response: ${parsed.category}. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
+      }
+
+      return {
+        amount: parsed.amount,
+        description: parsed.description.trim(),
+        category: parsed.category,
+      };
+    } catch (error: any) {
+      console.error('Error processing quick expense:', error);
+      Sentry.captureException(error);
+      throw error;
+    }
+  }
 }
 
 
