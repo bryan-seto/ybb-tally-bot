@@ -5,8 +5,7 @@ import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
 import { BackupService } from './services/backupService';
 import { RecurringExpenseService } from './services/recurringExpenseService';
-import { getNow, getMonthsAgo, formatDate } from './utils/dateHelpers';
-import QuickChart from 'quickchart-js';
+import { formatDate } from './utils/dateHelpers';
 import { prisma } from './lib/prisma';
 import { CONFIG, USER_NAMES, USER_IDS } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
@@ -385,7 +384,7 @@ export class YBBTallyBot {
     // History command
     this.bot.command('history', async (ctx) => {
       try {
-        await this.showHistory(ctx, 0);
+        await this.callbackHandlers.showHistory(ctx, 0);
       } catch (error: any) {
         console.error('Error showing history:', error);
         await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
@@ -405,20 +404,6 @@ export class YBBTallyBot {
     });
   }
 
-  /**
-   * Get ordinal suffix for day (1st, 2nd, 3rd, etc.)
-   */
-  private getOrdinalSuffix(day: number): string {
-    if (day >= 11 && day <= 13) {
-      return 'th';
-    }
-    switch (day % 10) {
-      case 1: return 'st';
-      case 2: return 'nd';
-      case 3: return 'rd';
-      default: return 'th';
-    }
-  }
 
   /**
    * Start manual add flow
@@ -433,231 +418,6 @@ export class YBBTallyBot {
     );
   }
 
-  /**
-   * Handle settle up
-   */
-  private async handleSettleUp(ctx: any) {
-    try {
-      const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
-      
-      // Parse balance to get net debt
-      // Format: "Madam Hwei Yeen owes Sir Bryan SGD $XX.XX" or vice versa
-      const match = balanceMessage.match(/(\w+(?:\s+\w+)?)\s+owes\s+(\w+(?:\s+\w+)?)\s+SGD\s+\$([\d.]+)/i);
-      
-      if (match) {
-        const debtor = match[1].replace(/Sir|Madam/gi, '').trim();
-        const creditor = match[2].replace(/Sir|Madam/gi, '').trim();
-        const amount = parseFloat(match[3]);
-        
-        await ctx.reply(
-          `${balanceMessage}\n\n` +
-          `Mark this as paid and reset balance to $0?`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
-                [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
-              ],
-            },
-            parse_mode: 'Markdown',
-          }
-        );
-      } else {
-        // No outstanding balance
-        await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
-      }
-    } catch (error: any) {
-      console.error('Error handling settle up:', error);
-      await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
-
-  /**
-   * Handle check balance
-   */
-  private async handleCheckBalance(ctx: any) {
-    try {
-      // Get users
-      const bryan = await prisma.user.findFirst({
-        where: { role: 'Bryan' },
-      });
-      const hweiYeen = await prisma.user.findFirst({
-        where: { role: 'HweiYeen' },
-      });
-
-      if (!bryan || !hweiYeen) {
-        await ctx.reply('Error: Users not found in database.');
-        return;
-      }
-
-      // Get all unsettled transactions with their split percentages
-      const transactions = await prisma.transaction.findMany({
-        where: {
-          isSettled: false,
-        },
-        include: {
-          payer: true,
-        },
-      });
-
-      let bryanPaid = 0;
-      let hweiYeenPaid = 0;
-      let bryanShare = 0;
-      let hweiYeenShare = 0;
-      
-      // Track split percentages for display
-      let totalAmount = 0;
-      let weightedBryanPercent = 0;
-      let weightedHweiYeenPercent = 0;
-
-      transactions.forEach((t) => {
-        if (t.payerId === bryan.id) {
-          bryanPaid += t.amountSGD;
-        } else if (t.payerId === hweiYeen.id) {
-          hweiYeenPaid += t.amountSGD;
-        }
-        
-        // Use custom split if available, otherwise default to 70/30
-        const bryanPercent = t.bryanPercentage ?? 0.7;
-        const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
-        
-        bryanShare += t.amountSGD * bryanPercent;
-        hweiYeenShare += t.amountSGD * hweiYeenPercent;
-        
-        // Calculate weighted average for display
-        totalAmount += t.amountSGD;
-        weightedBryanPercent += t.amountSGD * bryanPercent;
-        weightedHweiYeenPercent += t.amountSGD * hweiYeenPercent;
-      });
-
-      // Calculate weighted average percentages
-      const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
-      const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
-      
-      const totalSpending = bryanPaid + hweiYeenPaid;
-      
-      // Calculate net: positive = overpaid (other person owes them), negative = underpaid (they owe)
-      const bryanNet = bryanPaid - bryanShare;
-      const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
-      
-      let message = `💰 **Balance Summary**\n\n`;
-      message += `Total Paid by Bryan (Unsettled): SGD $${bryanPaid.toFixed(2)}\n`;
-      message += `Total Paid by Hwei Yeen (Unsettled): SGD $${hweiYeenPaid.toFixed(2)}\n`;
-      message += `Total Group Spending: SGD $${totalSpending.toFixed(2)}\n\n`;
-      message += `**Split Calculation (${avgBryanPercent.toFixed(0)}/${avgHweiYeenPercent.toFixed(0)}):**\n`;
-      message += `Bryan's share (${avgBryanPercent.toFixed(0)}%): SGD $${bryanShare.toFixed(2)}\n`;
-      message += `Hwei Yeen's share (${avgHweiYeenPercent.toFixed(0)}%): SGD $${hweiYeenShare.toFixed(2)}\n\n`;
-      
-      if (bryanNet > 0) {
-        // Bryan overpaid, so Hwei Yeen owes Bryan
-        message += `👉 Hwei Yeen owes Bryan: SGD $${bryanNet.toFixed(2)}`;
-      } else if (hweiYeenNet > 0) {
-        // Hwei Yeen overpaid, so Bryan owes Hwei Yeen
-        message += `👉 Bryan owes Hwei Yeen: SGD $${hweiYeenNet.toFixed(2)}`;
-      } else if (bryanNet < 0) {
-        // Bryan underpaid, so Bryan owes Hwei Yeen
-        message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(bryanNet).toFixed(2)}`;
-      } else if (hweiYeenNet < 0) {
-        // Hwei Yeen underpaid, so Hwei Yeen owes Bryan
-        message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(hweiYeenNet).toFixed(2)}`;
-      } else {
-        message += `✅ All settled!`;
-      }
-      
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error: any) {
-      console.error('Error handling check balance:', error);
-      await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
-
-  /**
-   * Handle view unsettled
-   */
-  private async handleViewUnsettled(ctx: any) {
-    try {
-      const pendingTransactions = await this.expenseService.getAllPendingTransactions();
-      
-      if (pendingTransactions.length === 0) {
-        await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
-        return;
-      }
-      
-      // Get last 10 transactions
-      const last10 = pendingTransactions.slice(0, 10);
-      
-      let message = `🧾 **Unsettled Transactions**\n\n`;
-      
-      last10.forEach((t, index) => {
-        const dateStr = formatDate(t.date, 'dd MMM yyyy');
-        message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
-      });
-      
-      message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
-      
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error: any) {
-      console.error('Error handling view unsettled:', error);
-      await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
-
-  /**
-   * Handle reports
-   */
-  private async handleReports(ctx: any) {
-    try {
-      await ctx.reply('Generating monthly report...');
-      const report = await this.expenseService.getMonthlyReport(0);
-      const reportDate = getMonthsAgo(0);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-      
-      const chart = new QuickChart();
-      chart.setConfig({
-        type: 'bar',
-        data: {
-          labels: report.topCategories.map((c) => c.category),
-          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-        },
-      });
-      chart.setWidth(800);
-      chart.setHeight(400);
-      const chartUrl = chart.getUrl();
-      
-      const message =
-        `📊 **Monthly Report - ${monthName}**\n\n` +
-        `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
-        `Transactions: ${report.transactionCount}\n\n` +
-        `**Top Categories - Bryan:**\n` +
-        (report.bryanCategories.length > 0
-          ? report.bryanCategories
-              .map((c) => {
-                const percentage = report.bryanPaid > 0 
-                  ? Math.round((c.amount / report.bryanPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n**Top Categories - Hwei Yeen:**\n` +
-        (report.hweiYeenCategories.length > 0
-          ? report.hweiYeenCategories
-              .map((c) => {
-                const percentage = report.hweiYeenPaid > 0 
-                  ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
-                  : 0;
-                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
-              })
-              .join('\n')
-          : 'No categories found') +
-        `\n\n[View Chart](${chartUrl})`;
-      
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error: any) {
-      console.error('Error handling reports:', error);
-      await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
 
   /**
    * Show recurring menu
@@ -677,43 +437,6 @@ export class YBBTallyBot {
     );
   }
 
-  /**
-   * Handle edit last transaction
-   */
-  private async handleEditLast(ctx: any) {
-    try {
-      const userId = BigInt(ctx.from.id);
-      const lastTransaction = await prisma.transaction.findFirst({
-        where: { payerId: userId },
-        orderBy: { createdAt: 'desc' },
-        include: { payer: true },
-      });
-
-      if (!lastTransaction) {
-        await ctx.reply('No transactions found. Record an expense first!');
-        return;
-      }
-
-      const dateStr = formatDate(lastTransaction.date, 'dd MMM yyyy');
-      await ctx.reply(
-        `You last recorded: ${lastTransaction.description || 'No description'} - $${lastTransaction.amountSGD.toFixed(2)} - ${lastTransaction.category || 'Other'}\n` +
-        `Date: ${dateStr}\n` +
-        `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
-        `What would you like to edit?`,
-        {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
-                [{ text: '🔙 Cancel', callback_data: `edit_last_cancel_${lastTransaction.id}` }],
-              ],
-            },
-        }
-      );
-    } catch (error: any) {
-      console.error('Error handling edit last:', error);
-      await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
 
   /**
    * Start search flow
@@ -727,93 +450,6 @@ export class YBBTallyBot {
     );
   }
 
-  /**
-   * Show transaction history list
-   */
-  private async showHistory(ctx: any, offset: number = 0) {
-    try {
-      const transactions = await this.historyService.getRecentTransactions(20, offset);
-      const totalCount = await this.historyService.getTotalTransactionCount();
-
-      if (transactions.length === 0) {
-        const message = '📜 **Transaction History**\n\nNo transactions found.';
-        if (ctx.callbackQuery) {
-          await ctx.answerCbQuery();
-          try {
-            await ctx.editMessageText(message, { parse_mode: 'Markdown' });
-          } catch (editError) {
-            // If edit fails, send a new message
-            await ctx.reply(message, { parse_mode: 'Markdown' });
-          }
-        } else {
-          await ctx.reply(message, { parse_mode: 'Markdown' });
-        }
-        return;
-      }
-
-      // Build the list message
-      const lines = ['📜 **Transaction History**\n'];
-      
-      for (const tx of transactions) {
-        const line = this.historyService.formatTransactionListItem(tx);
-        lines.push(line);
-      }
-
-      const message = lines.join('\n');
-
-      // Add pagination button if there are more transactions
-      const keyboard: any[] = [];
-      if (offset + 20 < totalCount) {
-        keyboard.push([
-          Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
-        ]);
-      }
-
-      const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
-
-      if (ctx.callbackQuery) {
-        await ctx.answerCbQuery();
-        try {
-          await ctx.editMessageText(
-            message,
-            {
-              parse_mode: 'Markdown',
-              reply_markup: replyMarkup?.reply_markup,
-            }
-          );
-        } catch (editError: any) {
-          // If edit fails, send a new message
-          console.error('Error editing history message:', editError);
-          await ctx.reply(message, {
-            parse_mode: 'Markdown',
-            reply_markup: replyMarkup?.reply_markup,
-          });
-        }
-      } else {
-        await ctx.reply(message, {
-          parse_mode: 'Markdown',
-          reply_markup: replyMarkup?.reply_markup,
-        });
-      }
-    } catch (error: any) {
-      console.error('Error showing history:', error);
-      console.error('Error stack:', error.stack);
-      const errorMessage = ctx.callbackQuery 
-        ? 'Sorry, I encountered an error retrieving history. Please try again.'
-        : 'Sorry, I encountered an error retrieving history. Please try again.';
-      
-      if (ctx.callbackQuery) {
-        await ctx.answerCbQuery('Error retrieving history', { show_alert: true });
-        try {
-          await ctx.editMessageText(errorMessage);
-        } catch {
-          await ctx.reply(errorMessage);
-        }
-      } else {
-        await ctx.reply(errorMessage);
-      }
-    }
-  }
 
   /**
    * Setup message handlers

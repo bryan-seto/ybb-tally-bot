@@ -148,11 +148,25 @@ export class CommandHandlers {
         `Transactions: ${report.transactionCount}\n\n` +
         `**Top Categories - Bryan:**\n` +
         (report.bryanCategories.length > 0
-          ? report.bryanCategories.map(c => `${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+          ? report.bryanCategories
+              .map((c) => {
+                const percentage = report.bryanPaid > 0 
+                  ? Math.round((c.amount / report.bryanPaid) * 100) 
+                  : 0;
+                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+              })
+              .join('\n')
           : 'No categories found') +
         `\n\n**Top Categories - Hwei Yeen:**\n` +
         (report.hweiYeenCategories.length > 0
-          ? report.hweiYeenCategories.map(c => `${c.category}: SGD $${c.amount.toFixed(2)}`).join('\n')
+          ? report.hweiYeenCategories
+              .map((c) => {
+                const percentage = report.hweiYeenPaid > 0 
+                  ? Math.round((c.amount / report.hweiYeenPaid) * 100) 
+                  : 0;
+                return `${c.category}: SGD $${c.amount.toFixed(2)} (${percentage}%)`;
+              })
+              .join('\n')
           : 'No categories found') +
         `\n\n[View Chart](${chartUrl})`;
 
