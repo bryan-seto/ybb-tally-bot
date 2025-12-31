@@ -49,16 +49,24 @@ export class CallbackHandlers {
     try {
       // Dashboard Navigation
       if (callbackData === 'back_to_dashboard') {
-        await ctx.answerCbQuery("Loading...");
-        if (this.showDashboard) {
-          await this.showDashboard(ctx, true);
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          if (this.showDashboard) {
+            await this.showDashboard(ctx, true);
+          }
+        } catch (error) {
+          console.error('Error showing dashboard:', error);
+        } finally {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
         }
         return;
       }
 
       // Menu Actions
       if (callbackData === 'settle_up' || callbackData === 'menu_settle') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -93,7 +101,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'open_menu') {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery();
         await ctx.editMessageText(
           '🛠️ **Tools Menu**\n\nSelect an option:',
           {
@@ -119,13 +127,21 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'view_history' || callbackData === 'menu_history') {
-        await ctx.answerCbQuery("Loading...");
-        await this.showHistoryView(ctx);
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          await this.showHistoryView(ctx);
+        } catch (error) {
+          console.error('Error showing history view:', error);
+        } finally {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+        }
         return;
       }
 
       if (callbackData === 'menu_balance') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -141,13 +157,21 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_history') {
-        await ctx.answerCbQuery("Loading...");
-        await this.showHistory(ctx, 0);
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          await this.showHistory(ctx, 0);
+        } catch (error) {
+          console.error('Error showing history:', error);
+        } finally {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+        }
         return;
       }
 
       if (callbackData === 'menu_unsettled') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -178,22 +202,38 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_add') {
-        await ctx.answerCbQuery("Loading...");
-        session.manualAddMode = true;
-        session.manualAddStep = 'description';
-        await ctx.reply('What is the description for the expense?', Markup.keyboard([['❌ Cancel']]).resize());
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          session.manualAddMode = true;
+          session.manualAddStep = 'description';
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('What is the description for the expense?', Markup.keyboard([['❌ Cancel']]).resize());
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in menu_add:', error);
+        }
         return;
       }
 
       if (callbackData === 'menu_search') {
-        await ctx.answerCbQuery("Loading...");
-        session.searchMode = true;
-        await ctx.reply('Type a keyword to search (e.g., "Grab" or "Sushi"):', Markup.keyboard([['❌ Cancel']]).resize());
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          session.searchMode = true;
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('Type a keyword to search (e.g., "Grab" or "Sushi"):', Markup.keyboard([['❌ Cancel']]).resize());
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in menu_search:', error);
+        }
         return;
       }
 
       if (callbackData === 'menu_reports') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -225,7 +265,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_recurring') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -252,26 +292,42 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'recurring_view') {
-        await ctx.answerCbQuery("Loading...");
-        await this.showActiveRecurringExpenses(ctx);
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          await this.showActiveRecurringExpenses(ctx);
+        } catch (error) {
+          console.error('Error showing recurring expenses:', error);
+        } finally {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+        }
         return;
       }
 
       // Recurring Add Wizard Callbacks
       if (callbackData === 'recurring_add_new') {
-        await ctx.answerCbQuery("Loading...");
-        if (!session.recurringData) session.recurringData = {};
-        session.recurringMode = true;
-        session.recurringStep = 'description';
-        await ctx.reply(
-          'What is the description for this recurring expense?',
-          Markup.keyboard([['❌ Cancel']]).resize()
-        );
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          if (!session.recurringData) session.recurringData = {};
+          session.recurringMode = true;
+          session.recurringStep = 'description';
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(
+            'What is the description for this recurring expense?',
+            Markup.keyboard([['❌ Cancel']]).resize()
+          );
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in recurring_add_new:', error);
+        }
         return;
       }
 
       if (callbackData.startsWith('recurring_add_payer_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -311,7 +367,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'recurring_confirm') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -429,7 +485,7 @@ export class CallbackHandlers {
 
       // Test recurring expense handler
       if (callbackData.startsWith('recurring_test_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -482,7 +538,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_edit_last') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -525,7 +581,7 @@ export class CallbackHandlers {
 
       // Action Confirmation Callbacks
       if (callbackData === 'settle_confirm') {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -554,13 +610,21 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'settle_cancel') {
-        await ctx.answerCbQuery("Loading...");
-        await ctx.reply('Settlement cancelled.');
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('Settlement cancelled.');
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in settle_cancel:', error);
+        }
         return;
       }
 
       if (callbackData === 'recurring_cancel') {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery();
         // Clear recurring session state
         session.recurringMode = false;
         session.recurringStep = undefined;
@@ -574,13 +638,13 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'edit_last_cancel') {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery();
         await ctx.editMessageText('Edit cancelled.');
         return;
       }
 
       if (callbackData.startsWith('edit_last_delete_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -597,7 +661,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('history_load_')) {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery();
         const offset = parseInt(callbackData.replace('history_load_', ''));
         await this.showHistory(ctx, offset);
         return;
@@ -605,22 +669,30 @@ export class CallbackHandlers {
 
       // Manual Add Callbacks
       if (callbackData.startsWith('manual_category_')) {
-        await ctx.answerCbQuery("Loading...");
-        session.manualCategory = callbackData.replace('manual_category_', '');
-        session.manualAddStep = 'payer';
-        await ctx.reply(`Category: ${session.manualCategory}\n\nWho paid?`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: 'Bryan', callback_data: 'manual_payer_bryan' }],
-              [{ text: 'Hwei Yeen', callback_data: 'manual_payer_hweiyeen' }],
-            ],
-          },
-        });
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          session.manualCategory = callbackData.replace('manual_category_', '');
+          session.manualAddStep = 'payer';
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(`Category: ${session.manualCategory}\n\nWho paid?`, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Bryan', callback_data: 'manual_payer_bryan' }],
+                [{ text: 'Hwei Yeen', callback_data: 'manual_payer_hweiyeen' }],
+              ],
+            },
+          });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in manual_category_:', error);
+        }
         return;
       }
 
       if (callbackData.startsWith('manual_payer_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -651,40 +723,53 @@ export class CallbackHandlers {
 
       // Receipt Callbacks
       if (callbackData.startsWith('confirm_receipt_')) {
-        await ctx.answerCbQuery("Loading...");
-        const receiptId = callbackData.replace('confirm_receipt_', '');
-        const pending = session.pendingReceipts?.[receiptId];
-        if (!pending) {
-          await ctx.reply('Error: Receipt data not found.');
-          return;
-        }
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const receiptId = callbackData.replace('confirm_receipt_', '');
+          const pending = session.pendingReceipts?.[receiptId];
+          if (!pending) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
+            await ctx.reply('Error: Receipt data not found.');
+            return;
+          }
 
-        const user = await prisma.user.findFirst({ where: { role: 'Bryan' } }); // Logic to determine payer or ask
-        if (user) {
-          await prisma.transaction.create({
-            data: {
-              amountSGD: pending.amount,
-              currency: pending.currency,
-              category: pending.category,
-              description: pending.merchant,
-              payerId: user.id,
-              date: getNow(),
-            },
-          });
-          await ctx.reply(`✅ Receipt from ${pending.merchant} recorded!`);
-          delete session.pendingReceipts[receiptId];
+          const user = await prisma.user.findFirst({ where: { role: 'Bryan' } }); // Logic to determine payer or ask
+          if (user) {
+            await prisma.transaction.create({
+              data: {
+                amountSGD: pending.amount,
+                currency: pending.currency,
+                category: pending.category,
+                description: pending.merchant,
+                payerId: user.id,
+                date: getNow(),
+              },
+            });
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
+            await ctx.reply(`✅ Receipt from ${pending.merchant} recorded!`);
+            delete session.pendingReceipts[receiptId];
+          }
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
         }
         return;
       }
 
       // Transaction view callback (from history list)
       if (callbackData.startsWith('tx_view_')) {
-        await ctx.answerCbQuery("Loading...");
-        const id = BigInt(callbackData.replace('tx_view_', ''));
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
+          const id = BigInt(callbackData.replace('tx_view_', ''));
           const transaction = await this.historyService.getTransactionById(id);
+          
           if (!transaction) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Transaction not found.');
             return;
           }
@@ -712,11 +797,13 @@ export class CallbackHandlers {
             { text: '« Back', callback_data: 'view_history' }
           ]);
 
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           await ctx.editMessageText(card, {
             parse_mode: 'Markdown',
             reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
           });
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           console.error('Error showing transaction detail:', error);
           await ctx.reply('❌ Error loading transaction. Please try again.');
         }
@@ -725,10 +812,11 @@ export class CallbackHandlers {
 
       // Transaction action callbacks
       if (callbackData.startsWith('tx_settle_')) {
-        await ctx.answerCbQuery("Loading...");
-        const id = BigInt(callbackData.replace('tx_settle_', ''));
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
+          const id = BigInt(callbackData.replace('tx_settle_', ''));
           await prisma.transaction.update({
             where: { id },
             data: { isSettled: true },
@@ -745,12 +833,14 @@ export class CallbackHandlers {
                 Markup.button.callback('🗑️ Delete', `tx_delete_${id}`),
               ],
             ];
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.editMessageText(card, {
               parse_mode: 'Markdown',
               reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
             });
           }
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           console.error('Error settling transaction:', error);
           await ctx.reply('❌ Error settling transaction. Please try again.');
         }
@@ -758,7 +848,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('tx_delete_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
@@ -776,19 +866,27 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('tx_edit_')) {
-        await ctx.answerCbQuery("Loading...");
-        const id = callbackData.replace('tx_edit_', '');
-        session.editingTxId = id;
-        session.editMode = 'ai_natural_language';
-        await ctx.reply('What would you like to change for this transaction?', {
-          reply_markup: { force_reply: true }
-        });
+        await ctx.answerCbQuery();
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const id = callbackData.replace('tx_edit_', '');
+          session.editingTxId = id;
+          session.editMode = 'ai_natural_language';
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('What would you like to change for this transaction?', {
+            reply_markup: { force_reply: true }
+          });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          console.error('Error in tx_edit_:', error);
+        }
         return;
       }
 
       // Handle undo expense
       if (callbackData.startsWith('undo_expense_')) {
-        await ctx.answerCbQuery("Processing...");
+        await ctx.answerCbQuery();
         const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
