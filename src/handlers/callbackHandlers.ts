@@ -23,7 +23,7 @@ export class CallbackHandlers {
     try {
       // Dashboard Navigation
       if (callbackData === 'back_to_dashboard') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         if (this.showDashboard) {
           await this.showDashboard(ctx, true);
         }
@@ -32,7 +32,7 @@ export class CallbackHandlers {
 
       // Menu Actions
       if (callbackData === 'settle_up' || callbackData === 'menu_settle') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
         
         if (balanceMessage.includes('settled')) {
@@ -57,7 +57,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'open_menu') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await ctx.editMessageText(
           '🛠️ **Tools Menu**\n\nSelect an option:',
           {
@@ -83,26 +83,26 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'view_history' || callbackData === 'menu_history') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await this.showHistoryView(ctx);
         return;
       }
 
       if (callbackData === 'menu_balance') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const message = await this.expenseService.getDetailedBalanceMessage();
         await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
       }
 
       if (callbackData === 'menu_history') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await this.showHistory(ctx, 0);
         return;
       }
 
       if (callbackData === 'menu_unsettled') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const pendingTransactions = await this.expenseService.getAllPendingTransactions();
         
         if (pendingTransactions.length === 0) {
@@ -123,7 +123,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_add') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         session.manualAddMode = true;
         session.manualAddStep = 'description';
         await ctx.reply('What is the description for the expense?', Markup.keyboard([['❌ Cancel']]).resize());
@@ -131,14 +131,14 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_search') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         session.searchMode = true;
         await ctx.reply('Type a keyword to search (e.g., "Grab" or "Sushi"):', Markup.keyboard([['❌ Cancel']]).resize());
         return;
       }
 
       if (callbackData === 'menu_reports') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await ctx.reply('Generating monthly report... At your service!');
         const report = await this.expenseService.getMonthlyReport(0);
         const reportDate = getMonthsAgo(0);
@@ -162,7 +162,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_recurring') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await ctx.reply(
           '🔄 **Recurring Expenses**\n\nSelect an option:',
           {
@@ -180,14 +180,14 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'recurring_view') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await this.showActiveRecurringExpenses(ctx);
         return;
       }
 
       // Recurring Add Wizard Callbacks
       if (callbackData === 'recurring_add_new') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         if (!session.recurringData) session.recurringData = {};
         session.recurringMode = true;
         session.recurringStep = 'description';
@@ -199,7 +199,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('recurring_add_payer_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const payerRole = callbackData.replace('recurring_add_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
         if (!session.recurringData) session.recurringData = {};
         session.recurringData.payer = payerRole;
@@ -230,7 +230,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'recurring_confirm') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         try {
           const { description, amount, day, payer } = session.recurringData || {};
           
@@ -340,7 +340,7 @@ export class CallbackHandlers {
 
       // Test recurring expense handler
       if (callbackData.startsWith('recurring_test_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         try {
           const recurringExpenseId = BigInt(callbackData.replace('recurring_test_', ''));
           
@@ -387,7 +387,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_edit_last') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const userId = BigInt(ctx.from.id);
         const lastTransaction = await prisma.transaction.findFirst({
           where: { payerId: userId },
@@ -420,7 +420,7 @@ export class CallbackHandlers {
 
       // Action Confirmation Callbacks
       if (callbackData === 'settle_confirm') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const result = await prisma.transaction.updateMany({
           where: { isSettled: false },
           data: { isSettled: true },
@@ -438,13 +438,13 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'settle_cancel') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await ctx.reply('Settlement cancelled.');
         return;
       }
 
       if (callbackData === 'recurring_cancel') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         // Clear recurring session state
         session.recurringMode = false;
         session.recurringStep = undefined;
@@ -458,13 +458,13 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'edit_last_cancel') {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         await ctx.editMessageText('Edit cancelled.');
         return;
       }
 
       if (callbackData.startsWith('edit_last_delete_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const id = BigInt(callbackData.replace('edit_last_delete_', ''));
         await prisma.transaction.delete({ where: { id } });
         await ctx.reply('🗑️ Transaction deleted.');
@@ -472,7 +472,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('history_load_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const offset = parseInt(callbackData.replace('history_load_', ''));
         await this.showHistory(ctx, offset);
         return;
@@ -480,7 +480,7 @@ export class CallbackHandlers {
 
       // Manual Add Callbacks
       if (callbackData.startsWith('manual_category_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         session.manualCategory = callbackData.replace('manual_category_', '');
         session.manualAddStep = 'payer';
         await ctx.reply(`Category: ${session.manualCategory}\n\nWho paid?`, {
@@ -495,7 +495,7 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('manual_payer_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const role = callbackData.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
         const user = await prisma.user.findFirst({ where: { role } });
         if (user) {
@@ -517,7 +517,7 @@ export class CallbackHandlers {
 
       // Receipt Callbacks
       if (callbackData.startsWith('confirm_receipt_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const receiptId = callbackData.replace('confirm_receipt_', '');
         const pending = session.pendingReceipts?.[receiptId];
         if (!pending) {
@@ -545,13 +545,13 @@ export class CallbackHandlers {
 
       // Transaction view callback (from history list)
       if (callbackData.startsWith('tx_view_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const id = BigInt(callbackData.replace('tx_view_', ''));
         
         try {
           const transaction = await this.historyService.getTransactionById(id);
           if (!transaction) {
-            await ctx.answerCbQuery('Transaction not found', { show_alert: true });
+            await ctx.reply('❌ Transaction not found.');
             return;
           }
 
@@ -584,14 +584,14 @@ export class CallbackHandlers {
           });
         } catch (error: any) {
           console.error('Error showing transaction detail:', error);
-          await ctx.answerCbQuery('Error loading transaction', { show_alert: true });
+          await ctx.reply('❌ Error loading transaction. Please try again.');
         }
         return;
       }
 
       // Transaction action callbacks
       if (callbackData.startsWith('tx_settle_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const id = BigInt(callbackData.replace('tx_settle_', ''));
         
         try {
@@ -618,13 +618,13 @@ export class CallbackHandlers {
           }
         } catch (error: any) {
           console.error('Error settling transaction:', error);
-          await ctx.answerCbQuery('Error settling transaction', { show_alert: true });
+          await ctx.reply('❌ Error settling transaction. Please try again.');
         }
         return;
       }
 
       if (callbackData.startsWith('tx_delete_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const id = BigInt(callbackData.replace('tx_delete_', ''));
         
         try {
@@ -633,13 +633,13 @@ export class CallbackHandlers {
           await ctx.reply('🗑️ Transaction deleted.');
         } catch (error: any) {
           console.error('Error deleting transaction:', error);
-          await ctx.answerCbQuery('Error deleting transaction', { show_alert: true });
+          await ctx.reply('❌ Error deleting transaction. Please try again.');
         }
         return;
       }
 
       if (callbackData.startsWith('tx_edit_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const id = callbackData.replace('tx_edit_', '');
         session.editingTxId = id;
         session.editMode = 'ai_natural_language';
@@ -651,7 +651,7 @@ export class CallbackHandlers {
 
       // Handle undo expense
       if (callbackData.startsWith('undo_expense_')) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery("Loading...");
         const transactionId = BigInt(callbackData.replace('undo_expense_', ''));
         try {
           await prisma.transaction.delete({ where: { id: transactionId } });
@@ -685,7 +685,6 @@ export class CallbackHandlers {
       if (transactions.length === 0) {
         const message = '📜 **Transaction History**\n\nNo transactions found.';
         if (ctx.callbackQuery) {
-          await ctx.answerCbQuery();
           try {
             await ctx.editMessageText(message, { parse_mode: 'Markdown' });
           } catch (editError) {
@@ -719,7 +718,6 @@ export class CallbackHandlers {
       const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
 
       if (ctx.callbackQuery) {
-        await ctx.answerCbQuery();
         try {
           await ctx.editMessageText(
             message,
@@ -750,7 +748,6 @@ export class CallbackHandlers {
         : 'Sorry, I encountered an error retrieving history. Please try again.';
       
       if (ctx.callbackQuery) {
-        await ctx.answerCbQuery('Error retrieving history', { show_alert: true });
         try {
           await ctx.editMessageText(errorMessage);
         } catch {
@@ -811,7 +808,7 @@ export class CallbackHandlers {
       });
     } catch (error: any) {
       console.error('Error showing history view:', error);
-      await ctx.answerCbQuery('Error loading history', { show_alert: true });
+      await ctx.reply('❌ Error loading history. Please try again.');
     }
   }
 
@@ -885,7 +882,7 @@ export class CallbackHandlers {
       }
     } catch (error: any) {
       console.error('Error showing active recurring expenses:', error);
-      await ctx.answerCbQuery('Error loading recurring expenses', { show_alert: true });
+      await ctx.reply('❌ Error loading recurring expenses. Please try again.');
     }
   }
 }

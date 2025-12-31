@@ -304,7 +304,7 @@ export class YBBTallyBot {
     }
     
     // Footer instruction
-    const footer = '\n\n👇 Quick Record: Send a photo or type \'5 Coffee\' (Amount first).';
+    const footer = '\n👇 Quick Record: Send a photo or type \'5 Coffee\' (Amount first).';
     
     return `${header}${activityFeed}${footer}`;
   }
