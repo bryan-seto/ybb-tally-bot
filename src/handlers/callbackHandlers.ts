@@ -11,7 +11,8 @@ export class CallbackHandlers {
   constructor(
     private expenseService: ExpenseService,
     private historyService: HistoryService,
-    private recurringExpenseService: RecurringExpenseService
+    private recurringExpenseService: RecurringExpenseService,
+    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
   ) {}
 
   async handleCallback(ctx: any) {
@@ -20,8 +21,17 @@ export class CallbackHandlers {
     const session = ctx.session;
 
     try {
+      // Dashboard Navigation
+      if (callbackData === 'back_to_dashboard') {
+        await ctx.answerCbQuery();
+        if (this.showDashboard) {
+          await this.showDashboard(ctx, true);
+        }
+        return;
+      }
+
       // Menu Actions
-      if (callbackData === 'menu_settle') {
+      if (callbackData === 'settle_up' || callbackData === 'menu_settle') {
         await ctx.answerCbQuery();
         const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
         
@@ -43,6 +53,38 @@ export class CallbackHandlers {
             parse_mode: 'Markdown',
           }
         );
+        return;
+      }
+
+      if (callbackData === 'open_menu') {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(
+          '🛠️ **Tools Menu**\n\nSelect an option:',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔍 Search', callback_data: 'menu_search' },
+                  { text: '📊 Reports', callback_data: 'menu_reports' },
+                ],
+                [
+                  { text: '🔄 Recurring', callback_data: 'menu_recurring' },
+                  { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
+                ],
+                [
+                  { text: '« Back', callback_data: 'back_to_dashboard' },
+                ],
+              ],
+            },
+            parse_mode: 'Markdown',
+          }
+        );
+        return;
+      }
+
+      if (callbackData === 'view_history' || callbackData === 'menu_history') {
+        await ctx.answerCbQuery();
+        await this.showHistoryView(ctx);
         return;
       }
 
@@ -340,8 +382,15 @@ export class CallbackHandlers {
           where: { isSettled: false },
           data: { isSettled: true },
         });
-        if (result.count > 0) await ctx.reply(`🤝 All Settled! Marked ${result.count} transactions as paid.`);
-        else await ctx.reply('✅ All expenses are already settled!');
+        if (result.count > 0) {
+          await ctx.reply(`🤝 All Settled! Marked ${result.count} transactions as paid.`);
+          // Return to dashboard after settlement
+          if (this.showDashboard) {
+            await this.showDashboard(ctx, false);
+          }
+        } else {
+          await ctx.reply('✅ All expenses are already settled!');
+        }
         return;
       }
 
@@ -447,6 +496,52 @@ export class CallbackHandlers {
           });
           await ctx.reply(`✅ Receipt from ${pending.merchant} recorded!`);
           delete session.pendingReceipts[receiptId];
+        }
+        return;
+      }
+
+      // Transaction view callback (from history list)
+      if (callbackData.startsWith('tx_view_')) {
+        await ctx.answerCbQuery();
+        const id = BigInt(callbackData.replace('tx_view_', ''));
+        
+        try {
+          const transaction = await this.historyService.getTransactionById(id);
+          if (!transaction) {
+            await ctx.answerCbQuery('Transaction not found', { show_alert: true });
+            return;
+          }
+
+          const card = this.historyService.formatTransactionDetail(transaction);
+          
+          // Build inline keyboard buttons
+          const keyboard: any[] = [];
+
+          // Only show "Settle Up" if transaction is unsettled
+          if (transaction.status === 'unsettled') {
+            keyboard.push([
+              Markup.button.callback('✅ Settle', `tx_settle_${id}`)
+            ]);
+          }
+
+          // Edit and Delete buttons
+          keyboard.push([
+            Markup.button.callback('✨ AI Edit', `tx_edit_${id}`),
+            Markup.button.callback('🗑️ Delete', `tx_delete_${id}`),
+          ]);
+
+          // Add back button
+          keyboard.push([
+            { text: '« Back', callback_data: 'view_history' }
+          ]);
+
+          await ctx.editMessageText(card, {
+            parse_mode: 'Markdown',
+            reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+          });
+        } catch (error: any) {
+          console.error('Error showing transaction detail:', error);
+          await ctx.answerCbQuery('Error loading transaction', { show_alert: true });
         }
         return;
       }
@@ -621,6 +716,59 @@ export class CallbackHandlers {
       } else {
         await ctx.reply(errorMessage);
       }
+    }
+  }
+
+  /**
+   * Show history view with inline buttons for last 5 transactions
+   */
+  private async showHistoryView(ctx: any) {
+    try {
+      const transactions = await this.historyService.getRecentTransactions(5, 0);
+
+      if (transactions.length === 0) {
+        const message = '📜 **Transaction History**\n\nNo transactions found.';
+        const keyboard = Markup.inlineKeyboard([
+          [{ text: '« Back', callback_data: 'back_to_dashboard' }],
+        ]);
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+        return;
+      }
+
+      // Build message
+      let message = '📜 **Transaction History**\n\n';
+      message += 'Tap a transaction to view details:\n\n';
+
+      // Build inline keyboard with transaction buttons
+      const keyboard: any[] = [];
+      
+      for (const tx of transactions) {
+        const dateStr = formatDate(tx.date, 'dd MMM');
+        const amountStr = tx.currency === 'SGD' ? `$${tx.amount.toFixed(2)}` : `${tx.currency} ${tx.amount.toFixed(2)}`;
+        const merchant = tx.merchant.length > 20 ? tx.merchant.substring(0, 20) + '...' : tx.merchant;
+        const buttonLabel = `${dateStr} - ${merchant} - ${amountStr}`;
+        
+        // Use tx_view_ callback to show transaction detail
+        keyboard.push([
+          Markup.button.callback(buttonLabel, `tx_view_${tx.id}`)
+        ]);
+      }
+
+      // Add back button
+      keyboard.push([
+        { text: '« Back', callback_data: 'back_to_dashboard' }
+      ]);
+
+      await ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard(keyboard).reply_markup,
+      });
+    } catch (error: any) {
+      console.error('Error showing history view:', error);
+      await ctx.answerCbQuery('Error loading history', { show_alert: true });
     }
   }
 }

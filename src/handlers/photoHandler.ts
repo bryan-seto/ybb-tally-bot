@@ -23,7 +23,8 @@ export class PhotoHandler {
 
   constructor(
     private aiService: AIService,
-    private expenseService: ExpenseService
+    private expenseService: ExpenseService,
+    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
   ) {}
 
   async handlePhoto(ctx: any) {
@@ -172,6 +173,11 @@ export class PhotoHandler {
       summary += `\n${balanceMessage}`;
 
       await ctx.telegram.sendMessage(chatId, summary, { parse_mode: 'Markdown' });
+
+      // Show fresh dashboard after expense save
+      if (this.showDashboard) {
+        await this.showDashboard(ctx, false);
+      }
 
     } catch (error: any) {
       console.error('Error processing batch:', error);

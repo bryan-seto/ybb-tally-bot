@@ -82,14 +82,24 @@ export class YBBTallyBot {
     this.analyticsService = new AnalyticsService();
     const recurringExpenseService = new RecurringExpenseService(this.expenseService);
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService, this.historyService);
-    this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
+    this.photoHandler = new PhotoHandler(
+      this.aiService, 
+      this.expenseService,
+      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
+    );
     this.messageHandlers = new MessageHandlers(
       this.expenseService, 
       this.aiService, 
       this.historyService,
-      () => this.botUsername
+      () => this.botUsername,
+      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
     );
-    this.callbackHandlers = new CallbackHandlers(this.expenseService, this.historyService, recurringExpenseService);
+    this.callbackHandlers = new CallbackHandlers(
+      this.expenseService, 
+      this.historyService, 
+      recurringExpenseService,
+      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
+    );
     this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
 
     // Setup session middleware (simple in-memory store)
@@ -226,45 +236,122 @@ export class YBBTallyBot {
   private getMainMenuKeyboard() {
     return Markup.inlineKeyboard([
       [
-        { text: '✅ Settle Up', callback_data: 'menu_settle' },
-        { text: '💰 Check Balance', callback_data: 'menu_balance' },
+        { text: '💸 Settle Up', callback_data: 'settle_up' },
+        { text: '📜 History', callback_data: 'view_history' },
       ],
       [
-        { text: '📜 History', callback_data: 'menu_history' },
-        { text: '🧾 View Unsettled', callback_data: 'menu_unsettled' },
-      ],
-      [
-        { text: '➕ Add Manual Expense', callback_data: 'menu_add' },
-        { text: '✏️ Edit Last', callback_data: 'menu_edit_last' },
-      ],
-      [
-        { text: '🔍 Search', callback_data: 'menu_search' },
-        { text: '🔄 Recurring', callback_data: 'menu_recurring' },
-      ],
-      [
-        { text: '📊 Reports', callback_data: 'menu_reports' },
-        { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
+        { text: '☰ Menu', callback_data: 'open_menu' },
       ],
     ]);
   }
 
   /**
-   * Show main menu
+   * Get random balance header from templates
    */
-  private async showMainMenu(ctx: any, message?: string) {
-    const greeting = getGreeting(ctx.from.id.toString());
-    const menuMessage = message || 
-      `👋 ${greeting}! I'm ready to track.\n\n` +
-      `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
-      `👇 Or tap a button below:`;
+  private async getRandomBalanceHeader(): Promise<string> {
+    const balance = await this.expenseService.calculateOutstandingBalance();
     
-    const keyboard = this.getMainMenuKeyboard();
+    // Handle settled state
+    if (balance.bryanOwes === 0 && balance.hweiYeenOwes === 0) {
+      return '🎉 All settled! Balance is $0.00';
+    }
+
+    // Get user names from config
+    const bryanName = USER_NAMES[USER_IDS.BRYAN] || 'Husband';
+    const hweiYeenName = USER_NAMES[USER_IDS.HWEI_YEEN] || 'Wife';
+
+    // Pick random template
+    const templates: string[] = [];
     
+    if (balance.bryanOwes > 0) {
+      templates.push(`📈 Scoreboard: ${hweiYeenName} is up by $${balance.bryanOwes.toFixed(2)}`);
+      templates.push(`👸 ${hweiYeenName} ➡️ 🤴 ${bryanName}: $${balance.bryanOwes.toFixed(2)}`);
+      templates.push(`🍪 Treat Status: ${bryanName} owes ${hweiYeenName} $${balance.bryanOwes.toFixed(2)}`);
+    } else if (balance.hweiYeenOwes > 0) {
+      templates.push(`📈 Scoreboard: ${bryanName} is up by $${balance.hweiYeenOwes.toFixed(2)}`);
+      templates.push(`🤴 ${bryanName} ➡️ 👸 ${hweiYeenName}: $${balance.hweiYeenOwes.toFixed(2)}`);
+      templates.push(`🍪 Treat Status: ${hweiYeenName} owes ${bryanName} $${balance.hweiYeenOwes.toFixed(2)}`);
+    }
+
+    if (templates.length === 0) {
+      return '💰 Balance Status';
+    }
+
+    const randomIndex = Math.floor(Math.random() * templates.length);
+    return templates[randomIndex];
+  }
+
+  /**
+   * Get dashboard message content
+   */
+  private async getDashboardMessage(): Promise<string> {
+    // Get random header
+    const header = await this.getRandomBalanceHeader();
+    
+    // Get last 3 transactions
+    const transactions = await this.historyService.getRecentTransactions(3, 0);
+    
+    // Build activity feed
+    let activityFeed = '';
+    if (transactions.length > 0) {
+      activityFeed = '\n\n📋 **Latest Activity:**\n';
+      for (const tx of transactions) {
+        const line = this.historyService.formatTransactionListItem(tx);
+        activityFeed += `${line}\n`;
+      }
+    } else {
+      activityFeed = '\n\n📋 **Latest Activity:**\nNo transactions yet.';
+    }
+    
+    // Footer instruction
+    const footer = '\n\n👇 Quick Record: Send a photo or type \'5 Coffee\' (Amount first).';
+    
+    return `${header}${activityFeed}${footer}`;
+  }
+
+  /**
+   * Show dashboard (Hub)
+   * @param ctx - Telegram context
+   * @param editMode - If true, use editMessageText; if false, use reply
+   */
+  async showDashboard(ctx: any, editMode: boolean = false) {
     try {
-      await ctx.reply(menuMessage, keyboard);
+      const dashboardMessage = await this.getDashboardMessage();
+      const keyboard = this.getMainMenuKeyboard();
+      
+      if (editMode) {
+        // Edit mode: for navigation (Back button)
+        if (ctx.callbackQuery) {
+          await ctx.answerCbQuery();
+        }
+        try {
+          await ctx.editMessageText(dashboardMessage, {
+            ...keyboard,
+            parse_mode: 'Markdown',
+          });
+        } catch (error: any) {
+          // If edit fails (e.g., message too old), send new message
+          console.error('Error editing dashboard message:', error);
+          await ctx.reply(dashboardMessage, {
+            ...keyboard,
+            parse_mode: 'Markdown',
+          });
+        }
+      } else {
+        // New message mode: for new inputs (text/photo)
+        await ctx.reply(dashboardMessage, {
+          ...keyboard,
+          parse_mode: 'Markdown',
+        });
+      }
     } catch (error: any) {
-      console.error('Error sending main menu:', error);
-      await ctx.reply(menuMessage);
+      console.error('Error showing dashboard:', error);
+      // Fallback: send simple message
+      try {
+        await ctx.reply('Dashboard loading...', this.getMainMenuKeyboard());
+      } catch (fallbackError) {
+        console.error('Error sending fallback dashboard:', fallbackError);
+      }
     }
   }
 
@@ -288,12 +375,8 @@ export class YBBTallyBot {
           create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
         });
 
-        // Show main menu automatically
-        await this.showMainMenu(ctx, 
-          `👋 I've been added to this group! I'm ready to track.\n\n` +
-          `📸 Quick Record: Simply send photos of your receipts or screenshots. I can handle single photos or a batch of them at once.\n\n` +
-          `👇 Or tap a button below:`
-        );
+        // Show dashboard automatically
+        await this.showDashboard(ctx, false);
       }
     });
 
@@ -307,7 +390,7 @@ export class YBBTallyBot {
           create: { key: 'primary_group_id', value: ctx.chat.id.toString() },
         });
         
-        await this.showMainMenu(ctx);
+        await this.showDashboard(ctx, false);
       } else {
         const greeting = getGreeting(ctx.from.id.toString());
         await ctx.reply(
@@ -317,11 +400,11 @@ export class YBBTallyBot {
       }
     });
 
-    // Help command - show main menu
-    this.bot.command('help', async (ctx) => await this.showMainMenu(ctx));
+    // Help command - show dashboard
+    this.bot.command('help', async (ctx) => await this.showDashboard(ctx, false));
 
-    // Menu command
-    this.bot.command('menu', async (ctx) => await this.showMainMenu(ctx));
+    // Menu command - show dashboard
+    this.bot.command('menu', async (ctx) => await this.showDashboard(ctx, false));
 
     // Balance command
     this.bot.command('balance', async (ctx) => await this.commandHandlers.handleBalance(ctx));
@@ -401,10 +484,7 @@ export class YBBTallyBot {
             });
             
             const groupTitle = (ctx.chat as any).title || 'this group';
-            await this.showMainMenu(ctx, 
-              `👋 I've been added to **${groupTitle}**!\n\n` +
-              `I'm ready to track expenses for everyone here. Simply send photos of your receipts or screenshots to get started!`
-            );
+            await this.showDashboard(ctx, false);
           }
         }
       } catch (error) {

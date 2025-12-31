@@ -15,7 +15,8 @@ export class MessageHandlers {
     private expenseService: ExpenseService,
     private aiService: AIService,
     private historyService: HistoryService,
-    private getBotUsername?: () => string
+    private getBotUsername?: () => string,
+    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
   ) {}
 
   async handleText(ctx: any) {
@@ -991,6 +992,11 @@ export class MessageHandlers {
           reply_markup: keyboard.reply_markup,
         }
       );
+
+      // Show fresh dashboard after expense save
+      if (this.showDashboard) {
+        await this.showDashboard(ctx, false);
+      }
     } catch (error: any) {
       console.error('Error handling quick expense:', error);
       if (statusMsg) {
