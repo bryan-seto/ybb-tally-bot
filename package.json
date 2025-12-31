@@ -15,6 +15,7 @@
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "db:reset": "docker-compose down && docker-compose up -d && sleep 2 && npx prisma migrate dev && npx prisma db seed",
+    "db:verify": "tsx scripts/verify-schema.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {

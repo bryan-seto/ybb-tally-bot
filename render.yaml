@@ -2,7 +2,7 @@ services:
   - type: web
     name: ybb-tally-bot
     env: node
-    buildCommand: npm ci && npm run build && npx prisma migrate deploy
+    buildCommand: npm ci && npm run build && npm run db:verify
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -14,7 +14,7 @@ services:
   - type: web
     name: ybb-tally-bot-staging
     env: node
-    buildCommand: npm ci && npm run build && npx prisma migrate deploy
+    buildCommand: npm ci && npm run build && npm run db:verify
     startCommand: npm start
     envVars:
       - key: NODE_ENV
