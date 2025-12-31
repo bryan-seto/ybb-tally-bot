@@ -355,8 +355,8 @@ export class CallbackHandlers {
             return;
           }
           
-          // Process the recurring expense immediately
-          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpense);
+          // Process the recurring expense immediately (force mode to bypass day-of-month and already-processed checks)
+          const result = await this.recurringExpenseService.processSingleRecurringExpense(recurringExpense, true);
           
           // Check if processing was successful
           if (!result) {
