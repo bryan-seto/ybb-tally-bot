@@ -15,6 +15,32 @@ export class CallbackHandlers {
     private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
   ) {}
 
+  /**
+   * Show loading message and return message ID
+   */
+  private async showLoadingMessage(ctx: any): Promise<number | null> {
+    try {
+      const loadingMsg = await ctx.reply('⏳ Loading...');
+      return loadingMsg.message_id;
+    } catch (error) {
+      console.error('Error sending loading message:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete loading message by message ID
+   */
+  private async deleteLoadingMessage(ctx: any, messageId: number | null): Promise<void> {
+    if (messageId) {
+      try {
+        await ctx.deleteMessage(messageId);
+      } catch (error) {
+        console.error('Error deleting loading message:', error);
+      }
+    }
+  }
+
   async handleCallback(ctx: any) {
     if (!ctx.session) ctx.session = {};
     const callbackData = ctx.callbackQuery.data;
@@ -32,27 +58,37 @@ export class CallbackHandlers {
 
       // Menu Actions
       if (callbackData === 'settle_up' || callbackData === 'menu_settle') {
-        await ctx.answerCbQuery("Loading...");
-        const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
         
-        if (balanceMessage.includes('settled')) {
-          await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
-          return;
-        }
-
-        await ctx.reply(
-          `${balanceMessage}\n\n` +
-          `Mark this as paid and reset balance to $0?`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
-                [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
-              ],
-            },
-            parse_mode: 'Markdown',
+        try {
+          const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
+          
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          
+          if (balanceMessage.includes('settled')) {
+            await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
+            return;
           }
-        );
+
+          await ctx.reply(
+            `${balanceMessage}\n\n` +
+            `Mark this as paid and reset balance to $0?`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
+                  [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
+                ],
+              },
+              parse_mode: 'Markdown',
+            }
+          );
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
@@ -89,9 +125,18 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_balance') {
-        await ctx.answerCbQuery("Loading...");
-        const message = await this.expenseService.getDetailedBalanceMessage();
-        await ctx.reply(message, { parse_mode: 'Markdown' });
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const message = await this.expenseService.getDetailedBalanceMessage();
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
@@ -102,23 +147,33 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_unsettled') {
-        await ctx.answerCbQuery("Loading...");
-        const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
         
-        if (pendingTransactions.length === 0) {
-          await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
-          return;
+        try {
+          const pendingTransactions = await this.expenseService.getAllPendingTransactions();
+          
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          
+          if (pendingTransactions.length === 0) {
+            await ctx.reply('✅ All expenses are settled! No unsettled transactions.');
+            return;
+          }
+          
+          const last10 = pendingTransactions.slice(0, 10);
+          let message = `🧾 **Unsettled Transactions**\n\n`;
+          last10.forEach((t, index) => {
+            const dateStr = formatDate(t.date, 'dd MMM yyyy');
+            message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+          });
+          message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
+          
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
         }
-        
-        const last10 = pendingTransactions.slice(0, 10);
-        let message = `🧾 **Unsettled Transactions**\n\n`;
-        last10.forEach((t, index) => {
-          const dateStr = formatDate(t.date, 'dd MMM yyyy');
-          message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
-        });
-        message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
-        
-        await ctx.reply(message, { parse_mode: 'Markdown' });
         return;
       }
 
@@ -138,44 +193,61 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_reports') {
-        await ctx.answerCbQuery("Loading...");
-        await ctx.reply('Generating monthly report... At your service!');
-        const report = await this.expenseService.getMonthlyReport(0);
-        const reportDate = getMonthsAgo(0);
-        const monthName = formatDate(reportDate, 'MMMM yyyy');
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const report = await this.expenseService.getMonthlyReport(0);
+          const reportDate = getMonthsAgo(0);
+          const monthName = formatDate(reportDate, 'MMMM yyyy');
 
-        const chart = new QuickChart();
-        chart.setConfig({
-          type: 'bar',
-          data: {
-            labels: report.topCategories.map((c) => c.category),
-            datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-          },
-        });
-        chart.setWidth(800);
-        chart.setHeight(400);
-        const chartUrl = chart.getUrl();
+          const chart = new QuickChart();
+          chart.setConfig({
+            type: 'bar',
+            data: {
+              labels: report.topCategories.map((c) => c.category),
+              datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
+            },
+          });
+          chart.setWidth(800);
+          chart.setHeight(400);
+          const chartUrl = chart.getUrl();
 
-        const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
-        await ctx.reply(message, { parse_mode: 'Markdown' });
+          const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(message, { parse_mode: 'Markdown' });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
       if (callbackData === 'menu_recurring') {
-        await ctx.answerCbQuery("Loading...");
-        await ctx.reply(
-          '🔄 **Recurring Expenses**\n\nSelect an option:',
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '➕ Add New', callback_data: 'recurring_add_new' }],
-                [{ text: '📋 View Active', callback_data: 'recurring_view' }],
-                [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
-              ],
-            },
-            parse_mode: 'Markdown',
-          }
-        );
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(
+            '🔄 **Recurring Expenses**\n\nSelect an option:',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '➕ Add New', callback_data: 'recurring_add_new' }],
+                  [{ text: '📋 View Active', callback_data: 'recurring_view' }],
+                  [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
+                ],
+              },
+              parse_mode: 'Markdown',
+            }
+          );
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
@@ -199,42 +271,54 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('recurring_add_payer_')) {
-        await ctx.answerCbQuery("Loading...");
-        const payerRole = callbackData.replace('recurring_add_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
-        if (!session.recurringData) session.recurringData = {};
-        session.recurringData.payer = payerRole;
-        session.recurringStep = 'confirm';
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const payerRole = callbackData.replace('recurring_add_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+          if (!session.recurringData) session.recurringData = {};
+          session.recurringData.payer = payerRole;
+          session.recurringStep = 'confirm';
 
-        const { description, amount, day, payer } = session.recurringData;
-        const user = await prisma.user.findFirst({ where: { role: payerRole } });
-        const payerName = user ? USER_NAMES[user.id.toString()] || payerRole : payerRole;
+          const { description, amount, day, payer } = session.recurringData;
+          const user = await prisma.user.findFirst({ where: { role: payerRole } });
+          const payerName = user ? USER_NAMES[user.id.toString()] || payerRole : payerRole;
 
-        const summary = 
-          `📋 **Recurring Expense Summary**\n\n` +
-          `Description: ${description}\n` +
-          `Amount: SGD $${amount?.toFixed(2)}\n` +
-          `Day of month: ${day}\n` +
-          `Payer: ${payerName}\n\n` +
-          `Confirm to save?`;
+          const summary = 
+            `📋 **Recurring Expense Summary**\n\n` +
+            `Description: ${description}\n` +
+            `Amount: SGD $${amount?.toFixed(2)}\n` +
+            `Day of month: ${day}\n` +
+            `Payer: ${payerName}\n\n` +
+            `Confirm to save?`;
 
-        await ctx.reply(summary, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '✅ Confirm', callback_data: 'recurring_confirm' }],
-              [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
-            ],
-          },
-          parse_mode: 'Markdown',
-        });
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply(summary, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ Confirm', callback_data: 'recurring_confirm' }],
+                [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
+              ],
+            },
+            parse_mode: 'Markdown',
+          });
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
       if (callbackData === 'recurring_confirm') {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
         try {
           const { description, amount, day, payer } = session.recurringData || {};
           
           if (!description || !amount || !day || !payer) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: Missing required information. Please start over.');
             session.recurringMode = false;
             session.recurringStep = undefined;
@@ -245,6 +329,7 @@ export class CallbackHandlers {
           // Validate and convert day to number if needed
           const dayOfMonth = typeof day === 'number' ? day : parseInt(String(day));
           if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: Invalid day of month. Please start over.');
             session.recurringMode = false;
             session.recurringStep = undefined;
@@ -255,6 +340,7 @@ export class CallbackHandlers {
           // Validate amount
           const amountValue = typeof amount === 'number' ? amount : parseFloat(String(amount));
           if (isNaN(amountValue) || amountValue <= 0) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: Invalid amount. Please start over.');
             session.recurringMode = false;
             session.recurringStep = undefined;
@@ -267,6 +353,7 @@ export class CallbackHandlers {
           });
 
           if (!user) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: User not found in database.');
             session.recurringMode = false;
             session.recurringStep = undefined;
@@ -288,6 +375,7 @@ export class CallbackHandlers {
           const nextRunDate = getNextRecurringDate(dayOfMonth);
           const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
 
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           await ctx.reply(
             `✅ Recurring expense added!\n\n` +
             `Description: ${description}\n` +
@@ -312,6 +400,7 @@ export class CallbackHandlers {
           session.recurringStep = undefined;
           session.recurringData = undefined;
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           console.error('Error adding recurring expense:', error);
           console.error('Error details:', {
             code: error.code,
@@ -340,7 +429,9 @@ export class CallbackHandlers {
 
       // Test recurring expense handler
       if (callbackData.startsWith('recurring_test_')) {
-        await ctx.answerCbQuery("Loading...");
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
         try {
           const recurringExpenseId = BigInt(callbackData.replace('recurring_test_', ''));
           
@@ -351,6 +442,7 @@ export class CallbackHandlers {
           });
           
           if (!recurringExpense) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: Recurring expense not found.');
             return;
           }
@@ -360,6 +452,7 @@ export class CallbackHandlers {
           
           // Check if processing was successful
           if (!result) {
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
             await ctx.reply('❌ Error: Unable to process recurring expense (may have already been processed today).');
             return;
           }
@@ -378,8 +471,10 @@ export class CallbackHandlers {
           message += `${result.message}\n\n`;
           message += `✅ This expense is active and will trigger again on ${nextRunDateStr}.`;
           
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           await ctx.reply(message, { parse_mode: 'Markdown' });
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           console.error('Error testing recurring expense:', error);
           await ctx.reply(`❌ Error testing recurring expense: ${error.message || 'Unknown error'}`);
         }
@@ -387,52 +482,73 @@ export class CallbackHandlers {
       }
 
       if (callbackData === 'menu_edit_last') {
-        await ctx.answerCbQuery("Loading...");
-        const userId = BigInt(ctx.from.id);
-        const lastTransaction = await prisma.transaction.findFirst({
-          where: { payerId: userId },
-          orderBy: { createdAt: 'desc' },
-          include: { payer: true },
-        });
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const userId = BigInt(ctx.from.id);
+          const lastTransaction = await prisma.transaction.findFirst({
+            where: { payerId: userId },
+            orderBy: { createdAt: 'desc' },
+            include: { payer: true },
+          });
 
-        if (!lastTransaction) {
-          await ctx.reply('No transactions found. Record an expense first!');
-          return;
-        }
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
 
-        const dateStr = formatDate(lastTransaction.date, 'dd MMM yyyy');
-        await ctx.reply(
-          `You last recorded: ${lastTransaction.description || 'No description'} - $${lastTransaction.amountSGD.toFixed(2)} - ${lastTransaction.category || 'Other'}\n` +
-          `Date: ${dateStr}\n` +
-          `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
-          `What would you like to edit?`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
-                [{ text: '🔙 Cancel', callback_data: `edit_last_cancel` }],
-              ],
-            },
+          if (!lastTransaction) {
+            await ctx.reply('No transactions found. Record an expense first!');
+            return;
           }
-        );
+
+          const dateStr = formatDate(lastTransaction.date, 'dd MMM yyyy');
+          await ctx.reply(
+            `You last recorded: ${lastTransaction.description || 'No description'} - $${lastTransaction.amountSGD.toFixed(2)} - ${lastTransaction.category || 'Other'}\n` +
+            `Date: ${dateStr}\n` +
+            `Paid by: ${USER_NAMES[lastTransaction.payer.id.toString()] || lastTransaction.payer.role}\n\n` +
+            `What would you like to edit?`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🗑️ Delete', callback_data: `edit_last_delete_${lastTransaction.id}` }],
+                  [{ text: '🔙 Cancel', callback_data: `edit_last_cancel` }],
+                ],
+              },
+            }
+          );
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
       // Action Confirmation Callbacks
       if (callbackData === 'settle_confirm') {
-        await ctx.answerCbQuery("Loading...");
-        const result = await prisma.transaction.updateMany({
-          where: { isSettled: false },
-          data: { isSettled: true },
-        });
-        if (result.count > 0) {
-          await ctx.reply(`🤝 All Settled! Marked ${result.count} transactions as paid.`);
-          // Return to dashboard after settlement
-          if (this.showDashboard) {
-            await this.showDashboard(ctx, false);
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const result = await prisma.transaction.updateMany({
+            where: { isSettled: false },
+            data: { isSettled: true },
+          });
+          
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          
+          if (result.count > 0) {
+            await ctx.reply(`🤝 All Settled! Marked ${result.count} transactions as paid.`);
+            // Return to dashboard after settlement
+            if (this.showDashboard) {
+              await this.showDashboard(ctx, false);
+            }
+          } else {
+            await ctx.reply('✅ All expenses are already settled!');
           }
-        } else {
-          await ctx.reply('✅ All expenses are already settled!');
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
         }
         return;
       }
@@ -464,10 +580,19 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('edit_last_delete_')) {
-        await ctx.answerCbQuery("Loading...");
-        const id = BigInt(callbackData.replace('edit_last_delete_', ''));
-        await prisma.transaction.delete({ where: { id } });
-        await ctx.reply('🗑️ Transaction deleted.');
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const id = BigInt(callbackData.replace('edit_last_delete_', ''));
+          await prisma.transaction.delete({ where: { id } });
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('🗑️ Transaction deleted.');
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
+        }
         return;
       }
 
@@ -495,23 +620,32 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('manual_payer_')) {
-        await ctx.answerCbQuery("Loading...");
-        const role = callbackData.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
-        const user = await prisma.user.findFirst({ where: { role } });
-        if (user) {
-          await prisma.transaction.create({
-            data: {
-              amountSGD: session.manualAmount || 0,
-              currency: 'SGD',
-              category: session.manualCategory || 'Other',
-              description: session.manualDescription || '',
-              payerId: user.id,
-              date: getNow(),
-            },
-          });
-          await ctx.reply(`✅ Recorded $${session.manualAmount?.toFixed(2)} paid by ${role}.`, Markup.removeKeyboard());
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
+        try {
+          const role = callbackData.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+          const user = await prisma.user.findFirst({ where: { role } });
+          if (user) {
+            await prisma.transaction.create({
+              data: {
+                amountSGD: session.manualAmount || 0,
+                currency: 'SGD',
+                category: session.manualCategory || 'Other',
+                description: session.manualDescription || '',
+                payerId: user.id,
+                date: getNow(),
+              },
+            });
+            await this.deleteLoadingMessage(ctx, loadingMsgId);
+            await ctx.reply(`✅ Recorded $${session.manualAmount?.toFixed(2)} paid by ${role}.`, Markup.removeKeyboard());
+          }
+          session.manualAddMode = false;
+        } catch (error) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
         }
-        session.manualAddMode = false;
         return;
       }
 
@@ -624,14 +758,17 @@ export class CallbackHandlers {
       }
 
       if (callbackData.startsWith('tx_delete_')) {
-        await ctx.answerCbQuery("Loading...");
-        const id = BigInt(callbackData.replace('tx_delete_', ''));
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
         
         try {
+          const id = BigInt(callbackData.replace('tx_delete_', ''));
           await prisma.transaction.delete({ where: { id } });
           await ctx.deleteMessage();
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           await ctx.reply('🗑️ Transaction deleted.');
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           console.error('Error deleting transaction:', error);
           await ctx.reply('❌ Error deleting transaction. Please try again.');
         }
@@ -651,18 +788,23 @@ export class CallbackHandlers {
 
       // Handle undo expense
       if (callbackData.startsWith('undo_expense_')) {
-        await ctx.answerCbQuery("Loading...");
-        const transactionId = BigInt(callbackData.replace('undo_expense_', ''));
+        await ctx.answerCbQuery("Processing...");
+        const loadingMsgId = await this.showLoadingMessage(ctx);
+        
         try {
+          const transactionId = BigInt(callbackData.replace('undo_expense_', ''));
           await prisma.transaction.delete({ where: { id: transactionId } });
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           await ctx.editMessageText('❌ Expense cancelled.');
         } catch (error: any) {
+          await this.deleteLoadingMessage(ctx, loadingMsgId);
           // Handle double-tap: Record already deleted (P2025)
           if (error.code === 'P2025') {
             await ctx.editMessageText('❌ Expense already cancelled.');
             return;
           }
-          throw error; // Re-throw other errors
+          await ctx.reply('❌ An error occurred.');
+          console.error(error);
         }
         return;
       }
