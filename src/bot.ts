@@ -5,6 +5,7 @@ import { ExpenseService } from './services/expenseService';
 import { HistoryService } from './services/historyService';
 import { BackupService } from './services/backupService';
 import { RecurringExpenseService } from './services/recurringExpenseService';
+import { AnalyticsService } from './services/analyticsService';
 import { formatDate } from './utils/dateHelpers';
 import { prisma } from './lib/prisma';
 import { CONFIG, USER_NAMES, USER_IDS } from './config';
@@ -64,6 +65,7 @@ export class YBBTallyBot {
   private expenseService: ExpenseService;
   private historyService: HistoryService;
   private backupService: BackupService;
+  private analyticsService: AnalyticsService;
   private commandHandlers: CommandHandlers;
   private photoHandler: PhotoHandler;
   private messageHandlers: MessageHandlers;
@@ -77,8 +79,9 @@ export class YBBTallyBot {
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
+    this.analyticsService = new AnalyticsService();
     const recurringExpenseService = new RecurringExpenseService(this.expenseService);
-    this.commandHandlers = new CommandHandlers(this.expenseService);
+    this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService, this.historyService);
     this.photoHandler = new PhotoHandler(this.aiService, this.expenseService);
     this.messageHandlers = new MessageHandlers(
       this.expenseService, 
@@ -349,14 +352,13 @@ export class YBBTallyBot {
     });
 
     // History command
-    this.bot.command('history', async (ctx) => {
-      try {
-        await this.callbackHandlers.showHistory(ctx, 0);
-      } catch (error: any) {
-        console.error('Error showing history:', error);
-        await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
-      }
-    });
+    this.bot.command('history', async (ctx) => await this.commandHandlers.handleHistory(ctx));
+
+    // Detailed balance command
+    this.bot.command('detailedBalance', async (ctx) => await this.commandHandlers.handleDetailedBalance(ctx));
+
+    // Fixed command (admin only - for error recovery)
+    this.bot.command('fixed', async (ctx) => await this.commandHandlers.handleFixed(ctx));
 
     // Recurring expense command - now redirects to menu
     this.bot.command('recurring', async (ctx) => {

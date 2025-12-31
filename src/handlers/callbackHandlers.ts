@@ -4,7 +4,7 @@ import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
 import { RecurringExpenseService } from '../services/recurringExpenseService';
 import { USER_NAMES } from '../config';
-import { getNow, getMonthsAgo, formatDate, getNextRecurringDate, getOrdinalSuffix } from '../utils/dateHelpers';
+import { getNow, getMonthsAgo, formatDate, getNextRecurringDate } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
 
 export class CallbackHandlers {

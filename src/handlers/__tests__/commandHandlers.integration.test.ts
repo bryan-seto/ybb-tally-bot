@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CommandHandlers } from '../commandHandlers';
 import { ExpenseService } from '../../services/expenseService';
 import { AnalyticsService } from '../../services/analyticsService';
+import { HistoryService } from '../../services/historyService';
 import { prisma } from '../../lib/prisma';
 import { USER_IDS } from '../../config';
 
@@ -29,12 +30,14 @@ describe('CommandHandlers - Regression Tests', () => {
   let commandHandlers: CommandHandlers;
   let expenseService: ExpenseService;
   let analyticsService: AnalyticsService;
+  let historyService: HistoryService;
 
   beforeEach(() => {
     vi.clearAllMocks();
     expenseService = new ExpenseService();
     analyticsService = new AnalyticsService();
-    commandHandlers = new CommandHandlers(expenseService, analyticsService);
+    historyService = new HistoryService();
+    commandHandlers = new CommandHandlers(expenseService, analyticsService, historyService);
   });
 
   describe('/balance command', () => {
@@ -84,102 +87,6 @@ describe('CommandHandlers - Regression Tests', () => {
       const calledMessage = mockCtx.reply.mock.calls[0][0];
       expect(calledMessage).toContain('Hwei Yeen owes Bryan');
       expect(calledMessage).toContain('30.00');
-    });
-  });
-
-  describe('/recurring command', () => {
-    it('should parse and create recurring expense with quoted description', async () => {
-      const mockCtx = {
-        message: { text: '/recurring add "Internet Bill" 50 15 bryan' },
-        from: { id: '123' },
-        reply: vi.fn().mockResolvedValue({}),
-      };
-
-      const mockUser = { id: BigInt(1), role: 'Bryan' };
-      vi.mocked(prisma.user.findFirst).mockResolvedValue(mockUser as any);
-      vi.mocked(prisma.recurringExpense.create).mockResolvedValue({
-        id: BigInt(1),
-        description: 'Internet Bill',
-        amountOriginal: 50,
-        dayOfMonth: 15,
-      } as any);
-
-      await commandHandlers.handleRecurring(mockCtx as any);
-
-      expect(prisma.recurringExpense.create).toHaveBeenCalledWith({
-        data: {
-          description: 'Internet Bill',
-          amountOriginal: 50,
-          payerId: BigInt(1),
-          dayOfMonth: 15,
-          isActive: true,
-        },
-      });
-
-      expect(mockCtx.reply).toHaveBeenCalledWith(
-        expect.stringContaining('✅ Recurring expense added')
-      );
-    });
-
-    it('should handle smart quotes from iPhone', async () => {
-      const mockCtx = {
-        message: { text: '/recurring add "Internet Bill" 50 15 bryan' },
-        from: { id: '123' },
-        reply: vi.fn().mockResolvedValue({}),
-      };
-
-      const mockUser = { id: BigInt(1), role: 'Bryan' };
-      vi.mocked(prisma.user.findFirst).mockResolvedValue(mockUser as any);
-      vi.mocked(prisma.recurringExpense.create).mockResolvedValue({} as any);
-
-      await commandHandlers.handleRecurring(mockCtx as any);
-
-      expect(prisma.recurringExpense.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            description: 'Internet Bill',
-          }),
-        })
-      );
-    });
-
-    it('should reject invalid payer name', async () => {
-      const mockCtx = {
-        message: { text: '/recurring add "Test" 10 15 invalid' },
-        from: { id: '123' },
-        reply: vi.fn().mockResolvedValue({}),
-      };
-
-      await commandHandlers.handleRecurring(mockCtx as any);
-
-      expect(mockCtx.reply).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid payer')
-      );
-      expect(prisma.recurringExpense.create).not.toHaveBeenCalled();
-    });
-
-    it('should parse unquoted single-word descriptions', async () => {
-      const mockCtx = {
-        message: { text: '/recurring add Netflix 15.99 1 hweiyeen' },
-        from: { id: '123' },
-        reply: vi.fn().mockResolvedValue({}),
-      };
-
-      const mockUser = { id: BigInt(2), role: 'HweiYeen' };
-      vi.mocked(prisma.user.findFirst).mockResolvedValue(mockUser as any);
-      vi.mocked(prisma.recurringExpense.create).mockResolvedValue({} as any);
-
-      await commandHandlers.handleRecurring(mockCtx as any);
-
-      expect(prisma.recurringExpense.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            description: 'Netflix',
-            amountOriginal: 15.99,
-            dayOfMonth: 1,
-          }),
-        })
-      );
     });
   });
 

@@ -1,13 +1,17 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
+import { AnalyticsService } from '../services/analyticsService';
+import { HistoryService } from '../services/historyService';
 import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
-import { USER_NAMES, CONFIG } from '../config';
+import { USER_NAMES, CONFIG, USER_IDS } from '../config';
 
 export class CommandHandlers {
   constructor(
-    private expenseService: ExpenseService
+    private expenseService: ExpenseService,
+    private analyticsService: AnalyticsService,
+    private historyService?: HistoryService
   ) {}
 
   async handleBalance(ctx: Context) {
@@ -147,6 +151,124 @@ export class CommandHandlers {
     } catch (error: any) {
       console.error('Error generating report:', error);
       await ctx.reply('Error generating report.');
+    }
+  }
+
+  async handleFixed(ctx: Context) {
+    // Security check: Only allow founder (Bryan) to execute
+    const userId = ctx.from?.id?.toString();
+    if (userId !== USER_IDS.BRYAN) {
+      return; // Silently ignore if not founder
+    }
+
+    try {
+      // Retrieve broken_groups from settings
+      const setting = await prisma.settings.findUnique({
+        where: { key: 'broken_groups' },
+      });
+
+      if (!setting || !setting.value || setting.value.trim() === '') {
+        await ctx.reply('✅ No broken groups to notify. All systems operational!');
+        return;
+      }
+
+      const groupIds = setting.value.split(',').filter(id => id.trim() !== '');
+      
+      if (groupIds.length === 0) {
+        await ctx.reply('✅ No broken groups to notify. All systems operational!');
+        return;
+      }
+
+      // Broadcast resolution message to all broken groups
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const groupId of groupIds) {
+        try {
+          await ctx.telegram.sendMessage(
+            groupId.trim(),
+            `✅ **Issue Resolved**\n\n` +
+            `The bot is back online and fully operational. Thank you for your patience!`,
+            { parse_mode: 'Markdown' }
+          );
+          successCount++;
+        } catch (error: any) {
+          console.error(`Failed to send message to group ${groupId}:`, error);
+          failCount++;
+        }
+      }
+
+      // Clear the broken_groups setting
+      await prisma.settings.update({
+        where: { key: 'broken_groups' },
+        data: { value: '' },
+      });
+
+      // Reply to admin with summary
+      const summary = `✅ **Successfully broadcasted fix notification**\n\n` +
+        `• Groups notified: ${successCount}\n` +
+        (failCount > 0 ? `• Failed: ${failCount}\n` : '') +
+        `• Broken groups list cleared.`;
+      
+      await ctx.reply(summary, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      console.error('Error handling /fixed command:', error);
+      await ctx.reply('❌ Error processing /fixed command. Please try again.');
+    }
+  }
+
+  async handleHistory(ctx: Context) {
+    if (!this.historyService) {
+      await ctx.reply('History service not available.');
+      return;
+    }
+
+    try {
+      const transactions = await this.historyService.getRecentTransactions(20, 0);
+      const totalCount = await this.historyService.getTotalTransactionCount();
+
+      if (transactions.length === 0) {
+        await ctx.reply('📜 **Transaction History**\n\nNo transactions found.', { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Build the list message
+      const lines = ['📜 **Transaction History**\n'];
+      
+      for (const tx of transactions) {
+        const line = this.historyService.formatTransactionListItem(tx);
+        lines.push(line);
+      }
+
+      const message = lines.join('\n');
+
+      // Add pagination button if there are more transactions
+      const keyboard: any[] = [];
+      if (20 < totalCount) {
+        keyboard.push([
+          Markup.button.callback('⬇️ Load More', `history_load_20`)
+        ]);
+      }
+
+      const replyMarkup = keyboard.length > 0 ? Markup.inlineKeyboard(keyboard) : undefined;
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        reply_markup: replyMarkup?.reply_markup,
+      });
+    } catch (error: any) {
+      console.error('Error showing history:', error);
+      await ctx.reply('Sorry, I encountered an error retrieving history. Please try again.');
+    }
+  }
+
+  async handleDetailedBalance(ctx: Context) {
+    try {
+      const detailedBalanceMessage = await this.expenseService.getDetailedBalanceMessage();
+      await ctx.reply(detailedBalanceMessage, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      console.error('Error getting detailed balance:', error);
+      await ctx.reply('Sorry, I encountered an error retrieving detailed balance. Please try again.');
     }
   }
 }

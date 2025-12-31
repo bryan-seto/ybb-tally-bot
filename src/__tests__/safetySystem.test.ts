@@ -60,7 +60,6 @@ vi.mock('@sentry/node', () => ({
 }));
 
 vi.mock('../services/ai');
-vi.mock('../services/analyticsService');
 vi.mock('../services/expenseService');
 vi.mock('../services/historyService');
 vi.mock('../services/backupService');
@@ -124,6 +123,9 @@ describe('Safety System - /fixed Broadcast Command', () => {
   it('should only allow founder to trigger /fixed', async () => {
     // Find the /fixed command handler
     const fixedCall = mockTelegrafInstance.command.mock.calls.find((call: any) => call[0] === 'fixed');
+    if (!fixedCall) {
+      throw new Error('/fixed command not registered');
+    }
     const handler = fixedCall[1];
 
     const mockCtx = {
@@ -137,10 +139,14 @@ describe('Safety System - /fixed Broadcast Command', () => {
 
   it('should broadcast resolution message to all broken groups', async () => {
     const fixedCall = mockTelegrafInstance.command.mock.calls.find((call: any) => call[0] === 'fixed');
+    if (!fixedCall) {
+      throw new Error('/fixed command not registered');
+    }
     const handler = fixedCall[1];
 
     const mockCtx = {
       from: { id: USER_IDS.BRYAN },
+      telegram: mockTelegrafInstance.telegram,
       reply: vi.fn().mockResolvedValue({}),
     };
 
@@ -157,6 +163,10 @@ describe('Safety System - /fixed Broadcast Command', () => {
       where: { key: 'broken_groups' },
       data: { value: '' }
     });
-    expect(mockCtx.reply).toHaveBeenCalledWith(expect.stringContaining('Successfully broadcasted'));
+    
+    // Verify reply was called with success message
+    expect(mockCtx.reply).toHaveBeenCalled();
+    const replyCall = mockCtx.reply.mock.calls[0];
+    expect(replyCall[0]).toContain('Successfully broadcasted fix notification');
   });
 });
