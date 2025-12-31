@@ -89,7 +89,6 @@ export class YBBTallyBot {
   private expenseService: ExpenseService;
   private historyService: HistoryService;
   private backupService: BackupService;
-  private recurringExpenseService: RecurringExpenseService;
   private commandHandlers: CommandHandlers;
   private photoHandler: PhotoHandler;
   private messageHandlers: MessageHandlers;
