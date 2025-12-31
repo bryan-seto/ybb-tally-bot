@@ -23,16 +23,6 @@ function getGreeting(userId: string): string {
 
 // Session data interface
 interface BotSession {
-  receiptData?: {
-    amount: number;
-    currency: string;
-    merchant?: string;
-    date?: string;
-    category?: string;
-    individualAmounts?: number[];
-    merchants?: string[];
-    categories?: string[];
-  };
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
@@ -53,21 +43,6 @@ interface BotSession {
   editLastTransactionId?: bigint;
   searchMode?: boolean;
   pendingReceipts?: { [key: string]: any };
-}
-
-interface PendingReceiptData {
-  receiptData: {
-    amount: number;
-    currency: string;
-    merchant?: string;
-    date?: string;
-    category?: string;
-    individualAmounts?: number[];
-    merchants?: string[];
-    categories?: string[];
-  };
-  chatId: number;
-  userId: bigint;
 }
 
 interface PendingPhoto {
@@ -94,7 +69,6 @@ export class YBBTallyBot {
   private messageHandlers: MessageHandlers;
   private callbackHandlers: CallbackHandlers;
   private allowedUserIds: Set<string>;
-  private pendingReceipts: Map<string, PendingReceiptData> = new Map(); // receiptId -> receiptData
   private botUsername: string = '';
 
   constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
@@ -292,13 +266,6 @@ export class YBBTallyBot {
   }
 
   /**
-   * Strip emoji from category name
-   */
-  private stripEmoji(category: string): string {
-    return category.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
-  }
-
-  /**
    * Setup all bot commands
    */
   private setupCommands(): void {
@@ -403,53 +370,6 @@ export class YBBTallyBot {
       );
     });
   }
-
-
-  /**
-   * Start manual add flow
-   */
-  private async startManualAdd(ctx: any) {
-    if (!ctx.session) ctx.session = {};
-    ctx.session.manualAddMode = true;
-    ctx.session.manualAddStep = 'description';
-    await ctx.reply(
-      'What is the description?',
-      Markup.keyboard([['❌ Cancel']]).resize()
-    );
-  }
-
-
-  /**
-   * Show recurring menu
-   */
-  private async showRecurringMenu(ctx: any) {
-    await ctx.reply(
-      '🔄 **Recurring Expenses**\n\nSelect an option:',
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '📋 View Active', callback_data: 'recurring_view' }],
-            [{ text: '❌ Cancel', callback_data: 'recurring_cancel' }],
-          ],
-        },
-        parse_mode: 'Markdown',
-      }
-    );
-  }
-
-
-  /**
-   * Start search flow
-   */
-  private async startSearch(ctx: any) {
-    if (!ctx.session) ctx.session = {};
-    ctx.session.searchMode = true;
-    await ctx.reply(
-      'Type a keyword (e.g., "Grab" or "Sushi"):',
-      Markup.keyboard([['❌ Cancel']]).resize()
-    );
-  }
-
 
   /**
    * Setup message handlers
