@@ -179,6 +179,12 @@ export class CallbackHandlers {
         return;
       }
 
+      if (callbackData === 'recurring_view') {
+        await ctx.answerCbQuery();
+        await this.showActiveRecurringExpenses(ctx);
+        return;
+      }
+
       // Recurring Add Wizard Callbacks
       if (callbackData === 'recurring_add_new') {
         await ctx.answerCbQuery();
@@ -806,6 +812,80 @@ export class CallbackHandlers {
     } catch (error: any) {
       console.error('Error showing history view:', error);
       await ctx.answerCbQuery('Error loading history', { show_alert: true });
+    }
+  }
+
+  /**
+   * Show active recurring expenses list
+   */
+  private async showActiveRecurringExpenses(ctx: any) {
+    try {
+      const recurringExpenses = await prisma.recurringExpense.findMany({
+        where: { isActive: true },
+        include: { payer: true },
+        orderBy: { dayOfMonth: 'asc' },
+      });
+
+      if (recurringExpenses.length === 0) {
+        const message = '🔄 **Active Recurring Expenses**\n\nNo active recurring expenses found.';
+        const keyboard = Markup.inlineKeyboard([
+          [{ text: '« Back', callback_data: 'menu_recurring' }],
+        ]);
+        
+        if (ctx.callbackQuery) {
+          await ctx.editMessageText(message, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else {
+          await ctx.reply(message, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        }
+        return;
+      }
+
+      // Build message with all active recurring expenses
+      let message = '🔄 **Active Recurring Expenses**\n\n';
+      
+      for (const expense of recurringExpenses) {
+        const payerName = USER_NAMES[expense.payer.id.toString()] || expense.payer.name;
+        const nextRunDate = getNextRecurringDate(expense.dayOfMonth);
+        const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy');
+        
+        message += `• **${expense.description}**\n`;
+        message += `  Amount: SGD $${expense.amountOriginal.toFixed(2)}\n`;
+        message += `  Payer: ${payerName}\n`;
+        message += `  Day of month: ${expense.dayOfMonth}\n`;
+        message += `  Next run: ${nextRunDateStr}\n`;
+        
+        if (expense.lastProcessedDate) {
+          const lastProcessedStr = formatDate(expense.lastProcessedDate, 'dd MMM yyyy');
+          message += `  Last processed: ${lastProcessedStr}\n`;
+        }
+        
+        message += '\n';
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [{ text: '« Back', callback_data: 'menu_recurring' }],
+      ]);
+
+      if (ctx.callbackQuery) {
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      } else {
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error showing active recurring expenses:', error);
+      await ctx.answerCbQuery('Error loading recurring expenses', { show_alert: true });
     }
   }
 }
