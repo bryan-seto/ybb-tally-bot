@@ -236,6 +236,26 @@ export class CallbackHandlers {
             return;
           }
 
+          // Validate and convert day to number if needed
+          const dayOfMonth = typeof day === 'number' ? day : parseInt(String(day));
+          if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
+            await ctx.reply('❌ Error: Invalid day of month. Please start over.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
+          // Validate amount
+          const amountValue = typeof amount === 'number' ? amount : parseFloat(String(amount));
+          if (isNaN(amountValue) || amountValue <= 0) {
+            await ctx.reply('❌ Error: Invalid amount. Please start over.');
+            session.recurringMode = false;
+            session.recurringStep = undefined;
+            session.recurringData = undefined;
+            return;
+          }
+
           const user = await prisma.user.findFirst({
             where: { role: payer as 'Bryan' | 'HweiYeen' },
           });
@@ -250,27 +270,27 @@ export class CallbackHandlers {
 
           const recurringExpense = await prisma.recurringExpense.create({
             data: {
-              description,
-              amountOriginal: amount,
+              description: String(description).trim(),
+              amountOriginal: amountValue,
               payerId: user.id,
-              dayOfMonth: day,
+              dayOfMonth: dayOfMonth,
               isActive: true,
             },
           });
 
           const payerName = USER_NAMES[user.id.toString()] || payer;
-          const nextRunDate = getNextRecurringDate(day);
+          const nextRunDate = getNextRecurringDate(dayOfMonth);
           const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy \'at\' HH:mm \'SGT\'');
 
           await ctx.reply(
             `✅ Recurring expense added!\n\n` +
             `Description: ${description}\n` +
-            `Amount: SGD $${amount.toFixed(2)}\n` +
-            `Day of month: ${day}\n` +
+            `Amount: SGD $${amountValue.toFixed(2)}\n` +
+            `Day of month: ${dayOfMonth}\n` +
             `Payer: ${payerName}\n\n` +
             `📅 **Next Run:** ${nextRunDateStr}\n` +
             `🆔 **ID:** ${recurringExpense.id.toString()}\n\n` +
-            `Will create transaction: **${description}** - SGD $${amount.toFixed(2)} (Bills, FULL split)`,
+            `Will create transaction: **${description}** - SGD $${amountValue.toFixed(2)} (Bills, FULL split)`,
             {
               reply_markup: {
                 inline_keyboard: [
@@ -287,7 +307,24 @@ export class CallbackHandlers {
           session.recurringData = undefined;
         } catch (error: any) {
           console.error('Error adding recurring expense:', error);
-          await ctx.reply('❌ Sorry, I encountered an error adding the recurring expense. Please try again.');
+          console.error('Error details:', {
+            code: error.code,
+            meta: error.meta,
+            message: error.message,
+            sessionData: session.recurringData,
+          });
+          
+          // Provide more specific error message
+          let errorMessage = '❌ Sorry, I encountered an error adding the recurring expense. Please try again.';
+          if (error.code === 'P2002') {
+            errorMessage = '❌ Error: A recurring expense with these details already exists.';
+          } else if (error.code === 'P2003') {
+            errorMessage = '❌ Error: Invalid payer reference. Please try again.';
+          } else if (error.message) {
+            errorMessage = `❌ Error: ${error.message}`;
+          }
+          
+          await ctx.reply(errorMessage);
           session.recurringMode = false;
           session.recurringStep = undefined;
           session.recurringData = undefined;
