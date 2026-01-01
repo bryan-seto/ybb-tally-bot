@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "test": "vitest run",
+    "test:e2e": "vitest run src/__tests__/e2e/critical-flows.test.ts",
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "db:reset": "docker-compose down && docker-compose up -d && sleep 2 && npx prisma migrate dev && npx prisma db seed",
@@ -52,6 +53,7 @@
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.5.0",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.16",
+    "vitest-mock-extended": "^3.1.0"
   }
 }

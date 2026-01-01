@@ -202,6 +202,40 @@ npm start
 npm run prisma:studio
 ```
 
+## Testing
+
+### E2E Testing
+
+We use a real database integration strategy for critical flows. The E2E test suite covers the top 5 critical user flows with full integration testing (handlers → services → database).
+
+**Setup:**
+- Ensure your test database is running (uses `TEST_DATABASE_URL` or a test database derived from `DATABASE_URL`)
+- The tests use a real PostgreSQL database (matching production schema)
+
+**Run:**
+```bash
+npm run test:e2e
+```
+
+**Test Coverage:**
+- Flow 1: Record Expense via Receipt Photo (with 10s batching window)
+- Flow 2: Record Expense via Quick Text Input
+- Flow 3: View Balance and Settle Up
+- Flow 4: View Transaction History and Details
+- Flow 5: Edit/Correct Transactions (AI-powered)
+
+**Architecture:**
+- Real PostgreSQL database (no mocks)
+- Mocked AI service (deterministic responses)
+- Mocked Telegram API
+- Fake timers for async flows
+- Complete integration testing
+
+**Unit Tests:**
+```bash
+npm test
+```
+
 ## Deployment
 
 The bot includes a keep-alive HTTP server for Render.com deployment:
