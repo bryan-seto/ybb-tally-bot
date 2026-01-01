@@ -321,7 +321,7 @@ export class YBBTallyBot {
     }
     
     // Footer instruction
-    const footer = '\n👇 **Quick Record:** Send a photo or type \'5 Coffee\'.\n💡 **Tip:** Type \'edit /ID [change]\' to fix a mistake!';
+    const footer = '\n👇 **Quick Record:** Send a photo or type \'5 Coffee\'.\n💡 **Tip:** Made a mistake? Type \'edit /15 20\' to change amount, or \'edit /15 lunch\' to change description.';
     
     return `${header}${activityFeed}${footer}`;
   }

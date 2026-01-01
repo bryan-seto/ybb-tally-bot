@@ -334,5 +334,175 @@ describe('AIService', () => {
       expect(result.actions[0].statusMessage).toBe('Processing...');
     });
   });
+
+  describe('parseEditIntent', () => {
+    const mockCurrentTransaction = {
+      description: 'Coffee',
+      amount: 10.0,
+      category: 'Food',
+      date: '2025-01-01',
+    };
+
+    it('should parse numeric instruction as amount update', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          amount: 20,
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('20', mockCurrentTransaction);
+
+      expect(result.amount).toBe(20);
+      expect(result.description).toBeUndefined();
+      expect(result.category).toBeUndefined();
+    });
+
+    it('should parse amount with dollar sign', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          amount: 25.50,
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('$25.50', mockCurrentTransaction);
+
+      expect(result.amount).toBe(25.50);
+    });
+
+    it('should parse text instruction as description update', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          description: 'lunch',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('lunch', mockCurrentTransaction);
+
+      expect(result.description).toBe('lunch');
+      expect(result.amount).toBeUndefined();
+    });
+
+    it('should parse multi-word description', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          description: 'coffee and pastries',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('coffee and pastries', mockCurrentTransaction);
+
+      expect(result.description).toBe('coffee and pastries');
+    });
+
+    it('should parse category instruction', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          category: 'Transport',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('Transport', mockCurrentTransaction);
+
+      expect(result.category).toBe('Transport');
+    });
+
+    it('should parse multiple fields', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          amount: 20,
+          description: 'lunch',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('20 lunch', mockCurrentTransaction);
+
+      expect(result.amount).toBe(20);
+      expect(result.description).toBe('lunch');
+    });
+
+    it('should handle invalid JSON response', async () => {
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: {
+          text: () => 'Not a JSON response',
+        },
+      });
+
+      await expect(
+        aiService.parseEditIntent('20', mockCurrentTransaction)
+      ).rejects.toThrow();
+    });
+
+    it('should filter out invalid values (negative amount)', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          amount: -10, // Invalid
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('-10', mockCurrentTransaction);
+
+      expect(result.amount).toBeUndefined();
+    });
+
+    it('should filter out invalid values (empty description)', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          description: '',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('', mockCurrentTransaction);
+
+      expect(result.description).toBeUndefined();
+    });
+
+    it('should trim description strings', async () => {
+      const mockResponse = {
+        text: () => JSON.stringify({
+          description: '  lunch  ',
+        }),
+      };
+
+      mockModel.generateContent.mockResolvedValueOnce({
+        response: mockResponse,
+      });
+
+      const result = await aiService.parseEditIntent('lunch', mockCurrentTransaction);
+
+      expect(result.description).toBe('lunch');
+    });
+  });
 });
 

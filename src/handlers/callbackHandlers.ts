@@ -1028,7 +1028,7 @@ export class CallbackHandlers {
       message += transactionLines.join('\n');
 
       // Add footer tip
-      message += '\n\n💡 **Tip:** To fix a mistake, just type \'edit /ID\' followed by the change (e.g., \'edit /15 20\').';
+      message += '\n\n💡 **Tip:** Tap an ID to view details. To edit: type \'edit /15 20\' (change amount) or \'edit /15 lunch\' (change name).';
 
       // Single back button
       const keyboard = Markup.inlineKeyboard([

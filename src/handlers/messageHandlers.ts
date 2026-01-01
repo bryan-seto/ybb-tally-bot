@@ -52,10 +52,50 @@ export class MessageHandlers {
       // Handle edit command (after transaction ID parsing, before quick expense)
       const editMatch = text.match(/^edit\s+\/?(\d+)\s+(.+)$/i);
       if (editMatch) {
+        let statusMsg: any = null;
         try {
+          // Show initial loading message
+          statusMsg = await ctx.reply('⏳ Processing edit...', { parse_mode: 'HTML' });
+
           const editService = new EditService(this.aiService);
           const userId = BigInt(ctx.from.id);
+
+          // Update status before AI processing
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              '⏳ Understanding your change...',
+              { parse_mode: 'HTML' }
+            );
+          } catch (e) {
+            // Ignore edit errors, continue anyway
+          }
+
           const result = await editService.processEditCommand(userId, text);
+
+          // Update status before final result
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              '⏳ Updating transaction...',
+              { parse_mode: 'HTML' }
+            );
+          } catch (e) {
+            // Ignore edit errors, continue anyway
+          }
+
+          // Delete loading message before showing result
+          if (statusMsg) {
+            try {
+              await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+            } catch (e) {
+              // Ignore delete errors
+            }
+          }
 
           if (result.success && result.transaction && result.changes && result.changes.length > 0) {
             // Format diff view message
@@ -84,6 +124,14 @@ export class MessageHandlers {
           return;
         } catch (error: any) {
           console.error('Error handling edit command:', error);
+          // Cleanup loading message on error
+          if (statusMsg) {
+            try {
+              await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+            } catch (e) {
+              // Ignore delete errors
+            }
+          }
           await ctx.reply('❌ Sorry, something went wrong while processing your edit request.');
           return;
         }

@@ -86,7 +86,13 @@ export class EditService {
       // 4. AI Processing
       const aiResult = await this.aiService.parseEditIntent(instruction, miniDTO);
 
-      if (!aiResult || (!aiResult.amount && !aiResult.description && !aiResult.category)) {
+      // Check if AI returned any valid fields (check for undefined, not falsy)
+      const hasValidFields = 
+        (aiResult.amount !== undefined && typeof aiResult.amount === 'number') ||
+        (aiResult.description !== undefined && typeof aiResult.description === 'string') ||
+        (aiResult.category !== undefined && typeof aiResult.category === 'string');
+
+      if (!aiResult || !hasValidFields) {
         return {
           success: false,
           message: '❌ Sorry, I couldn\'t understand what to change. Try: "edit /15 20" or "edit /15 lunch"',
