@@ -97,29 +97,43 @@ export class MessageHandlers {
             }
           }
 
-          if (result.success && result.transaction && result.changes && result.changes.length > 0) {
-            // Format diff view message
-            let diffMessage = `✅ **Updated /${editMatch[1]}**\n\n`;
-            result.changes.forEach((change) => {
-              if (change.field === 'amountSGD') {
-                // change.old and change.new are already numbers (converted via .toNumber())
-                diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
-              } else if (change.field === 'description') {
-                diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
-              } else if (change.field === 'category') {
-                diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
-              }
-            });
+          if (result.success && result.transaction) {
+            // Check if we have changes to show in diff view
+            if (result.changes && result.changes.length > 0) {
+              // Format diff view message
+              let diffMessage = `✅ **Updated /${editMatch[1]}**\n\n`;
+              result.changes.forEach((change) => {
+                if (change.field === 'amountSGD') {
+                  // change.old and change.new are already numbers
+                  diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
+                } else if (change.field === 'description') {
+                  diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
+                } else if (change.field === 'category') {
+                  diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
+                }
+              });
 
-            await ctx.reply(diffMessage, { parse_mode: 'Markdown' });
+              await ctx.reply(diffMessage, { parse_mode: 'Markdown' });
+            } else {
+              // Fallback: show generic success message if no changes array (shouldn't happen)
+              console.warn('[handleText] Edit succeeded but no changes array. Result:', JSON.stringify(result));
+              await ctx.reply(result.message || `✅ Updated transaction /${editMatch[1]}`, { parse_mode: 'Markdown' });
+            }
 
-            // Refresh dashboard
+            // Refresh dashboard (always refresh if edit succeeded)
             if (this.showDashboard) {
-              await this.showDashboard(ctx, false);
+              try {
+                await this.showDashboard(ctx, false);
+              } catch (dashboardError: any) {
+                console.error('[handleText] Error refreshing dashboard after edit:', dashboardError);
+                // Don't fail the edit operation if dashboard refresh fails
+              }
+            } else {
+              console.warn('[handleText] showDashboard is not available for dashboard refresh');
             }
           } else {
             // Error case
-            await ctx.reply(result.message || '❌ Sorry, I couldn\'t update that transaction.');
+            await ctx.reply(result.message || '❌ Sorry, I couldn\'t update that transaction.', { parse_mode: 'Markdown' });
           }
           return;
         } catch (error: any) {

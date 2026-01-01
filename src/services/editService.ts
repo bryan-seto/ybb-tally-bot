@@ -132,13 +132,15 @@ export class EditService {
 
       // 7. Calculate Diff
       const changes: Array<{ field: string; old: number | string; new: number | string }> = [];
+      const EPSILON = 0.001; // For floating point comparison
 
       if (aiResult.amount !== undefined) {
         // amountSGD is Float in schema, so it's already a number
         const oldAmount = Number(originalTransaction.amountSGD);
         const newAmount = Number(updatedTransaction.amountSGD);
 
-        if (oldAmount !== newAmount) {
+        // Include in diff if values actually differ (accounting for floating point precision)
+        if (Math.abs(oldAmount - newAmount) > EPSILON) {
           changes.push({
             field: 'amountSGD',
             old: oldAmount,
@@ -151,6 +153,7 @@ export class EditService {
         const oldDesc = originalTransaction.description || '';
         const newDesc = updatedTransaction.description || '';
 
+        // Include in diff if values actually differ
         if (oldDesc !== newDesc) {
           changes.push({
             field: 'description',
@@ -164,6 +167,7 @@ export class EditService {
         const oldCat = originalTransaction.category || '';
         const newCat = updatedTransaction.category || '';
 
+        // Include in diff if values actually differ
         if (oldCat !== newCat) {
           changes.push({
             field: 'category',
@@ -171,6 +175,11 @@ export class EditService {
             new: newCat,
           });
         }
+      }
+
+      // Log warning if changes array is empty after update (helps debug missing diff views)
+      if (changes.length === 0 && (aiResult.amount !== undefined || aiResult.description !== undefined || aiResult.category !== undefined)) {
+        console.warn('[EditService] Warning: changes array is empty after successful update. aiResult:', JSON.stringify(aiResult), 'This may indicate values did not actually change.');
       }
 
       return {
