@@ -143,3 +143,15 @@ export function getNameByUserId(userId: string): string {
   return 'Unknown';
 }
 
+// --- DEBUG: CONFIG VERIFICATION ---
+console.log('🔍 [CONFIG DIAGNOSTIC] Loading Configuration...');
+console.log(`✅ USER_A_NAME (Env): "${process.env.USER_A_NAME}"`);
+console.log(`✅ USER_A_NAME (Resolved): "${getUserAName()}"`);
+console.log(`✅ USER_B_NAME (Env): "${process.env.USER_B_NAME}"`);
+console.log(`✅ USER_B_NAME (Resolved): "${getUserBName()}"`);
+console.log(`✅ USER_A_ID (Env): "${process.env.USER_A_ID}"`);
+console.log(`✅ USER_A_ID (Resolved): "${getUserAId()}"`);
+console.log(`✅ USER_B_ID (Env): "${process.env.USER_B_ID}"`);
+console.log(`✅ USER_B_ID (Resolved): "${getUserBId()}"`);
+// ----------------------------------
+

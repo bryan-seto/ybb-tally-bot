@@ -5,7 +5,7 @@ import { AnalyticsService } from '../services/analyticsService';
 import { HistoryService } from '../services/historyService';
 import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
 import QuickChart from 'quickchart-js';
-import { USER_NAMES, CONFIG, USER_IDS } from '../config';
+import { USER_NAMES, CONFIG, USER_IDS, getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 
 export class CommandHandlers {
   constructor(
@@ -28,20 +28,28 @@ export class CommandHandlers {
         return;
       }
 
+      // Get dynamic names from config
+      const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+      const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+
       let message = `📋 **All Pending Transactions (${pendingTransactions.length}):**\n\n`;
       
       pendingTransactions.forEach((t, index) => {
         const dateStr = formatDate(t.date, 'dd MMM yyyy');
         message += `${index + 1}. **${t.description}**\n`;
         message += `   Amount: SGD $${t.amount.toFixed(2)}\n`;
-        message += `   Paid by: ${t.payerName}\n`;
+        
+        // Map database payer name to config name using role
+        const payerDisplayName = t.payerRole === USER_A_ROLE_KEY ? userAName : userBName;
+        message += `   Paid by: ${payerDisplayName}\n`;
+        
         message += `   Category: ${t.category}\n`;
         message += `   Date: ${dateStr}\n`;
         
         if (t.bryanOwes > 0) {
-          message += `   💰 Bryan owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
+          message += `   💰 ${userAName} owes: SGD $${t.bryanOwes.toFixed(2)}\n`;
         } else if (t.hweiYeenOwes > 0) {
-          message += `   💰 Hwei Yeen owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
+          message += `   💰 ${userBName} owes: SGD $${t.hweiYeenOwes.toFixed(2)}\n`;
         }
         
         message += '\n';
