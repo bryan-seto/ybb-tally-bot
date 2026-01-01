@@ -8,7 +8,7 @@ import { RecurringExpenseService } from './services/recurringExpenseService';
 import { AnalyticsService } from './services/analyticsService';
 import { formatDate } from './utils/dateHelpers';
 import { prisma } from './lib/prisma';
-import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId } from './config';
+import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId, getUserNameByRole } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
 import { PhotoHandler } from './handlers/photoHandler';
 import { MessageHandlers } from './handlers/messageHandlers';
