@@ -1,41 +1,86 @@
-cat <<'EOF' > .cursorrules
 # 🧠 META-INSTRUCTIONS
-- **Model Preference:** Use 'auto' (standard) model context. Be concise but thorough.
+- **Model Preference:** Use 'auto' (standard) model context. Be concise, thorough, and code-focused.
 - **Timezone:** Current context is `Asia/Singapore`. Use `date-fns-tz` for date operations.
 
-# 📝 CODING WORKFLOW (The "Think First" Protocol)
-Before writing or changing any code:
-1. **The Plan:** Output a brief plan detailing your thoughts, context, and the files you intend to touch.
-2. **Test Strategy:** Identify if this change requires new tests or updates to existing ones.
-   - *Rule:* Always add/update tests for logic changes and bug fixes.
-   - *Rule:* Only refactor tests if the feature behavior changes (avoid unnecessary churn).
-   - *Rule:* Include Test Strategy in the plan at (1)
+# 🚦 PHASE 1: THE PLAN ("Think First" Protocol)
+**Trigger:** Before writing any code or when I ask for a feature.
+**Action:** You MUST output a structured plan. Do not write code yet.
 
-3. **Docs:** If this adds a new command/feature, flag `README.md` or `USER_GUIDE.md` for update.
+1. **The Context:** Briefly state the goal and "Why".
+2. **File Strategy:** List files to create/modify.
+3. **Test Strategy:**
+   - *Rule:* Always add/update tests for logic changes.
+   - *Rule:* If refactoring, ensure existing tests cover regressions.
+4. **Docs Check:** (For later) Note if `USER_GUIDE.md` *will* need updates (but do not update it yet).
 
-> Wait for my confirmation on the plan if the change is complex. Otherwise, proceed.
+> **WAIT:** Stop here and wait for my "Go" or confirmation.
 
-# 🧪 TESTING PROTOCOL
-- **Automated:** Run unit tests (`npm test` or equivalent) to ensure logic is sound.
-- **Manual Verification:** AFTER coding, prompt me strictly:
-  > "Please manually verify this on the Telegram Staging Bot: https://web.telegram.org/k/#-3370162727"
+# 🧪 PHASE 2: EXECUTION & LOCAL TDD
+**Trigger:** After I approve the plan.
+**Action:**
 
-# 🚀 DEPLOYMENT & GIT WORKFLOW
-# Trigger: When I say "push", "deploy", "ship it", or "release"
+1. **Test First:** If new logic is needed, write the Unit Test file *first*.
+2. **Implement:** Write the feature code.
+3. **Verify:** ALWAYS output the terminal command to run the specific test (e.g., `npm test src/path/to/test.ts`).
+   - *Constraint:* Do not assume success. Ask me to run it.
 
-## STEP 1: THE PRE-FLIGHT PLAN
-Before running git commands, output this block:
-1. **Goal:** [Business intent]
-2. **Files:** [Files to stage]
-3. **Tests:** [Command to run]
-4. **Commit Message:** [Draft message focusing on "Why", not "What"]
-5. **Target:** [Staging vs Production]
+# 🕵️ PHASE 3: STAGING DEPLOYMENT
+**Trigger:** When I say "Push to Staging" or "Ship to Staging".
+**Action:**
 
-## STEP 2: EXECUTION
-1. Run the test command.
-   - IF FAIL: Stop.
-   - IF PASS: Proceed.
-2. `git add .`
-3. `git commit -m "THE_APPROVED_MESSAGE"`
-4. `git push origin [TARGET_BRANCH]`
-EOF
+1. **Git Sequence:** Output this exact block:
+   ```bash
+   git add .
+   git commit -m "feat: [Concise Description]"
+   git push origin staging
+
+```
+
+2. **Verification Prompt:** Immediately output the Manual Verification Block:
+> **🕵️ Staging Smoke Tests (Step-by-Step):**
+
+
+> 1. [Exact Step 1: e.g., "Send 'edit /15 20' to bot"]
+> 2. [Exact Step 2: e.g., "Check Dashboard for $20 update"]
+> 3. [Exact Step 3: e.g., "Try invalid ID '/999' - expect error"]
+> 
+> 
+
+
+> Please manually verify this on the Telegram Staging Bot: https://web.telegram.org/k/#-3370162727
+
+
+
+# 🚀 PHASE 4: PRODUCTION RELEASE
+
+**Trigger:** When I say "Deploy to Prod" or "Release".
+**Action:**
+
+1. **Docs Update (Conditional):**
+* **IF** `USER_GUIDE.md` was modified during the feature work, output: `git add USER_GUIDE.md && git commit -m "docs: Update User Guide"`
+* **IF NOT**, skip this step (do not create empty commits).
+
+
+2. **Git Sequence (One-Shot):** Output this exact block to sync Staging → Prod:
+```bash
+# Merge Staging to Main (Prod)
+git checkout main
+git pull origin main
+git merge staging
+git push origin main
+
+# Return to Staging
+git checkout staging
+
+```
+
+
+3. **Final Report:**
+"🚀 Production Deploy Triggered. Render should now see the push to main. I have switched you back to the staging branch."
+
+# 🚫 STRICT GUIDELINES
+
+* Never skip the "Phase 1: Plan" step. Even for small changes, think first.
+* Never update `USER_GUIDE.md` in Staging. Only in Phase 4.
+* Never use Regex for JSON parsing.
+* Always include specific data/commands in the Staging Smoke Tests (e.g., don't say "Test edit", say "Type edit /15 50").

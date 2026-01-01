@@ -52,38 +52,100 @@ export class MessageHandlers {
       // Handle edit command (after transaction ID parsing, before quick expense)
       const editMatch = text.match(/^edit\s+\/?(\d+)\s+(.+)$/i);
       if (editMatch) {
+        let statusMsg: any = null;
         try {
+          // Show initial loading message
+          statusMsg = await ctx.reply('⏳ Processing edit...', { parse_mode: 'HTML' });
+
           const editService = new EditService(this.aiService);
           const userId = BigInt(ctx.from.id);
+
+          // Update status before AI processing
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              '⏳ Understanding your change...',
+              { parse_mode: 'HTML' }
+            );
+          } catch (e) {
+            // Ignore edit errors, continue anyway
+          }
+
           const result = await editService.processEditCommand(userId, text);
 
-          if (result.success && result.transaction && result.changes && result.changes.length > 0) {
-            // Format diff view message
-            let diffMessage = `✅ **Updated /${editMatch[1]}**\n\n`;
-            result.changes.forEach((change) => {
-              if (change.field === 'amountSGD') {
-                // change.old and change.new are already numbers (converted via .toNumber())
-                diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
-              } else if (change.field === 'description') {
-                diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
-              } else if (change.field === 'category') {
-                diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
-              }
-            });
+          // Update status before final result
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              '⏳ Updating transaction...',
+              { parse_mode: 'HTML' }
+            );
+          } catch (e) {
+            // Ignore edit errors, continue anyway
+          }
 
-            await ctx.reply(diffMessage, { parse_mode: 'Markdown' });
+          // Delete loading message before showing result
+          if (statusMsg) {
+            try {
+              await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+            } catch (e) {
+              // Ignore delete errors
+            }
+          }
 
-            // Refresh dashboard
+          if (result.success && result.transaction) {
+            // Check if we have changes to show in diff view
+            if (result.changes && result.changes.length > 0) {
+              // Format diff view message
+              let diffMessage = `✅ **Updated /${editMatch[1]}**\n\n`;
+              result.changes.forEach((change) => {
+                if (change.field === 'amountSGD') {
+                  // change.old and change.new are already numbers
+                  diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
+                } else if (change.field === 'description') {
+                  diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
+                } else if (change.field === 'category') {
+                  diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
+                }
+              });
+
+              await ctx.reply(diffMessage, { parse_mode: 'Markdown' });
+            } else {
+              // Fallback: show generic success message if no changes array (shouldn't happen)
+              console.warn('[handleText] Edit succeeded but no changes array. Result:', JSON.stringify(result));
+              await ctx.reply(result.message || `✅ Updated transaction /${editMatch[1]}`, { parse_mode: 'Markdown' });
+            }
+
+            // Refresh dashboard (always refresh if edit succeeded)
             if (this.showDashboard) {
-              await this.showDashboard(ctx, false);
+              try {
+                await this.showDashboard(ctx, false);
+              } catch (dashboardError: any) {
+                console.error('[handleText] Error refreshing dashboard after edit:', dashboardError);
+                // Don't fail the edit operation if dashboard refresh fails
+              }
+            } else {
+              console.warn('[handleText] showDashboard is not available for dashboard refresh');
             }
           } else {
             // Error case
-            await ctx.reply(result.message || '❌ Sorry, I couldn\'t update that transaction.');
+            await ctx.reply(result.message || '❌ Sorry, I couldn\'t update that transaction.', { parse_mode: 'Markdown' });
           }
           return;
         } catch (error: any) {
           console.error('Error handling edit command:', error);
+          // Cleanup loading message on error
+          if (statusMsg) {
+            try {
+              await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id);
+            } catch (e) {
+              // Ignore delete errors
+            }
+          }
           await ctx.reply('❌ Sorry, something went wrong while processing your edit request.');
           return;
         }
