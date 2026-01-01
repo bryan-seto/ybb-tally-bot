@@ -5,7 +5,7 @@ import { AIService, CorrectionAction } from '../services/ai';
 import { HistoryService, TransactionDetail } from '../services/historyService';
 import { EditService } from '../services/editService';
 import { formatDate, getNow } from '../utils/dateHelpers';
-import { USER_NAMES } from '../config';
+import { USER_NAMES, getUserAName, getUserBName, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { format, parseISO } from 'date-fns';
 
@@ -312,8 +312,8 @@ export class MessageHandlers {
       await ctx.reply(`Day of month: ${day}\n\nWho pays for this expense?`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: 'Bryan', callback_data: 'recurring_add_payer_bryan' }],
-            [{ text: 'Hwei Yeen', callback_data: 'recurring_add_payer_hweiyeen' }],
+            [{ text: getUserAName(), callback_data: 'recurring_add_payer_bryan' }],
+            [{ text: getUserBName(), callback_data: 'recurring_add_payer_hweiyeen' }],
           ],
         },
       });
@@ -422,7 +422,7 @@ export class MessageHandlers {
           // Don't set updatedTransaction for DELETE actions
           results.push(`🗑️ Deleted "${deleted.description}"`);
         } else if (step.action === 'UPDATE_PAYER' && step.transactionId && step.data?.payerKey) {
-          const payerRole = step.data.payerKey === 'BRYAN' ? 'Bryan' : 'HweiYeen';
+          const payerRole = step.data.payerKey === 'BRYAN' ? USER_A_ROLE_KEY : USER_B_ROLE_KEY;
           const user = await prisma.user.findFirst({ where: { role: payerRole } });
           if (!user) {
             throw new Error(`User with role ${payerRole} not found`);

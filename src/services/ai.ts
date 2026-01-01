@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from '../lib/prisma';
 import { z } from 'zod';
 import * as Sentry from "@sentry/node";
+import { getUserAName, getUserBName } from '../config';
 
 const ReceiptDataSchema = z.object({
   isValid: z.boolean(),
@@ -366,8 +367,8 @@ Examples:
 - "delete last two" → Two DELETE actions for the two most recent transactions
 - "make the $20 one food and delete the coffee" → Two actions: UPDATE_CATEGORY for the $20 transaction, and DELETE for "coffee"
 - "change amount to $15" → One action: UPDATE_AMOUNT for most recent, statusMessage: "Updating amount to $15.00..."
-- "paid by Hwei Yeen" or "change payer to HY" → One action: UPDATE_PAYER, payerKey: "HWEI_YEEN", statusMessage: "Updating payer to Hwei Yeen..."
-- "paid by Bryan" → One action: UPDATE_PAYER, payerKey: "BRYAN", statusMessage: "Updating payer to Bryan..."
+- "paid by ${getUserBName()}" or "change payer to ${getUserBName().substring(0, 2)}" → One action: UPDATE_PAYER, payerKey: "HWEI_YEEN", statusMessage: "Updating payer to ${getUserBName()}..."
+- "paid by ${getUserAName()}" → One action: UPDATE_PAYER, payerKey: "BRYAN", statusMessage: "Updating payer to ${getUserAName()}..."
 - "settle this" or "mark as settled" → One action: UPDATE_STATUS, isSettled: true, statusMessage: "Marking transaction as settled..."
 - "unsettle" or "mark as unsettled" → One action: UPDATE_STATUS, isSettled: false, statusMessage: "Marking transaction as unsettled..."
 - "change date to Dec 30" or "date: 2025-12-30" → One action: UPDATE_DATE, date: "2025-12-30", statusMessage: "Updating date to 2025-12-30..."
@@ -382,8 +383,8 @@ IMPORTANT:
 - Match transactions by description keywords, amounts, or position (last, first, etc.)
 
 PAYER MAPPING (canonical):
-- If user says "paid by HY", "Hwei Yeen", "HweiYeen", "Hwei", etc. → return payerKey: "HWEI_YEEN"
-- If user says "Bryan", "paid by Bryan", etc. → return payerKey: "BRYAN"
+- If user says "paid by ${getUserBName().substring(0, 2)}", "${getUserBName()}", "${getUserBName().replace(' ', '')}", "${getUserBName().split(' ')[0]}", etc. → return payerKey: "HWEI_YEEN"
+- If user says "${getUserAName()}", "paid by ${getUserAName()}", etc. → return payerKey: "BRYAN"
 
 STATUS MAPPING:
 - "settle", "mark as settled", "mark settled" → isSettled: true

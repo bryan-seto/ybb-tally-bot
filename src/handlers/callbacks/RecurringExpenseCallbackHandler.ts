@@ -1,6 +1,6 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma';
-import { USER_NAMES } from '../../config';
+import { USER_NAMES, getUserAName, getUserBName, getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../../config';
 import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
@@ -67,7 +67,7 @@ export class RecurringExpenseCallbackHandler implements ICallbackHandler {
     if (data.startsWith('recurring_add_payer_')) {
       await ctx.answerCbQuery();
       
-      const payerRole = data.replace('recurring_add_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+      const payerRole = data.replace('recurring_add_payer_', '') === 'bryan' ? USER_A_ROLE_KEY : USER_B_ROLE_KEY;
       if (!session.recurringData) session.recurringData = {};
       session.recurringData.payer = payerRole;
       session.recurringStep = 'confirm';

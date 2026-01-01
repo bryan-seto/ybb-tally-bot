@@ -1,5 +1,6 @@
 import { getStartOfMonth, getEndOfMonth, getMonthsAgo, formatDate } from '../utils/dateHelpers';
 import { prisma } from '../lib/prisma';
+import { getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 
 export class ExpenseService {
   /**
@@ -154,22 +155,25 @@ export class ExpenseService {
   async getDetailedBalanceMessage(): Promise<string> {
     const balance = await this.calculateDetailedBalance();
 
+    const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+    const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+    
     let message = `💰 **Balance Summary**\n\n`;
-    message += `Total Paid by Bryan (Unsettled): SGD $${balance.bryanPaid.toFixed(2)}\n`;
-    message += `Total Paid by Hwei Yeen (Unsettled): SGD $${balance.hweiYeenPaid.toFixed(2)}\n`;
+    message += `Total Paid by ${userAName} (Unsettled): SGD $${balance.bryanPaid.toFixed(2)}\n`;
+    message += `Total Paid by ${userBName} (Unsettled): SGD $${balance.hweiYeenPaid.toFixed(2)}\n`;
     message += `Total Group Spending: SGD $${balance.totalSpending.toFixed(2)}\n\n`;
     message += `**Split Calculation (${balance.avgBryanPercent.toFixed(0)}/${balance.avgHweiYeenPercent.toFixed(0)}):**\n`;
-    message += `Bryan's share (${balance.avgBryanPercent.toFixed(0)}%): SGD $${balance.bryanShare.toFixed(2)}\n`;
-    message += `Hwei Yeen's share (${balance.avgHweiYeenPercent.toFixed(0)}%): SGD $${balance.hweiYeenShare.toFixed(2)}\n\n`;
+    message += `${userAName}'s share (${balance.avgBryanPercent.toFixed(0)}%): SGD $${balance.bryanShare.toFixed(2)}\n`;
+    message += `${userBName}'s share (${balance.avgHweiYeenPercent.toFixed(0)}%): SGD $${balance.hweiYeenShare.toFixed(2)}\n\n`;
 
     if (balance.bryanNet > 0) {
-      message += `👉 Hwei Yeen owes Bryan: SGD $${balance.bryanNet.toFixed(2)}`;
+      message += `👉 ${userBName} owes ${userAName}: SGD $${balance.bryanNet.toFixed(2)}`;
     } else if (balance.hweiYeenNet > 0) {
-      message += `👉 Bryan owes Hwei Yeen: SGD $${balance.hweiYeenNet.toFixed(2)}`;
+      message += `👉 ${userAName} owes ${userBName}: SGD $${balance.hweiYeenNet.toFixed(2)}`;
     } else if (balance.bryanNet < 0) {
-      message += `👉 Bryan owes Hwei Yeen: SGD $${Math.abs(balance.bryanNet).toFixed(2)}`;
+      message += `👉 ${userAName} owes ${userBName}: SGD $${Math.abs(balance.bryanNet).toFixed(2)}`;
     } else if (balance.hweiYeenNet < 0) {
-      message += `👉 Hwei Yeen owes Bryan: SGD $${Math.abs(balance.hweiYeenNet).toFixed(2)}`;
+      message += `👉 ${userBName} owes ${userAName}: SGD $${Math.abs(balance.hweiYeenNet).toFixed(2)}`;
     } else {
       message += `✅ All settled!`;
     }
@@ -193,11 +197,14 @@ export class ExpenseService {
     monthName: string,
     chartUrl: string
   ): string {
+    const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+    const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+    
     const message =
       `📊 **Monthly Report - ${monthName}**\n\n` +
       `Total Spend: SGD $${report.totalSpend.toFixed(2)}\n` +
       `Transactions: ${report.transactionCount}\n\n` +
-      `**Top Categories - Bryan:**\n` +
+      `**Top Categories - ${userAName}:**\n` +
       (report.bryanCategories.length > 0
         ? report.bryanCategories
             .map((c) => {
@@ -208,7 +215,7 @@ export class ExpenseService {
             })
             .join('\n')
         : 'No categories found') +
-      `\n\n**Top Categories - Hwei Yeen:**\n` +
+      `\n\n**Top Categories - ${userBName}:**\n` +
       (report.hweiYeenCategories.length > 0
         ? report.hweiYeenCategories
             .map((c) => {
@@ -443,23 +450,26 @@ export class ExpenseService {
       return '✅ All expenses are settled! No outstanding balance.';
     }
 
+    const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+    const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+    
     // Guard clause: Both owe each other (edge case)
     if (balance.bryanOwes > 0 && balance.hweiYeenOwes > 0) {
       return '💰 **Outstanding (amount owed):**\n' +
-        `Bryan owes: SGD $${balance.bryanOwes.toFixed(2)}\n` +
-        `Hwei Yeen owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+        `${userAName} owes: SGD $${balance.bryanOwes.toFixed(2)}\n` +
+        `${userBName} owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     }
 
-    // Guard clause: Bryan owes HweiYeen
+    // Guard clause: User A owes User B
     if (balance.bryanOwes > 0) {
       return '💰 **Outstanding (amount owed):**\n' +
-        `Bryan owes Hwei Yeen SGD $${balance.bryanOwes.toFixed(2)}\n`;
+        `${userAName} owes ${userBName} SGD $${balance.bryanOwes.toFixed(2)}\n`;
     }
 
-    // Guard clause: HweiYeen owes Bryan
+    // Guard clause: User B owes User A
     if (balance.hweiYeenOwes > 0) {
       return '💰 **Outstanding (amount owed):**\n' +
-        `Hwei Yeen owes Bryan SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+        `${userBName} owes ${userAName} SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
     }
 
     // Fallback (should never reach here, but for safety)

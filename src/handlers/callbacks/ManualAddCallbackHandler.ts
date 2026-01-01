@@ -5,6 +5,7 @@ import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
 import { getNow } from '../../utils/dateHelpers';
+import { getUserAName, getUserBName, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../../config';
 
 /**
  * Handler for manual add flow callbacks
@@ -33,8 +34,8 @@ export class ManualAddCallbackHandler implements ICallbackHandler {
       await ctx.reply(`Category: ${session.manualCategory}\n\nWho paid?`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: 'Bryan', callback_data: 'manual_payer_bryan' }],
-            [{ text: 'Hwei Yeen', callback_data: 'manual_payer_hweiyeen' }],
+            [{ text: getUserAName(), callback_data: 'manual_payer_bryan' }],
+            [{ text: getUserBName(), callback_data: 'manual_payer_hweiyeen' }],
           ],
         },
       });
@@ -44,7 +45,7 @@ export class ManualAddCallbackHandler implements ICallbackHandler {
     if (data.startsWith('manual_payer_')) {
       await ctx.answerCbQuery();
       
-      const role = data.replace('manual_payer_', '') === 'bryan' ? 'Bryan' : 'HweiYeen';
+      const role = data.replace('manual_payer_', '') === 'bryan' ? USER_A_ROLE_KEY : USER_B_ROLE_KEY;
       const user = await prisma.user.findFirst({ where: { role } });
       if (user) {
         await prisma.transaction.create({
@@ -57,7 +58,8 @@ export class ManualAddCallbackHandler implements ICallbackHandler {
             date: getNow(),
           },
         });
-        await ctx.reply(`✅ Recorded $${session.manualAmount?.toFixed(2)} paid by ${role}.`, Markup.removeKeyboard());
+        const payerName = role === USER_A_ROLE_KEY ? getUserAName() : getUserBName();
+        await ctx.reply(`✅ Recorded $${session.manualAmount?.toFixed(2)} paid by ${payerName}.`, Markup.removeKeyboard());
       }
       session.manualAddMode = false;
       return;
@@ -74,7 +76,7 @@ export class ManualAddCallbackHandler implements ICallbackHandler {
         return;
       }
 
-      const user = await prisma.user.findFirst({ where: { role: 'Bryan' } }); // Logic to determine payer or ask
+      const user = await prisma.user.findFirst({ where: { role: USER_A_ROLE_KEY } }); // Logic to determine payer or ask
       if (user) {
         await prisma.transaction.create({
           data: {
@@ -93,4 +95,5 @@ export class ManualAddCallbackHandler implements ICallbackHandler {
     }
   }
 }
+
 

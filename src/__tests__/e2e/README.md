@@ -21,3 +21,4 @@ Tests are implemented but some are failing due to database connection issues. Th
 - **Mocks**: AI Service mocked for deterministic responses
 - **Time**: Fake timers used for photo batching (10s window)
 
+

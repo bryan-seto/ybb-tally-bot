@@ -8,7 +8,7 @@ import { RecurringExpenseService } from './services/recurringExpenseService';
 import { AnalyticsService } from './services/analyticsService';
 import { formatDate } from './utils/dateHelpers';
 import { prisma } from './lib/prisma';
-import { CONFIG, USER_NAMES, USER_IDS } from './config';
+import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
 import { PhotoHandler } from './handlers/photoHandler';
 import { MessageHandlers } from './handlers/messageHandlers';
@@ -17,7 +17,7 @@ import { getRandomWakeUpMessage } from './services/vibeService';
 
 // Helper function for dynamic greeting
 function getGreeting(userId: string): string {
-  const name = USER_NAMES[userId] || 'there';
+  const name = getNameByUserId(userId);
   const env = process.env.NODE_ENV || 'development';
   const prefix = env !== 'production' ? `[${env.toUpperCase()}] ` : '';
   return `${prefix}Hi ${name}!`;
@@ -71,7 +71,6 @@ export class YBBTallyBot {
   private photoHandler: PhotoHandler;
   private messageHandlers: MessageHandlers;
   private callbackHandlers: CallbackHandlers;
-  private allowedUserIds: Set<string>;
   private botUsername: string = '';
   private isColdStart: boolean = true;
 
@@ -102,7 +101,7 @@ export class YBBTallyBot {
       recurringExpenseService,
       (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
     );
-    this.allowedUserIds = new Set(allowedUserIds.split(',').map((id) => id.trim()));
+    // Note: allowedUserIds parameter is kept for backward compatibility but auth is now handled via config
 
     // Setup session middleware (simple in-memory store)
     this.bot.use(session());
@@ -130,13 +129,13 @@ export class YBBTallyBot {
         Sentry.captureException(err);
       });
 
-      // 2. Notify Founder (Bryan)
+      // 2. Notify Founder (User A)
       try {
         const errorMsg = err.message || 'Unknown error';
         const userStr = ctx.from ? `${ctx.from.first_name} (@${ctx.from.username})` : 'System';
         const groupStr = ctx.chat?.type !== 'private' ? `in group <b>${(ctx.chat as any).title}</b>` : 'in private chat';
         
-        await this.bot.telegram.sendMessage(USER_IDS.BRYAN, 
+        await this.bot.telegram.sendMessage(getUserIdByRole('Bryan'), 
           `🚨 <b>BOT ERROR ALERT</b>\n\n` +
           `<b>User:</b> ${userStr}\n` +
           `<b>Location:</b> ${groupStr}\n` +
@@ -190,6 +189,7 @@ export class YBBTallyBot {
 
   /**
    * Security middleware - check if user is allowed
+   * STRICT: Only USER_A_ID and USER_B_ID are allowed. All others are silently rejected.
    */
   private setupMiddleware(): void {
     this.bot.use(async (ctx, next) => {
@@ -199,7 +199,15 @@ export class YBBTallyBot {
         return;
       }
 
-      // Log all interactions
+      // STRICT AUTH CHECK: Only allow configured USER_A_ID and USER_B_ID
+      if (!isAuthorizedUserId(userId)) {
+        const allowedIds = getAllowedUserIds();
+        console.log(`[SECURITY] Unauthorized access attempt: ${userId}. Allowed: [${allowedIds.join(', ')}]`);
+        // Silently reject - do NOT reply to avoid revealing bot existence
+        return;
+      }
+
+      // Log all interactions (only for authorized users)
       try {
         let command = 'photo';
         if (ctx.message && 'text' in ctx.message && ctx.message.text) {
@@ -220,13 +228,6 @@ export class YBBTallyBot {
         });
       } catch (error) {
         console.error('Error logging interaction:', error);
-      }
-
-      // Check if user is allowed
-      if (!this.allowedUserIds.has(userId)) {
-        console.log(`[SECURITY] Access denied for user ID: ${userId}. Allowed:`, Array.from(this.allowedUserIds));
-        await ctx.reply(`Access Denied (ID: ${userId})`);
-        return;
       }
 
       return next();
@@ -274,8 +275,8 @@ export class YBBTallyBot {
     }
 
     // Get user names from config
-    const bryanName = USER_NAMES[USER_IDS.BRYAN] || 'Husband';
-    const hweiYeenName = USER_NAMES[USER_IDS.HWEI_YEEN] || 'Wife';
+    const bryanName = getUserNameByRole('Bryan');
+    const hweiYeenName = getUserNameByRole('HweiYeen');
 
     // Pick random template
     const templates: string[] = [];
