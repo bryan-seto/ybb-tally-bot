@@ -580,6 +580,107 @@ Return ONLY valid JSON in this exact format (no markdown, no explanations):
       throw error;
     }
   }
+
+  /**
+   * Parse edit intent from user instruction
+   * Returns partial JSON with fields to update
+   */
+  async parseEditIntent(
+    instruction: string,
+    currentTransactionMiniDTO: {
+      description: string;
+      amount: number;
+      category: string;
+      date: string;
+    },
+    onFallback?: FallbackCallback
+  ): Promise<{ amount?: number; description?: string; category?: string }> {
+    const prompt = `You are a financial assistant. Parse the user's edit instruction for a transaction.
+
+Current Transaction:
+- Description: "${currentTransactionMiniDTO.description}"
+- Amount: $${currentTransactionMiniDTO.amount.toFixed(2)}
+- Category: ${currentTransactionMiniDTO.category}
+- Date: ${currentTransactionMiniDTO.date}
+
+User Instruction: "${instruction}"
+
+Rules:
+1. If the instruction is just a number (e.g., "20", "$20", "20.50"), assume it's an Amount update.
+2. If the instruction contains text (e.g., "lunch", "change to coffee"), assume it's a Description update.
+3. If the instruction mentions a category (e.g., "Food", "Transport"), update Category.
+4. You can update multiple fields if the instruction requests it.
+
+Return ONLY valid JSON with fields to update (no markdown, no explanations):
+{
+  "amount": number (optional, only if amount should change),
+  "description": "string" (optional, only if description should change),
+  "category": "string" (optional, only if category should change)
+}
+
+Examples:
+- Instruction: "20" → {"amount": 20}
+- Instruction: "lunch" → {"description": "lunch"}
+- Instruction: "change to $15 and category to Food" → {"amount": 15, "category": "Food"}
+- Instruction: "coffee" → {"description": "coffee"}`;
+
+    try {
+      const aiResponse = await this.generateContentWithFallback(prompt, onFallback);
+      const responseText = aiResponse.text;
+
+      // Extract JSON from response
+      const extractedJSON = this.extractJSON(responseText);
+      if (!extractedJSON) {
+        console.error('[parseEditIntent] No JSON found in response:', responseText.substring(0, 500));
+        throw new Error('No JSON found in response');
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(extractedJSON);
+      } catch (parseError: any) {
+        console.error('[parseEditIntent] JSON parse error:', {
+          error: parseError.message,
+          extractedJSON: extractedJSON.substring(0, 200),
+          fullResponse: responseText.substring(0, 500),
+        });
+        Sentry.captureException(parseError, {
+          extra: {
+            extractedJSON: extractedJSON.substring(0, 500),
+            fullResponse: responseText.substring(0, 1000),
+          },
+        });
+        throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+      }
+
+      // Validate and return only valid fields
+      const result: { amount?: number; description?: string; category?: string } = {};
+
+      if (parsed.amount !== undefined) {
+        if (typeof parsed.amount === 'number' && parsed.amount > 0) {
+          result.amount = parsed.amount;
+        }
+      }
+
+      if (parsed.description !== undefined) {
+        if (typeof parsed.description === 'string' && parsed.description.trim().length > 0) {
+          result.description = parsed.description.trim();
+        }
+      }
+
+      if (parsed.category !== undefined) {
+        if (typeof parsed.category === 'string' && parsed.category.trim().length > 0) {
+          result.category = parsed.category.trim();
+        }
+      }
+
+      return result;
+    } catch (error: any) {
+      console.error('Error parsing edit intent:', error);
+      Sentry.captureException(error);
+      throw error;
+    }
+  }
 }
 
 

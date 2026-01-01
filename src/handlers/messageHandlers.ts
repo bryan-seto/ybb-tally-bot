@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { AIService, CorrectionAction } from '../services/ai';
 import { HistoryService, TransactionDetail } from '../services/historyService';
+import { EditService } from '../services/editService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES } from '../config';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
@@ -46,6 +47,46 @@ export class MessageHandlers {
         this.clearSession(session);
         await ctx.reply('❌ Operation cancelled.', Markup.removeKeyboard());
         return;
+      }
+
+      // Handle edit command (after transaction ID parsing, before quick expense)
+      const editMatch = text.match(/^edit\s+\/?(\d+)\s+(.+)$/i);
+      if (editMatch) {
+        try {
+          const editService = new EditService(this.aiService);
+          const userId = BigInt(ctx.from.id);
+          const result = await editService.processEditCommand(userId, text);
+
+          if (result.success && result.transaction && result.changes && result.changes.length > 0) {
+            // Format diff view message
+            let diffMessage = `✅ **Updated /${editMatch[1]}**\n\n`;
+            result.changes.forEach((change) => {
+              if (change.field === 'amountSGD') {
+                // change.old and change.new are already numbers (converted via .toNumber())
+                diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
+              } else if (change.field === 'description') {
+                diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
+              } else if (change.field === 'category') {
+                diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
+              }
+            });
+
+            await ctx.reply(diffMessage, { parse_mode: 'Markdown' });
+
+            // Refresh dashboard
+            if (this.showDashboard) {
+              await this.showDashboard(ctx, false);
+            }
+          } else {
+            // Error case
+            await ctx.reply(result.message || '❌ Sorry, I couldn\'t update that transaction.');
+          }
+          return;
+        } catch (error: any) {
+          console.error('Error handling edit command:', error);
+          await ctx.reply('❌ Sorry, something went wrong while processing your edit request.');
+          return;
+        }
       }
 
       // --- PRIORITY 1: Check for bot tag FIRST (AI commands override everything) ---
