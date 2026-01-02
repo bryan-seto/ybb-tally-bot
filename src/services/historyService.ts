@@ -174,6 +174,53 @@ export class HistoryService {
   }
 
   /**
+   * 🧠 CYNOSURE LOGIC: THE TRUTH TELLER
+   * Calculates the exact net debt vector.
+   * "Who owes whom, and exactly how much?"
+   */
+  private formatBalanceImpact(tx: TransactionDetail): string {
+    // 1. Safety Checks
+    if (!tx.payerRole) {
+      return '⚠️ Error: Payer data missing';
+    }
+    if (tx.status === 'settled') {
+      return '✅ Settled (No active debt)';
+    }
+
+    // 2. The Constants
+    const AMOUNT = Number(tx.amount);
+    const BRYAN_PCT = tx.bryanPercentage ?? 0.7; // Default fallback
+    const HY_PCT = tx.hweiYeenPercentage ?? 0.3; // Default fallback
+
+    // 3. The Ledger (Who paid what vs Who consumed what)
+    // We use the immutable 'role' field to identify the payer
+    const bryanPaid = tx.payerRole === 'Bryan' ? AMOUNT : 0;
+    const hyPaid = tx.payerRole === 'HweiYeen' ? AMOUNT : 0;
+
+    const bryanConsumed = AMOUNT * BRYAN_PCT;
+    const hyConsumed = AMOUNT * HY_PCT;
+
+    // 4. The Net Vector (Positive = Owed Money, Negative = Paid too much)
+    const bryanNet = bryanConsumed - bryanPaid;
+    const hyNet = hyConsumed - hyPaid;
+
+    // 5. The Verdict
+    // Case A: Wash (Paid for self)
+    if (Math.abs(bryanNet) < 0.01 && Math.abs(hyNet) < 0.01) {
+      return '✅ No debt created (Paid for own expense)';
+    }
+
+    // Case B: Debt exists
+    if (bryanNet > 0.01) {
+      return `🔴 👉 Bryan owes Hwei Yeen $${bryanNet.toFixed(2)}`;
+    } else if (hyNet > 0.01) {
+      return `🔴 👉 Hwei Yeen owes Bryan $${hyNet.toFixed(2)}`;
+    }
+
+    return '';
+  }
+
+  /**
    * Format transaction detail card
    */
   formatTransactionDetail(tx: TransactionDetail): string {
@@ -182,6 +229,11 @@ export class HistoryService {
     const dateStr = formatDate(tx.date, 'dd MMM yyyy, hh:mm a');
     const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
     const splitDetails = this.formatSplitDetails(tx);
+    const balanceImpact = this.formatBalanceImpact(tx);
+
+    // Format percentages for display
+    const bryanPercent = Math.round((tx.bryanPercentage ?? 0.7) * 100);
+    const hyPercent = Math.round((tx.hweiYeenPercentage ?? 0.3) * 100);
 
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +
@@ -190,7 +242,8 @@ export class HistoryService {
       `💰 **Amount:** ${amountStr}\n` +
       `📂 **Category:** ${tx.category}\n` +
       `👤 **Paid By:** ${tx.paidBy}\n` +
-      (splitDetails ? `${splitDetails}\n` : '') +
+      (splitDetails ? `${splitDetails}\n` : `⚖️ **Split:** ${bryanPercent}% Bryan / ${hyPercent}% HY\n`) +
+      `⚖️ **BALANCE IMPACT**\n${balanceImpact}\n` +
       `📝 **Description:** ${tx.description}`;
   }
 }
