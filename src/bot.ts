@@ -435,7 +435,10 @@ export class YBBTallyBot {
     this.bot.command('help', async (ctx) => await this.showDashboard(ctx, false));
 
     // Menu command - show dashboard
-    this.bot.command('menu', async (ctx) => await this.showDashboard(ctx, false));
+    this.bot.command('menu', async (ctx) => {
+      console.log('[COMMAND] /menu handler triggered');
+      await this.showDashboard(ctx, false);
+    });
 
     // Balance command
     this.bot.command('balance', async (ctx) => await this.commandHandlers.handleBalance(ctx));
