@@ -2,6 +2,7 @@ import { getStartOfMonth, getEndOfMonth, getMonthsAgo, formatDate } from '../uti
 import { prisma } from '../lib/prisma';
 import { getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { SplitRulesService } from './splitRulesService';
+import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
 
 export class ExpenseService {
   private splitRulesService: SplitRulesService;
@@ -531,6 +532,15 @@ export class ExpenseService {
       },
     });
 
+    // Emit analytics event
+    analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
+      userId,
+      transactionId: transaction.id,
+      amount: transaction.amountSGD,
+      category: transaction.category || 'Other',
+      description: transaction.description,
+    });
+
     // Get the updated balance message
     const balanceMessage = await this.getOutstandingBalanceMessage();
 
@@ -607,6 +617,15 @@ export class ExpenseService {
         }
       });
       savedTransactions.push(tx);
+
+      // Emit analytics event for each transaction
+      analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
+        userId,
+        transactionId: tx.id,
+        amount: tx.amountSGD,
+        category: tx.category || 'Other',
+        description: tx.description,
+      });
     }
 
     // Get the updated balance message

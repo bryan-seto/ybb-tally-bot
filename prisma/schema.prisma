@@ -8,14 +8,15 @@ datasource db {
 }
 
 model User {
-  id                  BigInt             @id @default(autoincrement())
+  id                  BigInt                @id @default(autoincrement())
   name                String
   role                UserRole
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
   recurringExpenses   RecurringExpense[]
   systemLogs          SystemLog[]
-  transactionsAsPayer Transaction[]      @relation("Payer")
+  transactionsAsPayer Transaction[]         @relation("Payer")
+  interactionLogs     UserInteractionLog[]
 
   @@map("users")
 }
@@ -83,6 +84,28 @@ model DailyStats {
   spendVelocity7DayAvg Float    @default(0)
 
   @@map("daily_stats")
+}
+
+model UserInteractionLog {
+  id              BigInt   @id @default(autoincrement())
+  userId          BigInt
+  timestamp       DateTime @default(now())
+  interactionType String  // MESSAGE, CALLBACK, PHOTO, COMMAND, ACTION
+  eventType       String  // text_message, button_click, transaction_create, etc.
+  content         String?  // Sanitized content
+  metadata        Json?    // JSONB for flexibility
+  status          String   // SUCCESS, FAILURE, PENDING
+  errorMessage    String?
+  chatId          BigInt?
+  chatType        String?  // private, group, supergroup
+  messageId       BigInt?
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, timestamp])
+  @@index([interactionType, timestamp])
+  @@index([eventType, timestamp])
+  @@index([timestamp]) // For partitioning
+  @@map("user_interaction_logs")
 }
 
 enum UserRole {

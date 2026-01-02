@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { CONFIG, getUserAName, getUserBName } from '../config';
 import { getNow } from '../utils/dateHelpers';
 import { ExpenseService } from '../services/expenseService';
+import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
 
 interface PendingPhoto {
   fileId: string;
@@ -162,6 +163,15 @@ export class PhotoHandler {
         receiptData,
         collection.userId
       );
+
+      // Emit analytics event for receipt processing
+      analyticsBus.emit(AnalyticsEventType.RECEIPT_PROCESSED, {
+        userId: collection.userId,
+        transactionCount: savedTransactions.length,
+        isValid: receiptData.isValid,
+        chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+        chatType: ctx.chat?.type,
+      });
 
       // Build the minimalist summary
       let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;

@@ -15,6 +15,8 @@ import { PhotoHandler } from './handlers/photoHandler';
 import { MessageHandlers } from './handlers/messageHandlers';
 import { CallbackHandlers } from './handlers/callbackHandlers';
 import { getRandomWakeUpMessage } from './services/vibeService';
+import { analyticsMiddleware } from './middleware/analyticsMiddleware';
+import { analyticsListener } from './listeners/analyticsListener';
 
 // Helper function for dynamic greeting
 function getGreeting(userId: string): string {
@@ -114,6 +116,10 @@ export class YBBTallyBot {
     this.bot.use(session());
 
     this.setupMiddleware();
+    // Initialize analytics listener (subscribes to business logic events)
+    analyticsListener.initialize();
+    // Add analytics middleware (captures raw interactions)
+    this.bot.use(analyticsMiddleware);
     this.setupColdStartMiddleware();
     this.setupCommands();
     this.setupHandlers();

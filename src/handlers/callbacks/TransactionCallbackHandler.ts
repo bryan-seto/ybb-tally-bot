@@ -6,6 +6,7 @@ import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
 import { formatDate } from '../../utils/dateHelpers';
+import { analyticsBus, AnalyticsEventType } from '../../events/analyticsBus';
 
 /**
  * Handler for transaction action callbacks
@@ -74,10 +75,22 @@ export class TransactionCallbackHandler implements ICallbackHandler {
       await ctx.answerCbQuery();
       
       const id = BigInt(data.replace('tx_settle_', ''));
-      await prisma.transaction.update({
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+      const updated = await prisma.transaction.update({
         where: { id },
         data: { isSettled: true },
       });
+      
+      // Emit analytics event
+      if (userId) {
+        analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+          userId,
+          transactionId: id,
+          changes: { isSettled: true },
+          chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+          chatType: ctx.chat?.type,
+        });
+      }
       
       // Re-fetch to get updated status
       const transaction = await this.historyService.getTransactionById(id);
@@ -102,7 +115,19 @@ export class TransactionCallbackHandler implements ICallbackHandler {
       await ctx.answerCbQuery();
       
       const id = BigInt(data.replace('tx_delete_', ''));
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
       await prisma.transaction.delete({ where: { id } });
+      
+      // Emit analytics event
+      if (userId) {
+        analyticsBus.emit(AnalyticsEventType.TRANSACTION_DELETED, {
+          userId,
+          transactionId: id,
+          chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+          chatType: ctx.chat?.type,
+        });
+      }
+      
       await ctx.deleteMessage();
       await ctx.reply('🗑️ Transaction deleted.');
       return;
@@ -126,7 +151,19 @@ export class TransactionCallbackHandler implements ICallbackHandler {
       
       try {
         const transactionId = BigInt(data.replace('undo_expense_', ''));
+        const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
         await prisma.transaction.delete({ where: { id: transactionId } });
+        
+        // Emit analytics event
+        if (userId) {
+          analyticsBus.emit(AnalyticsEventType.TRANSACTION_DELETED, {
+            userId,
+            transactionId,
+            chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+            chatType: ctx.chat?.type,
+          });
+        }
+        
         await ctx.editMessageText('❌ Expense cancelled.');
       } catch (error: any) {
         // Handle double-tap: Record already deleted (P2025)
@@ -144,7 +181,19 @@ export class TransactionCallbackHandler implements ICallbackHandler {
       await ctx.answerCbQuery();
       
       const id = BigInt(data.replace('edit_last_delete_', ''));
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
       await prisma.transaction.delete({ where: { id } });
+      
+      // Emit analytics event
+      if (userId) {
+        analyticsBus.emit(AnalyticsEventType.TRANSACTION_DELETED, {
+          userId,
+          transactionId: id,
+          chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+          chatType: ctx.chat?.type,
+        });
+      }
+      
       await ctx.reply('🗑️ Transaction deleted.');
       return;
     }

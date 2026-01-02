@@ -4,6 +4,7 @@ import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
+import { analyticsBus, AnalyticsEventType } from '../../events/analyticsBus';
 
 /**
  * Handler for settlement flow callbacks
@@ -110,7 +111,7 @@ export class SettleCallbackHandler implements ICallbackHandler {
           data: { isSettled: true },
         });
         
-        // Log the settlement operation
+        // Log the settlement operation (legacy systemLog)
         const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
         if (userId) {
           try {
@@ -130,6 +131,20 @@ export class SettleCallbackHandler implements ICallbackHandler {
           } catch (logError) {
             console.error('Error logging settlement:', logError);
           }
+        }
+
+        // Emit analytics event
+        if (userId) {
+          const totalAmount = transactionsToSettle.reduce((sum, tx) => sum + Number(tx.amountSGD), 0);
+          analyticsBus.emit(AnalyticsEventType.SETTLEMENT_EXECUTED, {
+            userId,
+            transactionCount: result.count,
+            totalAmount,
+            watermarkId: rawId,
+            transactionIds: transactionsToSettle.map(tx => tx.id),
+            chatId: ctx.chat?.id ? BigInt(ctx.chat.id) : undefined,
+            chatType: ctx.chat?.type,
+          });
         }
         
         // Success response

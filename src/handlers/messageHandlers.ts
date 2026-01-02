@@ -9,6 +9,7 @@ import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES, getUserAName, getUserBName, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { format, parseISO } from 'date-fns';
+import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
 
 const TIMEZONE = 'Asia/Singapore';
 
@@ -436,6 +437,10 @@ export class MessageHandlers {
 
       // Execute DB logic
       try {
+        const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+        const chatId = ctx.chat?.id ? BigInt(ctx.chat.id) : undefined;
+        const chatType = ctx.chat?.type;
+
         if (step.action === 'UPDATE_SPLIT' && step.transactionId && step.data) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -451,6 +456,17 @@ export class MessageHandlers {
           const bryanSplit = Math.round((step.data.bryanPercentage ?? 0.7) * 100);
           const hweiYeenSplit = Math.round((step.data.hweiYeenPercentage ?? 0.3) * 100);
           results.push(`✅ Split updated for "${updated.description}" to ${bryanSplit}-${hweiYeenSplit}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { bryanPercentage: step.data.bryanPercentage, hweiYeenPercentage: step.data.hweiYeenPercentage },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_AMOUNT' && step.transactionId && step.data) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -461,6 +477,17 @@ export class MessageHandlers {
           });
           updatedTransaction = updated;
           results.push(`✅ Amount updated for "${updated.description}" to $${updated.amountSGD.toFixed(2)}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { amountSGD: step.data.amountSGD },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_CATEGORY' && step.transactionId && step.data) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -471,12 +498,33 @@ export class MessageHandlers {
           });
           updatedTransaction = updated;
           results.push(`✅ Category updated for "${updated.description}" to ${updated.category}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { category: step.data.category },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'DELETE' && step.transactionId) {
           const deleted = await prisma.transaction.delete({
             where: { id: step.transactionId },
           });
           // Don't set updatedTransaction for DELETE actions
           results.push(`🗑️ Deleted "${deleted.description}"`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_DELETED, {
+              userId,
+              transactionId: step.transactionId,
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_PAYER' && step.transactionId && step.data?.payerKey) {
           const payerRole = step.data.payerKey === 'BRYAN' ? USER_A_ROLE_KEY : USER_B_ROLE_KEY;
           const user = await prisma.user.findFirst({ where: { role: payerRole } });
@@ -492,6 +540,17 @@ export class MessageHandlers {
           });
           updatedTransaction = updated;
           results.push(`✅ Payer updated to ${payerRole}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { payerId: user.id.toString() },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_STATUS' && step.transactionId && step.data?.isSettled !== undefined) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -503,6 +562,17 @@ export class MessageHandlers {
           updatedTransaction = updated;
           const statusText = step.data.isSettled ? 'settled' : 'unsettled';
           results.push(`✅ Status updated to ${statusText}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { isSettled: step.data.isSettled },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_DATE' && step.transactionId && step.data?.date) {
           // Fetch current transaction to preserve time components
           const currentTx = await prisma.transaction.findUnique({
@@ -554,6 +624,17 @@ export class MessageHandlers {
           updatedTransaction = updated;
           const { formatDate } = await import('../utils/dateHelpers');
           results.push(`✅ Date updated to ${formatDate(finalDate, 'dd MMM yyyy')}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { date: finalDate.toISOString() },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_TIME' && step.transactionId && step.data?.time) {
           // Fetch current transaction to preserve date components
           const currentTx = await prisma.transaction.findUnique({
@@ -606,6 +687,17 @@ export class MessageHandlers {
           updatedTransaction = updated;
           const { formatDate } = await import('../utils/dateHelpers');
           results.push(`✅ Time updated to ${timeStr}`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { date: newDate.toISOString() },
+              chatId,
+              chatType,
+            });
+          }
         } else if (step.action === 'UPDATE_DESCRIPTION' && step.transactionId && step.data?.description) {
           const updated = await prisma.transaction.update({
             where: { id: step.transactionId },
@@ -616,6 +708,17 @@ export class MessageHandlers {
           });
           updatedTransaction = updated;
           results.push(`✅ Description updated to "${updated.description}"`);
+          
+          // Emit analytics event
+          if (userId) {
+            analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
+              userId,
+              transactionId: step.transactionId,
+              changes: { description: step.data.description },
+              chatId,
+              chatType,
+            });
+          }
         }
       } catch (dbError: any) {
         console.error('Database error during action execution:', dbError);
