@@ -2,6 +2,7 @@ import { Context, Markup } from 'telegraf';
 import { ExpenseService } from '../services/expenseService';
 import { HistoryService } from '../services/historyService';
 import { RecurringExpenseService } from '../services/recurringExpenseService';
+import { SplitRulesService } from '../services/splitRulesService';
 import { CallbackRouter } from './callbacks/CallbackRouter';
 
 export class CallbackHandlers {
@@ -11,14 +12,16 @@ export class CallbackHandlers {
     private expenseService: ExpenseService,
     private historyService: HistoryService,
     private recurringExpenseService: RecurringExpenseService,
-    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
+    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>,
+    private splitRulesService?: SplitRulesService
   ) {
     // Initialize the router with all dependencies
     this.router = new CallbackRouter(
       expenseService,
       historyService,
       recurringExpenseService,
-      showDashboard
+      showDashboard,
+      splitRulesService
     );
   }
 

@@ -6,6 +6,7 @@ import { HistoryService } from './services/historyService';
 import { BackupService } from './services/backupService';
 import { RecurringExpenseService } from './services/recurringExpenseService';
 import { AnalyticsService } from './services/analyticsService';
+import { SplitRulesService } from './services/splitRulesService';
 import { formatDate } from './utils/dateHelpers';
 import { prisma } from './lib/prisma';
 import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId, getUserNameByRole } from './config';
@@ -45,6 +46,8 @@ interface BotSession {
   editLastTransactionId?: bigint;
   searchMode?: boolean;
   pendingReceipts?: { [key: string]: any };
+  waitingForSplitInput?: boolean;
+  splitSettingsCategory?: string;
 }
 
 interface PendingPhoto {
@@ -67,6 +70,7 @@ export class YBBTallyBot {
   private historyService: HistoryService;
   private backupService: BackupService;
   private analyticsService: AnalyticsService;
+  private splitRulesService: SplitRulesService;
   private commandHandlers: CommandHandlers;
   private photoHandler: PhotoHandler;
   private messageHandlers: MessageHandlers;
@@ -81,6 +85,7 @@ export class YBBTallyBot {
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
     this.analyticsService = new AnalyticsService();
+    this.splitRulesService = new SplitRulesService();
     const recurringExpenseService = new RecurringExpenseService(this.expenseService);
     this.commandHandlers = new CommandHandlers(this.expenseService, this.analyticsService, this.historyService);
     this.photoHandler = new PhotoHandler(
@@ -93,13 +98,15 @@ export class YBBTallyBot {
       this.aiService, 
       this.historyService,
       () => this.botUsername,
-      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
+      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode),
+      this.splitRulesService
     );
     this.callbackHandlers = new CallbackHandlers(
       this.expenseService, 
       this.historyService, 
       recurringExpenseService,
-      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode)
+      (ctx: any, editMode: boolean) => this.showDashboard(ctx, editMode),
+      this.splitRulesService
     );
     // Note: allowedUserIds parameter is kept for backward compatibility but auth is now handled via config
 

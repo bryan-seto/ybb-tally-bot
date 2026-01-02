@@ -6,9 +6,11 @@ import { RecurringExpenseCallbackHandler } from './RecurringExpenseCallbackHandl
 import { TransactionCallbackHandler } from './TransactionCallbackHandler';
 import { HistoryCallbackHandler } from './HistoryCallbackHandler';
 import { ManualAddCallbackHandler } from './ManualAddCallbackHandler';
+import { SplitSettingsCallbackHandler } from './SplitSettingsCallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
+import { SplitRulesService } from '../../services/splitRulesService';
 import { showLoading, hideLoading } from './utils';
 
 /**
@@ -27,7 +29,8 @@ export class CallbackRouter {
     expenseService: ExpenseService,
     historyService: HistoryService,
     recurringExpenseService: RecurringExpenseService,
-    showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
+    showDashboard?: (ctx: any, editMode: boolean) => Promise<void>,
+    splitRulesService?: SplitRulesService
   ) {
     // Register all handlers in priority order (first matching handler wins)
     // IMPORTANT: Order matters! More specific handlers should come before more generic ones.
@@ -41,6 +44,7 @@ export class CallbackRouter {
       new RecurringExpenseCallbackHandler(expenseService, historyService, recurringExpenseService, showDashboard),
       new HistoryCallbackHandler(expenseService, historyService, recurringExpenseService, showDashboard),
       new ManualAddCallbackHandler(expenseService, historyService, recurringExpenseService, showDashboard),
+      ...(splitRulesService ? [new SplitSettingsCallbackHandler(splitRulesService)] : []),
       new MenuCallbackHandler(expenseService, historyService, recurringExpenseService, showDashboard),
     ];
   }

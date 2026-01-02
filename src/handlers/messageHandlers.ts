@@ -4,6 +4,7 @@ import { ExpenseService } from '../services/expenseService';
 import { AIService, CorrectionAction } from '../services/ai';
 import { HistoryService, TransactionDetail } from '../services/historyService';
 import { EditService } from '../services/editService';
+import { SplitRulesService, ValidationError } from '../services/splitRulesService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES, getUserAName, getUserBName, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
@@ -17,7 +18,8 @@ export class MessageHandlers {
     private aiService: AIService,
     private historyService: HistoryService,
     private getBotUsername?: () => string,
-    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>
+    private showDashboard?: (ctx: any, editMode: boolean) => Promise<void>,
+    private splitRulesService?: SplitRulesService
   ) {}
 
   async handleText(ctx: any) {
@@ -217,6 +219,12 @@ export class MessageHandlers {
         return;
       }
 
+      // PRIORITY 4.6: Handle split settings custom input
+      if (session.waitingForSplitInput && session.splitSettingsCategory) {
+        await this.handleSplitSettingsInput(ctx, text, session);
+        return; // CRITICAL: Must return to prevent other handlers from processing
+      }
+
       // PRIORITY 5: Handle search flow
       if (session.searchMode) {
         console.log('[handleText] Search mode detected');
@@ -251,6 +259,8 @@ export class MessageHandlers {
     session.editingTxId = undefined;
     session.editingField = undefined;
     session.editMode = undefined;
+    session.waitingForSplitInput = false;
+    session.splitSettingsCategory = undefined;
   }
 
   private async handleManualAddFlow(ctx: any, text: string, session: any) {
@@ -317,6 +327,52 @@ export class MessageHandlers {
           ],
         },
       });
+    }
+  }
+
+  /**
+   * Handle custom split percentage input from user
+   */
+  private async handleSplitSettingsInput(ctx: any, text: string, session: any): Promise<void> {
+    if (!this.splitRulesService) {
+      console.error('[handleSplitSettingsInput] SplitRulesService not available');
+      await ctx.reply('❌ Split settings service not available. Please try again.');
+      session.waitingForSplitInput = false;
+      session.splitSettingsCategory = undefined;
+      return;
+    }
+
+    const input = parseInt(text.trim());
+
+    // Validation: Must be integer between 0-100
+    if (isNaN(input) || input < 0 || input > 100) {
+      await ctx.reply('❌ Please enter a whole number between 0 and 100.');
+      return; // Stay in input mode
+    }
+
+    const category = session.splitSettingsCategory;
+    const bryan = input / 100;
+    const hwei = (100 - input) / 100;
+
+    try {
+      await this.splitRulesService.updateSplitRule(category, bryan, hwei);
+
+      // Cleanup session state
+      session.waitingForSplitInput = false;
+      session.splitSettingsCategory = undefined;
+
+      // Success message with user names
+      const userAName = getUserAName();
+      const userBName = getUserBName();
+      await ctx.reply(`✅ Updated ${category}: ${userAName} ${input}% / ${userBName} ${100 - input}%`);
+    } catch (error: any) {
+      if (error instanceof ValidationError) {
+        await ctx.reply(`❌ Invalid split: ${error.message}`);
+      } else {
+        console.error('[handleSplitSettingsInput] Error:', error);
+        await ctx.reply('❌ Error updating split. Please try again.');
+      }
+      // Stay in input mode on error (user can try again or cancel)
     }
   }
 
@@ -1073,11 +1129,23 @@ export class MessageHandlers {
       // Get fun confirmation message
       const funConfirmation = this.expenseService.getFunConfirmation(parsed.category);
 
+      // Get split details for display
+      let splitDetails = '';
+      if (this.splitRulesService && transaction.bryanPercentage !== null && transaction.hweiYeenPercentage !== null) {
+        const userAName = getUserAName();
+        const userBName = getUserBName();
+        const userAPercent = Math.round(transaction.bryanPercentage * 100);
+        const userBPercent = Math.round(transaction.hweiYeenPercentage * 100);
+        const userAAmount = parsed.amount * transaction.bryanPercentage;
+        const userBAmount = parsed.amount * transaction.hweiYeenPercentage;
+        splitDetails = `\n📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+      }
+
       // Generate tip footer (20% chance = 1/5 times)
       const tipFooter = Math.random() < 0.2 ? "\n\n💡 Tip: Tap 'Undo' if you made a mistake!" : "";
 
       // Build final message
-      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})\n\n${balanceMessage}${tipFooter}`;
+      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})${splitDetails}\n\n${balanceMessage}${tipFooter}`;
 
       // Create inline keyboard with Undo button
       const keyboard = Markup.inlineKeyboard([

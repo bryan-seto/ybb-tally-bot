@@ -1,7 +1,7 @@
 import { Context } from 'telegraf';
 import { AIService } from '../services/ai';
 import { prisma } from '../lib/prisma';
-import { CONFIG } from '../config';
+import { CONFIG, getUserAName, getUserBName } from '../config';
 import { getNow } from '../utils/dateHelpers';
 import { ExpenseService } from '../services/expenseService';
 
@@ -166,8 +166,21 @@ export class PhotoHandler {
       // Build the minimalist summary
       let summary = `✅ **Recorded ${savedTransactions.length} expense${savedTransactions.length > 1 ? 's' : ''}:**\n`;
       
+      const userAName = getUserAName();
+      const userBName = getUserBName();
+      
       savedTransactions.forEach(tx => {
-        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})\n`;
+        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})`;
+        
+        // Add split details if available
+        if (tx.bryanPercentage !== null && tx.hweiYeenPercentage !== null) {
+          const userAPercent = Math.round(tx.bryanPercentage * 100);
+          const userBPercent = Math.round(tx.hweiYeenPercentage * 100);
+          const userAAmount = tx.amountSGD * tx.bryanPercentage;
+          const userBAmount = tx.amountSGD * tx.hweiYeenPercentage;
+          summary += `\n  📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+        }
+        summary += '\n';
       });
 
       summary += `\n${balanceMessage}`;
