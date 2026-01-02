@@ -1,7 +1,6 @@
 import { Context, Markup } from 'telegraf';
 import { ICallbackHandler } from './ICallbackHandler';
 import { SplitRulesService, ValidationError } from '../../services/splitRulesService';
-import { getUserAName, getUserBName } from '../../config';
 
 /**
  * Handler for split settings callbacks
@@ -55,24 +54,6 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
   }
 
   /**
-   * Get emoji for category
-   */
-  private getCategoryEmoji(category: string): string {
-    const emojiMap: Record<string, string> = {
-      'Groceries': '🛒',
-      'Food': '🍔',
-      'Bills': '💸',
-      'Shopping': '🛍️',
-      'Travel': '✈️',
-      'Entertainment': '🎬',
-      'Transport': '🚗',
-      'Medical': '🏥',
-      'Other': '📦',
-    };
-    return emojiMap[category] || '📦';
-  }
-
-  /**
    * Render main split settings menu with all categories
    */
   private async handleOpenSplitSettings(ctx: any): Promise<void> {
@@ -89,10 +70,9 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
         const rule = config[category];
         const bryPercent = Math.round(rule.userAPercent * 100);
         const hweiPercent = Math.round(rule.userBPercent * 100);
-        const emoji = this.getCategoryEmoji(category);
         buttons.push([
           {
-            text: `${emoji} ${category} (${bryPercent}/${hweiPercent})`,
+            text: `${category} (${bryPercent}/${hweiPercent})`,
             callback_data: `SPLIT_EDIT_${category}`,
           },
         ]);
@@ -126,20 +106,16 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
       const rule = await this.splitRulesService.getSplitRule(category);
       const currentBry = Math.round(rule.userAPercent * 100);
       const currentHwei = Math.round(rule.userBPercent * 100);
-      const userAName = getUserAName();
-      const userBName = getUserBName();
 
       await ctx.editMessageText(
-        `Editing split for **${category}**.\n\nCurrent: ${userAName} ${currentBry}% / ${userBName} ${currentHwei}%`,
+        `Editing split for **${category}**.\nCurrent: ${currentBry}%/${currentHwei}%`,
         {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: `${userAName} 50% / ${userBName} 50%`, callback_data: `SPLIT_SET_${category}_50` },
-                { text: `${userAName} 60% / ${userBName} 40%`, callback_data: `SPLIT_SET_${category}_60` },
-              ],
-              [
-                { text: `${userAName} 70% / ${userBName} 30%`, callback_data: `SPLIT_SET_${category}_70` },
+                { text: '50/50', callback_data: `SPLIT_SET_${category}_50` },
+                { text: '60/40', callback_data: `SPLIT_SET_${category}_60` },
+                { text: '70/30', callback_data: `SPLIT_SET_${category}_70` },
               ],
               [
                 { text: 'Custom Input', callback_data: `SPLIT_CUSTOM_${category}` },
@@ -169,11 +145,9 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
     try {
       const bryanDec = bryInt / 100;
       const hweiDec = (100 - bryInt) / 100;
-      const userAName = getUserAName();
-      const userBName = getUserBName();
 
       await this.splitRulesService.updateSplitRule(category, bryanDec, hweiDec);
-      await ctx.answerCbQuery(`✅ Updated: ${userAName} ${bryInt}% / ${userBName} ${100 - bryInt}%`);
+      await ctx.answerCbQuery('✅ Updated.');
 
       // Re-render main split menu
       await this.handleOpenSplitSettings(ctx);
@@ -201,9 +175,8 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
     ctx.session.splitSettingsCategory = category;
 
     try {
-      const userAName = getUserAName();
       await ctx.editMessageText(
-        `Enter ${userAName}'s percentage (0-100) for **${category}**:`,
+        `Enter Bryan's percentage (0-100) for **${category}**:`,
         {
           reply_markup: {
             inline_keyboard: [
