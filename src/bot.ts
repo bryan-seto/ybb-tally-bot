@@ -257,6 +257,7 @@ export class YBBTallyBot {
         await ctx.reply(message).catch(err => console.error('Cold start notify failed:', err));
         this.isColdStart = false;
       }
+      console.log('[COLD_START] Passing through...');
       return next();
     });
   }
