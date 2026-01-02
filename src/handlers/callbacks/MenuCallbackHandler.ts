@@ -46,6 +46,9 @@ export class MenuCallbackHandler implements ICallbackHandler {
               ],
               [
                 { text: '🔄 Recurring', callback_data: 'menu_recurring' },
+                { text: '⚙️ Split Rules', callback_data: 'OPEN_SPLIT_SETTINGS' },
+              ],
+              [
                 { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
               ],
               [

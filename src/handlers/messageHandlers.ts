@@ -361,8 +361,10 @@ export class MessageHandlers {
       session.waitingForSplitInput = false;
       session.splitSettingsCategory = undefined;
 
-      // Success message
-      await ctx.reply(`✅ Updated ${category}: ${input}%/${100 - input}%`);
+      // Success message with user names
+      const userAName = getUserAName();
+      const userBName = getUserBName();
+      await ctx.reply(`✅ Updated ${category}: ${userAName} ${input}% / ${userBName} ${100 - input}%`);
     } catch (error: any) {
       if (error instanceof ValidationError) {
         await ctx.reply(`❌ Invalid split: ${error.message}`);
@@ -1127,11 +1129,23 @@ export class MessageHandlers {
       // Get fun confirmation message
       const funConfirmation = this.expenseService.getFunConfirmation(parsed.category);
 
+      // Get split details for display
+      let splitDetails = '';
+      if (this.splitRulesService && transaction.bryanPercentage !== null && transaction.hweiYeenPercentage !== null) {
+        const userAName = getUserAName();
+        const userBName = getUserBName();
+        const userAPercent = Math.round(transaction.bryanPercentage * 100);
+        const userBPercent = Math.round(transaction.hweiYeenPercentage * 100);
+        const userAAmount = parsed.amount * transaction.bryanPercentage;
+        const userBAmount = parsed.amount * transaction.hweiYeenPercentage;
+        splitDetails = `\n📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+      }
+
       // Generate tip footer (20% chance = 1/5 times)
       const tipFooter = Math.random() < 0.2 ? "\n\n💡 Tip: Tap 'Undo' if you made a mistake!" : "";
 
       // Build final message
-      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})\n\n${balanceMessage}${tipFooter}`;
+      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})${splitDetails}\n\n${balanceMessage}${tipFooter}`;
 
       // Create inline keyboard with Undo button
       const keyboard = Markup.inlineKeyboard([

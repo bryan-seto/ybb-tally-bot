@@ -265,7 +265,6 @@ export class YBBTallyBot {
         { text: '📜 History', callback_data: 'view_history' },
       ],
       [
-        { text: '⚙️ Split Rules', callback_data: 'OPEN_SPLIT_SETTINGS' },
         { text: '☰ Menu', callback_data: 'open_menu' },
       ],
     ]);
