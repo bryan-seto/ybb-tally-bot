@@ -67,25 +67,73 @@ export class CommandHandlers {
 
   async handleSettle(ctx: Context) {
     try {
-      const result = await prisma.transaction.updateMany({
+      // Fetch all unsettled transactions (shared system)
+      const unsettled = await prisma.transaction.findMany({
         where: { isSettled: false },
-        data: { isSettled: true },
+        orderBy: { id: 'desc' }
       });
-
-      if (result.count === 0) {
-        await ctx.reply('✅ All expenses are already settled! No pending transactions to settle.');
+      
+      if (unsettled.length === 0) {
+        await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
         return;
       }
-
+      
+      // Calculate watermark and totals
+      const watermarkID = unsettled[0].id; // Max ID (already sorted desc)
+      const totalAmount = unsettled.reduce((sum, t) => sum + Number(t.amountSGD), 0);
+      const transactionCount = unsettled.length;
+      
+      // CRITICAL: Explicit BigInt to string conversion
+      const watermarkString = watermarkID.toString();
+      
+      // Validate watermark is valid (safety check)
+      if (!/^\d+$/.test(watermarkString)) {
+        throw new Error('Invalid watermark ID format');
+      }
+      
+      // Create confirmation keyboard
+      const confirmationKeyboard = Markup.inlineKeyboard([
+        [{ 
+          text: '✅ Confirm', 
+          callback_data: `settle_confirm_${watermarkString}` // Use string, not BigInt
+        }],
+        [{ text: '❌ Cancel', callback_data: 'settle_cancel' }]
+      ]);
+      
+      // Show preview
       await ctx.reply(
-        `✅ **All expenses settled!**\n\n` +
-        `Marked ${result.count} transaction${result.count > 1 ? 's' : ''} as settled.\n\n` +
-        `Outstanding balance has been cleared. All expenses are now settled!`,
-        { parse_mode: 'Markdown' }
+        `Ready to settle ${transactionCount} transactions for SGD $${totalAmount.toFixed(2)}?\n\n` +
+        `⚠️ This will mark all unsettled transactions as paid.`,
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: confirmationKeyboard.reply_markup
+        }
       );
+      
+      // Log the settlement attempt
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+      if (userId) {
+        try {
+          await prisma.systemLog.create({
+            data: {
+              userId,
+              event: 'settle_command_attempted',
+              metadata: {
+                method: 'command',
+                transactionCount,
+                totalAmount,
+                watermarkID: watermarkString, // Store as string in JSON
+                timestamp: new Date().toISOString(),
+              },
+            },
+          });
+        } catch (logError) {
+          console.error('Error logging settlement attempt:', logError);
+        }
+      }
     } catch (error: any) {
-      console.error('Error settling expenses:', error);
-      await ctx.reply('Sorry, I encountered an error settling expenses. Please try again.');
+      console.error('Error handling settle command:', error);
+      await ctx.reply('Sorry, I encountered an error. Please try again.');
     }
   }
 

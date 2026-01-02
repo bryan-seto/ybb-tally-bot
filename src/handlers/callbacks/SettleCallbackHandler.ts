@@ -17,7 +17,10 @@ export class SettleCallbackHandler implements ICallbackHandler {
   ) {}
 
   canHandle(data: string): boolean {
-    return data === 'settle_up' || data === 'menu_settle' || data === 'settle_confirm' || data === 'settle_cancel';
+    return data === 'settle_up' || 
+           data === 'menu_settle' || 
+           data.startsWith('settle_confirm_') || 
+           data === 'settle_cancel';
   }
 
   async handle(ctx: any, data: string): Promise<void> {
@@ -32,14 +35,29 @@ export class SettleCallbackHandler implements ICallbackHandler {
         await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
         return;
       }
-
+      
+      // Fetch unsettled transactions for preview
+      const unsettled = await prisma.transaction.findMany({
+        where: { isSettled: false },
+        orderBy: { id: 'desc' }
+      });
+      
+      if (unsettled.length === 0) {
+        await ctx.reply('✅ All expenses are already settled! No outstanding balance.');
+        return;
+      }
+      
+      const watermarkID = unsettled[0].id.toString(); // Convert to string
+      const totalAmount = unsettled.reduce((sum, t) => sum + Number(t.amountSGD), 0);
+      const transactionCount = unsettled.length;
+      
       await ctx.reply(
         `${balanceMessage}\n\n` +
-        `Mark this as paid and reset balance to $0?`,
+        `Ready to settle ${transactionCount} transactions for SGD $${totalAmount.toFixed(2)}?`,
         {
           reply_markup: {
             inline_keyboard: [
-              [{ text: '✅ Yes, Settle', callback_data: 'settle_confirm' }],
+              [{ text: '✅ Yes, Settle', callback_data: `settle_confirm_${watermarkID}` }],
               [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
             ],
           },
@@ -49,29 +67,95 @@ export class SettleCallbackHandler implements ICallbackHandler {
       return;
     }
 
-    if (data === 'settle_confirm') {
+    if (data.startsWith('settle_confirm_')) {
       await ctx.answerCbQuery();
       
-      const result = await prisma.transaction.updateMany({
-        where: { isSettled: false },
-        data: { isSettled: true },
-      });
-      
-      if (result.count > 0) {
-        await ctx.reply(`🤝 All Settled! Marked ${result.count} transactions as paid.`);
+      try {
+        // Parse and validate watermark ID
+        const rawId = data.replace('settle_confirm_', '');
+        
+        // CRITICAL: Validate ID format to prevent injection
+        if (!/^\d+$/.test(rawId)) {
+          await ctx.reply('❌ Invalid settlement request. Please try again.');
+          return;
+        }
+        
+        // Convert to BigInt safely
+        const watermarkID = BigInt(rawId);
+        
+        // Count transactions before settlement for logging
+        const transactionsToSettle = await prisma.transaction.findMany({
+          where: { 
+            isSettled: false,
+            id: { lte: watermarkID } // Watermark constraint
+          },
+          select: { id: true, amountSGD: true },
+        });
+        
+        const transactionIds = transactionsToSettle.map(tx => tx.id.toString());
+        const transactionCount = transactionsToSettle.length;
+        
+        // Idempotency check
+        if (transactionCount === 0) {
+          await ctx.editMessageText('✅ All expenses are already settled!');
+          return;
+        }
+        
+        // Execute settlement with watermark constraint
+        const result = await prisma.transaction.updateMany({
+          where: {
+            isSettled: false,
+            id: { lte: watermarkID } // Only settle up to watermark
+          },
+          data: { isSettled: true },
+        });
+        
+        // Log the settlement operation
+        const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+        if (userId) {
+          try {
+            await prisma.systemLog.create({
+              data: {
+                userId,
+                event: 'settlement_executed',
+                metadata: {
+                  method: 'callback_confirm',
+                  transactionCount: result.count,
+                  watermarkID: rawId, // Store as string
+                  transactionIds: transactionIds.slice(0, 100), // Limit to first 100 IDs
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+          } catch (logError) {
+            console.error('Error logging settlement:', logError);
+          }
+        }
+        
+        // Success response
+        await ctx.editMessageText(
+          `🤝 All Settled! Marked ${result.count} transaction${result.count > 1 ? 's' : ''} as paid.`
+        );
+        
         // Return to dashboard after settlement
         if (this.showDashboard) {
           await this.showDashboard(ctx, false);
         }
-      } else {
-        await ctx.reply('✅ All expenses are already settled!');
+      } catch (error: any) {
+        console.error('Error executing settlement:', error);
+        await ctx.editMessageText('❌ Sorry, an error occurred during settlement. Please try again.');
       }
       return;
     }
 
     if (data === 'settle_cancel') {
       await ctx.answerCbQuery();
-      await ctx.reply('Settlement cancelled.');
+      try {
+        await ctx.deleteMessage(); // Cleanup preview message
+      } catch (deleteError) {
+        // If delete fails, just reply
+        await ctx.reply('Settlement cancelled.');
+      }
       return;
     }
   }
