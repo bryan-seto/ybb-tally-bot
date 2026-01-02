@@ -200,6 +200,12 @@ export class YBBTallyBot {
    */
   private setupMiddleware(): void {
     this.bot.use(async (ctx, next) => {
+      console.log(`[MIDDLEWARE] Update Type: ${ctx.updateType}`);
+      if (ctx.message && 'text' in ctx.message) {
+        console.log(`[MIDDLEWARE] Entities: ${JSON.stringify(ctx.message.entities)}`);
+        console.log(`[MIDDLEWARE] Text: ${ctx.message.text}`);
+      }
+      
       const userId = ctx.from?.id?.toString();
       
       if (!userId) {
