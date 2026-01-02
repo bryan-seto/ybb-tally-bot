@@ -1,0 +1,17 @@
+name: Keep Staging Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # Every 10 minutes
+  workflow_dispatch: # Manual trigger for testing
+
+jobs:
+  ping-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Health Endpoint
+        run: |
+          echo "Pinging Staging Health Check..."
+          curl -f -m 10 "${{ secrets.STAGING_URL }}/health"
+          echo "Ping successful."
+
