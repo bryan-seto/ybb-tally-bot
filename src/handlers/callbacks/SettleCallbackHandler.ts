@@ -151,10 +151,17 @@ export class SettleCallbackHandler implements ICallbackHandler {
     if (data === 'settle_cancel') {
       await ctx.answerCbQuery();
       try {
-        await ctx.deleteMessage(); // Cleanup preview message
-      } catch (deleteError) {
-        // If delete fails, just reply
-        await ctx.reply('Settlement cancelled.');
+        // Edit the message to show cancellation and remove buttons
+        await ctx.editMessageText('❌ Settlement cancelled.', {
+          reply_markup: { inline_keyboard: [] } // Remove buttons
+        });
+      } catch (editError) {
+        // If edit fails (e.g., message too old), try to reply
+        try {
+          await ctx.reply('❌ Settlement cancelled.');
+        } catch (replyError) {
+          console.error('Error handling cancel:', replyError);
+        }
       }
       return;
     }
