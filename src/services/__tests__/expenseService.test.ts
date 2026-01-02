@@ -12,6 +12,9 @@ vi.mock('../../lib/prisma', () => ({
       findMany: vi.fn(),
       create: vi.fn(),
     },
+    settings: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -86,6 +89,8 @@ describe('ExpenseService', () => {
       vi.mocked(prisma.transaction.create).mockResolvedValue(mockTransaction as any);
       vi.mocked(prisma.user.findFirst).mockResolvedValue(mockBryan as any);
       vi.mocked(prisma.transaction.findMany).mockResolvedValue([]);
+      // Mock settings for SplitRulesService (returns null = no custom config, use defaults)
+      vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
     });
 
     describe('Split Logic - Household Categories (70/30)', () => {
