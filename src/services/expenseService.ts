@@ -1,8 +1,15 @@
 import { getStartOfMonth, getEndOfMonth, getMonthsAgo, formatDate } from '../utils/dateHelpers';
 import { prisma } from '../lib/prisma';
 import { getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
+import { SplitRulesService } from './splitRulesService';
 
 export class ExpenseService {
+  private splitRulesService: SplitRulesService;
+
+  constructor(splitRulesService?: SplitRulesService) {
+    // Allow injection for testing, or create default instance
+    this.splitRulesService = splitRulesService || new SplitRulesService();
+  }
   /**
    * Calculate outstanding balance between users
    * Returns: { bryanOwes: number, hweiYeenOwes: number }
@@ -489,18 +496,14 @@ export class ExpenseService {
     transaction: any;
     balanceMessage: string;
   }> {
-    // Split rules based on category
-    const splitRules: Record<string, { bryan: number; hwei: number }> = {
-      'Groceries': { bryan: 0.7, hwei: 0.3 },
-      'Bills': { bryan: 0.7, hwei: 0.3 },
-      'Shopping': { bryan: 0.7, hwei: 0.3 },
-      'Food': { bryan: 0.5, hwei: 0.5 },
-      'Travel': { bryan: 0.5, hwei: 0.5 },
-      'Entertainment': { bryan: 0.5, hwei: 0.5 },
-      'Transport': { bryan: 0.5, hwei: 0.5 },
-    };
+    // Get split rule from service (configurable, database-backed)
+    const splitRule = await this.splitRulesService.getSplitRule(category);
     
-    const split = splitRules[category] || { bryan: 0.7, hwei: 0.3 }; // Default 70/30
+    // Map generic userA/userB to domain-specific bryan/hwei
+    const split = {
+      bryan: splitRule.userAPercent,
+      hwei: splitRule.userBPercent,
+    };
 
     // Look up the user/payer
     const user = await prisma.user.findUnique({
