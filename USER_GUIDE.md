@@ -16,6 +16,7 @@
 | Settle Up | Button in menu | Reset all balances to $0 |
 | Undo Entry | `Undo` Button | Available immediately after recording |
 | Edit Transaction | `edit /15 20` or `@bot change amount to 20` | Two methods: command or natural language |
+| Configure Splits | Tools Menu → Split Rules | Customize category-based split percentages |
 | View Dashboard | `/menu` or `/start` | Main hub with balance and recent activity |
 
 ---
@@ -48,8 +49,9 @@ Here is how to track your expenses. You have two methods:
 ```
 ✅ Recorded 1 expense:
 • Starbucks Coffee: SGD $12.50 (Food)
+📊 Split: User A 50% ($6.25) / User B 50% ($6.25)
 
-💰 Balance: Bryan owes Hwei Yeen $5.20
+💰 Balance: User A owes User B $5.20
 ```
 
 ### Method B: Quick Text Input
@@ -67,14 +69,15 @@ Type the amount followed by what it was for. The AI will parse it automatically.
 
 **What happens:**
 1. AI parses the amount, category, and description
-2. Transaction is created with default 70/30 split
-3. You see a confirmation with an **Undo** button (available immediately)
+2. Transaction is created with category-based default split (varies by category)
+3. You see a confirmation with split details and an **Undo** button (available immediately)
 
 **Example confirmation:**
 ```
-✅ Recorded: groceries - $50.00 (Groceries)
+🛒 Stocked up! groceries - $50.00 (Groceries)
+📊 Split: User A 70% ($35.00) / User B 30% ($15.00)
 
-💰 Balance: Hwei Yeen owes Bryan $15.00
+💰 Balance: User B owes User A $15.00
 
 💡 Tip: Tap 'Undo' if you made a mistake!
 ```
@@ -124,7 +127,7 @@ Use the `edit` command with transaction ID:
 - **Description:** `edit /15 lunch` (changes description)
 - **Category:** `edit /15 Transport` (changes category)
 - **Split:** Use natural language: `@bot split 50-50`
-- **Payer:** Use natural language: `@bot change payer to Bryan`
+- **Payer:** Use natural language: `@bot change payer to User A` (use your configured names)
 - **Date:** Use natural language: `@bot change date to 2024-01-15`
 - **Time:** Use natural language: `@bot change time to 14:30`
 
@@ -139,20 +142,28 @@ Use the `edit` command with transaction ID:
 The Dashboard is your main hub. Access it with `/menu` or `/start`.
 
 **What it shows:**
-- **Balance Header:** Who owes whom and how much (e.g., "Bryan owes Hwei Yeen $25.50")
+- **Balance Header:** Who owes whom and how much (e.g., "User A owes User B $25.50")
 - **Recent Activity:** Last 3 transactions with status indicators
   - 🔴 = Unsettled transaction
   - ✅ = Settled transaction
 - **Quick Actions:** Buttons for Settle Up, History, and Menu
 
+**Tools Menu:**
+Click **☰ Menu** to access additional tools:
+- **🔍 Search** - Find transactions by keyword
+- **📊 Reports** - View monthly spending reports with charts
+- **🔄 Recurring** - Set up recurring expenses
+- **⚙️ Split Rules** - Configure category-based split percentages
+- **❓ User Guide** - Link to this documentation
+
 **Example Dashboard:**
 ```
-📈 Scoreboard: Hwei Yeen is up by $25.50
+📈 Scoreboard: User B is up by $25.50
 
 📋 Latest Activity:
-/105 🔴 15 Jan - Starbucks Coffee - $12.50 - Bryan
-/104 ✅ 14 Jan - Groceries - $50.00 - Hwei Yeen
-/103 🔴 13 Jan - Uber - $15.00 - Bryan
+/105 🔴 15 Jan - Starbucks Coffee - $12.50 - User A
+/104 ✅ 14 Jan - Groceries - $50.00 - User B
+/103 🔴 13 Jan - Uber - $15.00 - User A
 
 👇 Quick Record: Send a photo or type '5 Coffee'.
 💡 Tip: Made a mistake? Type 'edit /15 20' to change amount...
@@ -181,20 +192,142 @@ graph LR
 6. Balance resets to $0.00
 7. Dashboard refreshes automatically
 
-**Understanding the 70/30 Split:**
+**Understanding Category-Based Splits:**
 
-All expenses are automatically split:
-- **Bryan:** 70% of total expenses
-- **Hwei Yeen:** 30% of total expenses
+Expenses are automatically split based on the category. Each category has a default split ratio that you can customize:
 
-**Example calculation:**
-- Bryan paid $100, Hwei Yeen paid $50
+**Default Splits by Category:**
+- **Groceries, Bills, Shopping:** 70% / 30% (household expenses)
+- **Food, Travel, Entertainment, Transport:** 50% / 50% (personal expenses)
+- **Other categories:** 70% / 30% (default fallback)
+
+**Example calculation (Groceries at 70/30):**
+- User A paid $100, User B paid $50
 - Total spending: $150
-- Bryan's share (70%): $105
-- Hwei Yeen's share (30%): $45
-- Since Bryan paid $100 but owes $105, **Bryan owes Hwei Yeen $5**
+- User A's share (70%): $105
+- User B's share (30%): $45
+- Since User A paid $100 but owes $105, **User A owes User B $5**
 
-**Note:** You can change the split ratio for individual transactions using the edit commands described in the Editing section.
+**Customizing Splits:**
+- **Category Defaults:** Configure default splits for each category (see "⚙️ Configuring Split Rules" section below)
+- **Per-Transaction Overrides:** Change the split for individual transactions using edit commands (see Editing section)
+
+---
+
+## ⚙️ Configuring Split Rules
+
+Split rules let you customize how expenses are automatically divided between you and your partner for each category. This is perfect for couples with different spending patterns or shared vs personal expenses.
+
+### Accessing Split Settings
+
+1. Open the **Dashboard** (click `/menu` or `/start`)
+2. Click **☰ Menu** button
+3. Click **⚙️ Split Rules** in the Tools Menu
+4. You'll see a list of all categories with their current split percentages
+
+**Example split settings list:**
+```
+⚙️ Split Rules Settings
+
+Select a category to edit:
+
+🛒 Groceries (70/30)
+🍔 Food (50/50)
+💸 Bills (70/30)
+🛍️ Shopping (70/30)
+✈️ Travel (50/50)
+🎬 Entertainment (50/50)
+🚗 Transport (50/50)
+🏥 Medical (70/30)
+📦 Other (70/30)
+
+« Back to Main Menu
+```
+
+### Understanding Category Defaults
+
+Each category has a default split that applies to new expenses:
+
+| Category | Default Split | Typical Use Case |
+|----------|---------------|------------------|
+| Groceries | 70% / 30% | Household essentials |
+| Bills | 70% / 30% | Shared utilities |
+| Shopping | 70% / 30% | Household items |
+| Food | 50% / 50% | Dining out together |
+| Travel | 50% / 50% | Shared trips |
+| Entertainment | 50% / 50% | Shared activities |
+| Transport | 50% / 50% | Commuting together |
+| Medical | 70% / 30% | Health expenses |
+| Other | 70% / 30% | Default fallback |
+
+**Note:** These are just defaults. You can customize any category to match your spending patterns.
+
+### Changing Split Percentages
+
+When you click on a category, you'll see the edit menu with two options:
+
+#### Method 1: Preset Buttons
+
+Choose from common split ratios:
+- **50/50** - Equal split (e.g., "User A 50% / User B 50%")
+- **60/40** - Slightly weighted (e.g., "User A 60% / User B 40%")
+- **70/30** - Household split (e.g., "User A 70% / User B 30%")
+
+**Example:**
+```
+Editing split for **Groceries**.
+
+Current: User A 70% / User B 30%
+
+[User A 50% / User B 50%] [User A 60% / User B 40%]
+[User A 70% / User B 30%]
+[Custom Input] [« Back]
+```
+
+#### Method 2: Custom Input
+
+For precise control, enter a custom percentage:
+
+1. Click **Custom Input**
+2. Enter User A's percentage (0-100)
+3. Bot automatically calculates User B's share
+4. Click **❌ Cancel** to abort
+
+**Example:**
+```
+Enter User A's percentage (0-100) for **Groceries**:
+
+[❌ Cancel]
+```
+
+Type `65` and the bot will set it to 65% / 35%.
+
+### What Happens When You Change a Rule
+
+**Important:** Changing a split rule only affects **NEW** expenses in that category.
+
+- ✅ **New expenses** in that category will use the updated split
+- ✅ **Existing transactions** keep their original splits (unchanged)
+- ✅ You can still override per-transaction using edit commands
+
+**Example:**
+- You change Groceries from 70/30 to 60/40
+- All **future** grocery expenses will use 60/40
+- All **past** grocery expenses remain at 70/30
+- You can still edit individual transactions to use a different split
+
+### Example Workflow
+
+**Scenario:** "I want Groceries to be 60/40 instead of 70/30"
+
+1. Open Dashboard → Click **☰ Menu** → Click **⚙️ Split Rules**
+2. Click **🛒 Groceries (70/30)**
+3. Click **User A 60% / User B 40%** button
+4. Bot confirms: "✅ Updated: User A 60% / User B 40%"
+5. Returns to category list showing updated split
+6. All future grocery expenses will now use 60/40 split
+
+**Pro Tip:** Configure your most common categories first (Groceries, Food, Bills) to match your actual spending patterns!
 
 ---
 
@@ -217,10 +350,10 @@ All expenses are automatically split:
 ```
 📜 Transaction History
 
-/105 🔴 15 Jan - Starbucks Coffee - $12.50 - Bryan
-/104 ✅ 14 Jan - Groceries - $50.00 - Hwei Yeen
-/103 🔴 13 Jan - Uber - $15.00 - Bryan
-/102 ✅ 12 Jan - Lunch - $30.00 - Bryan
+/105 🔴 15 Jan - Starbucks Coffee - $12.50 - User A
+/104 ✅ 14 Jan - Groceries - $50.00 - User B
+/103 🔴 13 Jan - Uber - $15.00 - User A
+/102 ✅ 12 Jan - Lunch - $30.00 - User A
 ...
 ```
 
@@ -256,8 +389,8 @@ All expenses are automatically split:
 🏪 Merchant: Starbucks Coffee
 💵 Amount: SGD $12.50
 📂 Category: Food
-👤 Paid by: Bryan
-📊 Split: 70% Bryan, 30% Hwei Yeen
+👤 Paid by: User A
+📊 Split: User A 50% ($6.25) / User B 50% ($6.25)
 🔴 Status: Unsettled
 ```
 
@@ -278,9 +411,8 @@ All expenses are automatically split:
 - **After Undo expires:** Use `edit /<id> <correct_amount>` or `@bot change amount to <correct_amount>`
 
 **Q: How do I change the split ratio?**
-- Use natural language: `@bot split 50-50` or `@bot split this 60-40`
-- The bot will update the most recent transaction by default
-- To edit a specific transaction, first view it with `/105`, then use the **✨ AI Edit** button
+- **For a specific transaction:** Use natural language: `@bot split 50-50` or `@bot split this 60-40`. The bot will update the most recent transaction by default. To edit a specific transaction, first view it with `/105`, then use the **✨ AI Edit** button.
+- **For all future expenses in a category:** Go to Tools Menu → **⚙️ Split Rules**, select the category, and choose your preferred split. This sets the default for all new expenses in that category. See the "⚙️ Configuring Split Rules" section for details.
 
 **Q: Can I delete a transaction?**
 - Yes! View the transaction detail (click the ID), then click **🗑️ Delete**
@@ -323,6 +455,7 @@ All expenses are automatically split:
 3. **Settle up regularly** (e.g., weekly or monthly) to keep balances manageable
 4. **Use natural language editing** - it's more intuitive than remembering command syntax
 5. **Check the dashboard regularly** to stay on top of who owes what
+6. **Configure default splits by category** to match your spending patterns - this saves time on individual edits
 
 ---
 
