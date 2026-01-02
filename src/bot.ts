@@ -347,9 +347,15 @@ export class YBBTallyBot {
    * @param editMode - If true, use editMessageText; if false, use reply
    */
   async showDashboard(ctx: any, editMode: boolean = false) {
+    console.log(`[showDashboard] Starting. EditMode: ${editMode}`);
     try {
+      console.log('[showDashboard] Getting dashboard message...');
       const dashboardMessage = await this.getDashboardMessage();
+      console.log(`[showDashboard] Message generated (len: ${dashboardMessage.length})`);
+      
+      console.log('[showDashboard] Creating keyboard...');
       const keyboard = this.getMainMenuKeyboard();
+      console.log('[showDashboard] Keyboard created');
       
       if (editMode) {
         // Edit mode: for navigation (Back button)
@@ -357,33 +363,42 @@ export class YBBTallyBot {
           await ctx.answerCbQuery();
         }
         try {
+          console.log('[showDashboard] Attempting to edit message...');
           await ctx.editMessageText(dashboardMessage, {
             ...keyboard,
             parse_mode: 'Markdown',
           });
+          console.log('[showDashboard] Message edited successfully');
         } catch (error: any) {
           // If edit fails (e.g., message too old), send new message
-          console.error('Error editing dashboard message:', error);
+          console.error('[showDashboard] Error editing dashboard message:', error);
+          console.log('[showDashboard] Falling back to reply...');
           await ctx.reply(dashboardMessage, {
             ...keyboard,
             parse_mode: 'Markdown',
           });
+          console.log('[showDashboard] Fallback reply sent');
         }
       } else {
         // New message mode: for new inputs (text/photo)
+        console.log('[showDashboard] Attempting to reply...');
         await ctx.reply(dashboardMessage, {
           ...keyboard,
           parse_mode: 'Markdown',
         });
+        console.log('[showDashboard] Reply sent successfully');
       }
     } catch (error: any) {
-      console.error('Error showing dashboard:', error);
+      console.error('[showDashboard] CAUGHT ERROR:', error);
+      console.error('[showDashboard] Error stack:', error.stack);
       // Fallback: send simple message
       try {
         await ctx.reply('Dashboard loading...', this.getMainMenuKeyboard());
       } catch (fallbackError) {
-        console.error('Error sending fallback dashboard:', fallbackError);
+        console.error('[showDashboard] Error sending fallback dashboard:', fallbackError);
       }
+      // Re-throw to be caught by command handler
+      throw error;
     }
   }
 
@@ -438,7 +453,18 @@ export class YBBTallyBot {
     // Menu command - show dashboard
     this.bot.command('menu', async (ctx) => {
       console.log('[COMMAND] /menu handler triggered');
-      await this.showDashboard(ctx, false);
+      try {
+        await this.showDashboard(ctx, false);
+        console.log('[COMMAND] /menu - Dashboard sent successfully');
+      } catch (error: any) {
+        console.error('[COMMAND] /menu - CRITICAL FAILURE:', error);
+        console.error('[COMMAND] /menu - Error stack:', error.stack);
+        try {
+          await ctx.reply('❌ Error loading dashboard. Please try again.');
+        } catch (replyError) {
+          console.error('[COMMAND] /menu - Failed to send error message:', replyError);
+        }
+      }
     });
 
     // Balance command
