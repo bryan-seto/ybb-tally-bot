@@ -13,7 +13,7 @@
 | Check Balance | `/balance` | View current split and who owes what |
 | View History | `/history` | View last 20 transactions |
 | View Transaction | `/105` | Direct access by transaction ID |
-| Settle Up | Button in menu | Reset all balances to $0 |
+| Settle Up | /settle or Button | Generates a snapshot preview to confirm clearing debts |
 | Undo Entry | `Undo` Button | Available immediately after recording |
 | Edit Transaction | `edit /15 20` or `@bot change amount to 20` | Two methods: command or natural language |
 | Configure Splits | Tools Menu → Split Rules | Customize category-based split percentages |
@@ -171,26 +171,27 @@ Click **☰ Menu** to access additional tools:
 
 ### Settling Debts
 
+Stop guessing. The bot now uses a **Snapshot System** to ensure you never settle accidental bills.
+
 **When to use:** End of month, end of trip, or whenever you want to clear the balance.
 
-**The Flow:**
+**How it Works:**
 
-```mermaid
-graph LR
-    A["Click Settle Up"] --> B["Bot Calculates Split"]
-    B --> C{"Confirm?"}
-    C -- Yes --> D["Balances Reset to $0"]
-    C -- No --> E[Cancel]
-```
+1. **Trigger:** Tap **💸 Settle Up** in the menu or type `/settle`.
 
-**Step-by-step:**
-1. Click **💸 Settle Up** from the dashboard or menu
-2. Bot shows you who owes whom and the amount
-3. Review the calculation
-4. Click **✅ Yes, Settle** to confirm, or **❌ Cancel** to abort
-5. All unsettled transactions are marked as settled
-6. Balance resets to $0.00
-7. Dashboard refreshes automatically
+2. **The Snapshot:** The bot freezes the current state and shows you a summary:
+   ```
+   Ready to settle 12 transactions for SGD $450.00?
+   
+   ⚠️ This will mark all unsettled transactions as paid.
+   ```
+   *This snapshot excludes bills added after this message.*
+
+3. **Decide:**
+   * **✅ Confirm** (or **✅ Yes, Settle**): Immediately marks those specific transactions as paid.
+   * **❌ Cancel:** Aborts the process. No data is changed.
+
+**Note:** If a friend adds a new bill *while* you are looking at the preview, it will **not** be included. You must generate a new settlement to include it.
 
 **Understanding Category-Based Splits:**
 
