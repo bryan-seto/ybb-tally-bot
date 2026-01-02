@@ -200,17 +200,17 @@ describe('Critical Flows E2E', () => {
   });
 
   // ==========================================
-  // 💰 FLOW 3: Balance & Settle
+  // 💰 FLOW 3: Balance & Settle (Snapshot System)
   // ==========================================
   describe('Flow 3: View Balance and Settle', () => {
-    it('should calculate balance and settle debts', async () => {
+    it('should show preview with snapshot and settle debts using watermark', async () => {
       // Setup: Bryan paid $100. Default split 70/30 means:
       // Bryan share: $70, HweiYeen share: $30
       // Since Bryan paid, HweiYeen owes Bryan $30
       const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
       if (!bryanUser) throw new Error('Bryan user not found');
 
-      await createTestTransaction({
+      const tx1 = await createTestTransaction({
         amountSGD: 100,
         description: "Dinner",
         category: "Food",
@@ -220,23 +220,138 @@ describe('Critical Flows E2E', () => {
         hweiYeenPercentage: 0.3,
       });
 
+      // Get the transaction ID as watermark (max ID before settlement)
+      const watermarkID = tx1.id.toString();
+
       const ctx = createMockContext('', userA, 'settle_up');
 
-      // 1. Trigger Settle View
+      // 1. Trigger Settle View (should show preview with watermark)
+      // Note: CallbackRouter shows "⏳ Loading..." first, then handler sends preview
       await callbackHandlers.handleCallback(ctx);
       
-      // Verify reply was called (balance message shown)
-      expect(ctx.reply).toHaveBeenCalled();
+      // Verify reply was called at least twice (loading + preview)
+      expect(ctx.reply).toHaveBeenCalledTimes(2);
+      
+      // First call is loading message
+      const loadingMessage = (ctx.reply as any).mock.calls[0][0];
+      expect(loadingMessage).toBe('⏳ Loading...');
+      
+      // Second call is the preview message
+      const previewMessage = (ctx.reply as any).mock.calls[1][0];
+      expect(previewMessage).toContain('Ready to settle');
+      expect(previewMessage).toContain('transactions');
+      expect(previewMessage).toContain('SGD $');
 
-      // 2. Confirm Settlement
-      const confirmCtx = createMockContext('', userA, 'settle_confirm');
+      // Extract watermark from callback data in the reply
+      const replyMarkup = (ctx.reply as any).mock.calls[1][1]?.reply_markup;
+      expect(replyMarkup).toBeTruthy();
+      const confirmButton = replyMarkup.inline_keyboard[0][0];
+      expect(confirmButton.callback_data).toMatch(/^settle_confirm_\d+$/);
+      
+      // Verify watermark matches transaction ID
+      const extractedWatermark = confirmButton.callback_data.replace('settle_confirm_', '');
+      expect(extractedWatermark).toBe(watermarkID);
+
+      // 2. Add a new transaction AFTER preview (should NOT be settled)
+      const tx2 = await createTestTransaction({
+        amountSGD: 50,
+        description: "Coffee",
+        category: "Food",
+        payerId: bryanUser.id,
+        isSettled: false,
+      });
+
+      // 3. Confirm Settlement with watermark
+      // The confirm callback needs the preview message (second reply) as the message to edit
+      const confirmCtx = createMockContext('', userA, `settle_confirm_${watermarkID}`);
+      confirmCtx.callbackQuery = {
+        ...confirmCtx.callbackQuery!,
+        message: ctx.reply.mock.results[1].value as any, // Use second reply (preview message)
+      } as any;
       await callbackHandlers.handleCallback(confirmCtx);
 
-      // 3. Verify DB is settled
+      // 4. Verify only original transaction is settled (watermark protection)
+      const tx1After = await prisma.transaction.findUnique({ where: { id: tx1.id } });
+      const tx2After = await prisma.transaction.findUnique({ where: { id: tx2.id } });
+      
+      expect(tx1After?.isSettled).toBe(true); // Original transaction settled
+      expect(tx2After?.isSettled).toBe(false); // New transaction NOT settled (watermark protection)
+    });
+
+    it('should handle /settle command with preview', async () => {
+      const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
+      if (!bryanUser) throw new Error('Bryan user not found');
+
+      const tx = await createTestTransaction({
+        amountSGD: 75,
+        description: "Lunch",
+        category: "Food",
+        payerId: bryanUser.id,
+        isSettled: false,
+      });
+
+      // Import CommandHandlers
+      const { CommandHandlers } = await import('../../handlers/commandHandlers');
+      const commandHandlers = new CommandHandlers(expenseService, {} as any, historyService);
+
+      const ctx = createMockContext('/settle', userA);
+      ctx.message = { text: '/settle', message_id: 1 } as any;
+
+      // 1. Trigger /settle command (should show preview)
+      await commandHandlers.handleSettle(ctx);
+
+      // Verify preview was shown
+      expect(ctx.reply).toHaveBeenCalled();
+      const previewMessage = (ctx.reply as any).mock.calls[0][0];
+      expect(previewMessage).toContain('Ready to settle');
+      expect(previewMessage).toContain('SGD $');
+
+      // Verify buttons are present
+      const replyMarkup = (ctx.reply as any).mock.calls[0][1]?.reply_markup;
+      expect(replyMarkup).toBeTruthy();
+      expect(replyMarkup.inline_keyboard.length).toBeGreaterThan(0);
+      
+      // Verify confirm button has watermark matching transaction ID
+      const confirmButton = replyMarkup.inline_keyboard[0][0];
+      expect(confirmButton.callback_data).toMatch(/^settle_confirm_\d+$/);
+      const extractedWatermark = confirmButton.callback_data.replace('settle_confirm_', '');
+      expect(extractedWatermark).toBe(tx.id.toString());
+    });
+
+    it('should handle cancel button correctly', async () => {
+      const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
+      if (!bryanUser) throw new Error('Bryan user not found');
+
+      await createTestTransaction({
+        amountSGD: 50,
+        description: "Test",
+        category: "Food",
+        payerId: bryanUser.id,
+        isSettled: false,
+      });
+
+      const ctx = createMockContext('', userA, 'settle_up');
+      await callbackHandlers.handleCallback(ctx);
+
+      // Create cancel context with message reference
+      const cancelCtx = createMockContext('', userA, 'settle_cancel');
+      cancelCtx.callbackQuery = {
+        ...cancelCtx.callbackQuery!,
+        message: ctx.reply.mock.results[0].value as any,
+      } as any;
+      
+      await callbackHandlers.handleCallback(cancelCtx);
+
+      // Verify cancel was handled (editMessageText should be called)
+      expect(cancelCtx.editMessageText).toHaveBeenCalled();
+      const cancelMessage = (cancelCtx.editMessageText as any).mock.calls[0][0];
+      expect(cancelMessage).toContain('cancelled');
+
+      // Verify transaction is still unsettled
       const unsettledCount = await prisma.transaction.count({
         where: { isSettled: false }
       });
-      expect(unsettledCount).toBe(0);
+      expect(unsettledCount).toBe(1);
     });
   });
 
