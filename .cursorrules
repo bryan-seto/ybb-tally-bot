@@ -53,30 +53,64 @@
 
 # 🚀 PHASE 4: PRODUCTION RELEASE
 
-**Trigger:** When I say "Deploy to Prod" or "Release".
+**Trigger:** When I say "Deploy", "Ship it", "Push to Prod", "Deploy to Prod", or "Release".
 **Action:**
+
+**REQUIREMENT:** User MUST be on `production` branch. If not, STOP and alert: "You must be on the production branch to deploy."
 
 1. **Docs Update (Conditional):**
 * **IF** `USER_GUIDE.md` was modified during the feature work, output: `git add USER_GUIDE.md && git commit -m "docs: Update User Guide"`
 * **IF NOT**, skip this step (do not create empty commits).
 
+2. **Pre-Flight Checks:**
+   - Run `git status --porcelain`. IF output exists (dirty working directory) → **STOP IMMEDIATELY**. Alert: "🛑 Working directory is not clean. Commit or stash changes before deploying."
+   - Run `git diff production...origin/main`. IF output exists → **WARN**: "⚠️ Main is ahead of Production. You should pull Main into Production first to avoid overwriting hotfixes. Continue anyway? (This requires manual confirmation)"
 
-2. **Git Sequence (One-Shot):** Output this exact block to sync Staging → Prod:
-```bash
-# Merge Staging to Main (Prod)
-git checkout main
-git pull origin main
-git merge staging
-git push origin main
+3. **Dry-Run Protocol (Optional):**
+   - IF user requests dry-run OR this is first-time use: Print all git commands that would be executed WITHOUT running them. Format as a code block with comments explaining each step.
 
-# Return to Staging
-git checkout staging
+4. **The "Safety Dance" Sequence:**
+   Execute these steps in order. IF any command fails (non-zero exit) → **STOP IMMEDIATELY** and proceed to Error Protocol.
 
-```
+   **Step 1 (Sync):** `git pull origin production`
+   - Ensures local production branch is up-to-date with remote.
 
+   **Step 2 (Tag):** Prompt user: "What is the Semantic Version for this release? (e.g., v1.2.0)"
+   - Wait for user input. Validate format (should start with 'v' followed by semantic version).
+   - Store version as `[VERSION]` variable.
 
-3. **Final Report:**
-"🚀 Production Deploy Triggered. Render should now see the push to main. I have switched you back to the staging branch."
+   **Step 3 (Merge):**
+   ```bash
+   git checkout main
+   git pull origin main
+   git merge production
+   ```
+
+   **Step 4 (Seal):** `git tag -a [VERSION] -m "Release [VERSION]"`
+   - Create annotated tag with the version provided by user.
+
+   **Step 5 (Ship):** `git push origin main --tags`
+   - Push main branch AND tags to remote. Live server watches main branch.
+
+   **Step 6 (Return):** `git checkout production`
+   - Return user to production branch for continued work.
+
+5. **Error Protocol:**
+   - IF any command in Safety Dance sequence fails (non-zero exit): **STOP IMMEDIATELY**
+   - DO NOT attempt to auto-fix merge conflicts
+   - DO NOT force push
+   - Print: "🛑 MANUAL INTERVENTION REQUIRED. Deployment halted. Resolve issues manually and retry."
+
+6. **Final Report (Success):**
+   "🚀 Production Deploy Complete. Version [VERSION] has been pushed to main. Render should now see the deployment. You have been returned to the production branch."
+
+**CRITICAL RULES:**
+- **NEVER** just `git push` from feature branch or `production` branch directly to main
+- Live server strictly watches the `main` branch only
+- **MUST** execute complete "Safety Dance" sequence with version tagging
+- **MUST** check for main drift before merging
+- **MUST** tag every production release with semantic version
+- Stop on merge conflicts - alert user, no force push, no auto-fix
 
 # 🚫 STRICT GUIDELINES
 
