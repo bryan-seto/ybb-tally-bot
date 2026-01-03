@@ -10,16 +10,38 @@
 
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { validateConfig, ValidatedConfig, validateTelegramToken } from './config/validator';
 
-// 1. FORCE LOAD SEQUENCE - Explicit priority loading
+// 1. FORCE LOAD SEQUENCE - Additive/Override only (NO DELETE)
 const envLocal = path.resolve(process.cwd(), '.env.local');
 const envDefault = path.resolve(process.cwd(), '.env');
 
-// Load .env.local FIRST with override: true (highest priority)
-dotenv.config({ path: envLocal, override: true });
-// Load .env SECOND with override: false (won't override .env.local values)
-dotenv.config({ path: envDefault, override: false });
+let loadedFrom: string;
+
+if (fs.existsSync(envLocal)) {
+  // .env.local exists - load it with highest priority (override existing)
+  dotenv.config({ path: envLocal, override: true });
+  loadedFrom = '.env.local';
+  console.log('✅ [CONFIG] Loaded environment from .env.local');
+  
+  // DEBUG: Only show token preview in development mode
+  if (process.env.NODE_ENV === 'development') {
+    const rawToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (rawToken) {
+      console.log(`🔹 [DEBUG] TELEGRAM_BOT_TOKEN (raw): ${rawToken.substring(0, 10)}...`);
+    }
+  }
+} else if (fs.existsSync(envDefault)) {
+  // .env.local doesn't exist, fall back to .env (additive, won't override existing)
+  dotenv.config({ path: envDefault, override: false });
+  loadedFrom = '.env';
+  console.log('⚠️  [CONFIG] .env.local not found, loaded environment from .env');
+} else {
+  // Neither file exists - assume variables provided by Host OS/Render
+  loadedFrom = 'host';
+  console.log('ℹ️  [CONFIG] No .env files found, using host environment variables');
+}
 
 // 2. SANITIZATION - Remove whitespace from critical variables
 const sanitize = (val: string | undefined): string | undefined => {
@@ -49,8 +71,11 @@ validateTelegramToken(process.env.TELEGRAM_BOT_TOKEN);
 const token = process.env.TELEGRAM_BOT_TOKEN!; // Safe to assert non-null after validation
 const tokenMasked = `${token.substring(0, 4)}...${token.substring(token.length - 4)}`;
 
-console.log(`[CONFIG] Environment loaded from: ${envLocal}`);
+console.log(`[CONFIG] Active environment file: ${loadedFrom}`);
 console.log(`[CONFIG] Token loaded: ${tokenMasked} (length: ${token.length})`);
+if (process.env.NODE_ENV === 'development') {
+  console.log(`[CONFIG] Development mode: Using DEV_BOT_TOKEN from ${loadedFrom}`);
+}
 
 // 5. VALIDATE - Now validate full config with sanitized values
 const validatedConfig: ValidatedConfig = validateConfig(process.env);

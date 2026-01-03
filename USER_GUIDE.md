@@ -461,3 +461,9 @@ Type `65` and the bot will set it to 65% / 35%.
 ---
 
 **Happy tracking!** 🎉
+
+### Environment Configuration
+**Priority Order:**
+1. `.env.local` (Highest - Overrides everything)
+2. `.env` (Fallback - Additive only)
+3. Host Variables (Render/System)
