@@ -1,15 +1,71 @@
-import dotenv from 'dotenv';
-dotenv.config();
+/**
+ * Configuration Module
+ * 
+ * Robust Environment Variable Loading:
+ * 1. Explicitly loads .env.local first (highest priority)
+ * 2. Falls back to .env (lower priority)
+ * 3. Sanitizes all values (trims whitespace)
+ * 4. Validates with strict schema
+ */
 
+import dotenv from 'dotenv';
+import path from 'path';
+import { validateConfig, ValidatedConfig, validateTelegramToken } from './config/validator';
+
+// 1. FORCE LOAD SEQUENCE - Explicit priority loading
+const envLocal = path.resolve(process.cwd(), '.env.local');
+const envDefault = path.resolve(process.cwd(), '.env');
+
+// Load .env.local FIRST with override: true (highest priority)
+dotenv.config({ path: envLocal, override: true });
+// Load .env SECOND with override: false (won't override .env.local values)
+dotenv.config({ path: envDefault, override: false });
+
+// 2. SANITIZATION - Remove whitespace from critical variables
+const sanitize = (val: string | undefined): string | undefined => {
+  if (!val) return val;
+  return val.trim();
+};
+
+// Sanitize critical environment variables before validation
+if (process.env.TELEGRAM_BOT_TOKEN) {
+  process.env.TELEGRAM_BOT_TOKEN = sanitize(process.env.TELEGRAM_BOT_TOKEN)!;
+}
+if (process.env.USER_A_ID) {
+  process.env.USER_A_ID = sanitize(process.env.USER_A_ID)!;
+}
+if (process.env.USER_B_ID) {
+  process.env.USER_B_ID = sanitize(process.env.USER_B_ID)!;
+}
+if (process.env.BACKUP_RECIPIENT_ID) {
+  process.env.BACKUP_RECIPIENT_ID = sanitize(process.env.BACKUP_RECIPIENT_ID)!;
+}
+
+// 3. TOKEN VALIDATION - Fail fast if token is invalid or placeholder
+// This MUST happen before any Telegram API calls
+validateTelegramToken(process.env.TELEGRAM_BOT_TOKEN);
+
+// 4. DIAGNOSTIC OUTPUT - Verify token is loaded correctly (only if validation passed)
+const token = process.env.TELEGRAM_BOT_TOKEN!; // Safe to assert non-null after validation
+const tokenMasked = `${token.substring(0, 4)}...${token.substring(token.length - 4)}`;
+
+console.log(`[CONFIG] Environment loaded from: ${envLocal}`);
+console.log(`[CONFIG] Token loaded: ${tokenMasked} (length: ${token.length})`);
+
+// 5. VALIDATE - Now validate full config with sanitized values
+const validatedConfig: ValidatedConfig = validateConfig(process.env);
+
+// Export validated configuration
 export const CONFIG = {
-  TELEGRAM_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-  ALLOWED_USER_IDS: (process.env.ALLOWED_USER_IDS || '').split(',').map(id => id.trim()),
-  DATABASE_URL: process.env.DATABASE_URL || '',
-  PORT: process.env.PORT || 10000,
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  WEBHOOK_URL: process.env.WEBHOOK_URL || '',
-  SENTRY_DSN: process.env.SENTRY_DSN || '',
+  TELEGRAM_TOKEN: validatedConfig.TELEGRAM_BOT_TOKEN,
+  GEMINI_API_KEY: validatedConfig.GEMINI_API_KEY,
+  ALLOWED_USER_IDS: validatedConfig.ALLOWED_USER_IDS,
+  DATABASE_URL: validatedConfig.DATABASE_URL,
+  PORT: validatedConfig.PORT,
+  NODE_ENV: validatedConfig.NODE_ENV,
+  WEBHOOK_URL: validatedConfig.WEBHOOK_URL,
+  SENTRY_DSN: validatedConfig.SENTRY_DSN,
+  BACKUP_RECIPIENT_ID: validatedConfig.BACKUP_RECIPIENT_ID,
 
   /**
    * Feature Flags
@@ -23,11 +79,11 @@ export const CONFIG = {
   },
 };
 
-// User Configuration - Environment Variables with defaults for backward compatibility
-export const USER_A_ID = process.env.USER_A_ID || '109284773';
-export const USER_B_ID = process.env.USER_B_ID || '424894363';
-export const USER_A_NAME = process.env.USER_A_NAME || 'Bryan';
-export const USER_B_NAME = process.env.USER_B_NAME || 'Hwei Yeen';
+// User Configuration - From validated config (NO DEFAULTS - fails fast if missing)
+export const USER_A_ID: string = validatedConfig.USER_A_ID;
+export const USER_B_ID: string = validatedConfig.USER_B_ID;
+export const USER_A_NAME: string = validatedConfig.USER_A_NAME;
+export const USER_B_NAME: string = validatedConfig.USER_B_NAME;
 
 // Internal Database Role Constants (unchanged - these are database schema values)
 export const USER_A_ROLE_KEY = 'Bryan';
@@ -113,19 +169,45 @@ export function getUserNameByRole(role: 'Bryan' | 'HweiYeen'): string {
 
 /**
  * Get all authorized user IDs as an array
- * @returns Array of authorized Telegram user IDs
+ * @returns Array of authorized Telegram user IDs (as normalized strings)
  */
 export function getAllowedUserIds(): string[] {
   return [USER_A_ID, USER_B_ID];
 }
 
 /**
+ * Get all authorized user IDs including ALLOWED_USER_IDS
+ * @returns Array of all authorized Telegram user IDs (as normalized strings)
+ */
+export function getAuthorizedUsers(): string[] {
+  return [USER_A_ID, USER_B_ID, ...CONFIG.ALLOWED_USER_IDS].filter(Boolean);
+}
+
+/**
  * Check if a user ID is authorized
- * @param userId - Telegram user ID to check
+ * 
+ * Type-safe: Normalizes input to string for consistent comparison.
+ * Handles both string and number inputs (Telegram sends numbers).
+ * 
+ * @param userId - Telegram user ID to check (string or number)
  * @returns true if authorized, false otherwise
  */
-export function isAuthorizedUserId(userId: string): boolean {
-  return userId === USER_A_ID || userId === USER_B_ID;
+export function isAuthorizedUserId(userId: string | number): boolean {
+  // Normalize to string for consistent comparison
+  // This handles both string ("109284773") and number (109284773) inputs
+  const normalizedUserId = String(userId);
+  
+  // Check primary users (USER_A_ID and USER_B_ID)
+  if (normalizedUserId === USER_A_ID || normalizedUserId === USER_B_ID) {
+    return true;
+  }
+  
+  // Also check ALLOWED_USER_IDS (useful for testing/admin access)
+  if (CONFIG.ALLOWED_USER_IDS.length > 0 && CONFIG.ALLOWED_USER_IDS.includes(normalizedUserId)) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
@@ -143,15 +225,28 @@ export function getNameByUserId(userId: string): string {
   return 'Unknown';
 }
 
+/**
+ * Safety guard: Prevents dangerous operations in production
+ * @param operationName - Description of the operation being blocked
+ * @throws Error if NODE_ENV is 'production'
+ */
+export function ensureNotProduction(operationName: string): void {
+  if (CONFIG.NODE_ENV === 'production') {
+    throw new Error(
+      `🚨 SAFETY BLOCKED: ${operationName} is not allowed in production environment.\n` +
+      `This protects live user data. Use local development environment (NODE_ENV=development) for testing.\n` +
+      `Current NODE_ENV: ${CONFIG.NODE_ENV}`
+    );
+  }
+}
+
 // --- DEBUG: CONFIG VERIFICATION ---
-console.log('🔍 [CONFIG DIAGNOSTIC] Loading Configuration...');
-console.log(`✅ USER_A_NAME (Env): "${process.env.USER_A_NAME}"`);
+console.log('🔍 [CONFIG DIAGNOSTIC] Configuration loaded and validated');
 console.log(`✅ USER_A_NAME (Resolved): "${getUserAName()}"`);
-console.log(`✅ USER_B_NAME (Env): "${process.env.USER_B_NAME}"`);
 console.log(`✅ USER_B_NAME (Resolved): "${getUserBName()}"`);
-console.log(`✅ USER_A_ID (Env): "${process.env.USER_A_ID}"`);
 console.log(`✅ USER_A_ID (Resolved): "${getUserAId()}"`);
-console.log(`✅ USER_B_ID (Env): "${process.env.USER_B_ID}"`);
 console.log(`✅ USER_B_ID (Resolved): "${getUserBId()}"`);
+console.log(`✅ BACKUP_RECIPIENT_ID: "${CONFIG.BACKUP_RECIPIENT_ID}"`);
+console.log(`✅ Token verified: ${tokenMasked}`);
 // ----------------------------------
 

@@ -5,7 +5,7 @@ import { ExpenseService } from './services/expenseService';
 import { RecurringExpenseService } from './services/recurringExpenseService';
 import { getDayOfMonth, getNow, formatDate, getMonthsAgo } from './utils/dateHelpers';
 import QuickChart from 'quickchart-js';
-import { CONFIG, getUserIdByRole } from './config';
+import { CONFIG } from './config';
 
 export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
   const recurringExpenseService = new RecurringExpenseService(expenseService);
@@ -64,7 +64,7 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
   // Daily backup at 02:00 Asia/Singapore time = 18:00 UTC (previous day)
   cron.schedule('0 18 * * *', async () => {
     try {
-      await bot.sendBackupToUser(Number(getUserIdByRole('Bryan')));
+      await bot.sendBackupToUser(Number(CONFIG.BACKUP_RECIPIENT_ID));
     } catch (error) {
       console.error('Error in daily backup job:', error);
     }

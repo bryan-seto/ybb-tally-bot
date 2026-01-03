@@ -1,4 +1,10 @@
-import dotenv from 'dotenv';
+/**
+ * Main Entry Point
+ * 
+ * IMPORTANT: Environment variables are loaded by config.ts before any validation.
+ * Config.ts handles the loading priority: .env.local > .env
+ */
+
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
 import { prisma } from './lib/prisma';
@@ -6,8 +12,6 @@ import { CONFIG, BOT_USERS } from './config';
 import { setupServer } from './server';
 import { setupJobs } from './jobs';
 import { UserRole } from '@prisma/client';
-
-dotenv.config();
 
 declare global {
   var botInstance: YBBTallyBot | undefined;

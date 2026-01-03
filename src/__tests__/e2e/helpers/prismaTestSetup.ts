@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
+import { ensureNotProduction } from '../../../config';
 
 // Use test PostgreSQL database URL from env, or use main DB with test suffix
 // The schema.prisma uses PostgreSQL provider, so we must use PostgreSQL
@@ -32,6 +33,9 @@ export async function setupTestDb() {
 }
 
 export async function clearDb() {
+  // Safety check - block truncate operations in production
+  ensureNotProduction('Test database truncate operation');
+  
   // Clear data in specific order to respect Foreign Keys for PostgreSQL
   // Using TRUNCATE CASCADE for faster clearing
   
