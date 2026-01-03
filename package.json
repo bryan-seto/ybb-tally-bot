@@ -23,6 +23,7 @@
     "db:local:studio": "dotenv -e .env.local -- npx prisma studio",
     "db:local:reset": "dotenv -e .env.local -- tsx scripts/resetDatabase.ts",
     "dev:local": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:local:full": "npm run db:local:up && sleep 5 && npm run dev:local",
     "db:verify": "tsx scripts/verify-schema.ts",
     "postinstall": "prisma generate"
   },
