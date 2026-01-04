@@ -75,7 +75,7 @@ Type the amount followed by what it was for. The AI will parse it automatically.
 **Example confirmation:**
 ```
 🛒 Stocked up! groceries - $50.00 (Groceries)
-📊 Split: User A 70% ($35.00) / User B 30% ($15.00)
+📊 Split: User A 50% ($25.00) / User B 50% ($25.00)
 
 💰 Balance: User B owes User A $15.00
 
@@ -198,16 +198,15 @@ Stop guessing. The bot now uses a **Snapshot System** to ensure you never settle
 Expenses are automatically split based on the category. Each category has a default split ratio that you can customize:
 
 **Default Splits by Category:**
-- **Groceries, Bills, Shopping:** 70% / 30% (household expenses)
-- **Food, Travel, Entertainment, Transport:** 50% / 50% (personal expenses)
-- **Other categories:** 70% / 30% (default fallback)
+- **All categories (Groceries, Bills, Shopping, Food, Travel, Entertainment, Transport):** 50% / 50% (equal split)
+- **Other/Unknown categories:** 50% / 50% (default fallback)
 
-**Example calculation (Groceries at 70/30):**
+**Example calculation (Groceries at 50/50):**
 - User A paid $100, User B paid $50
 - Total spending: $150
-- User A's share (70%): $105
-- User B's share (30%): $45
-- Since User A paid $100 but owes $105, **User A owes User B $5**
+- User A's share (50%): $75
+- User B's share (50%): $75
+- Since User A paid $100 but owes $75, **User B owes User A $25**
 
 **Customizing Splits:**
 - **Category Defaults:** Configure default splits for each category (see "⚙️ Configuring Split Rules" section below)
@@ -232,15 +231,15 @@ Split rules let you customize how expenses are automatically divided between you
 
 Select a category to edit:
 
-🛒 Groceries (70/30)
+🛒 Groceries (50/50)
 🍔 Food (50/50)
-💸 Bills (70/30)
-🛍️ Shopping (70/30)
+💸 Bills (50/50)
+🛍️ Shopping (50/50)
 ✈️ Travel (50/50)
 🎬 Entertainment (50/50)
 🚗 Transport (50/50)
-🏥 Medical (70/30)
-📦 Other (70/30)
+🏥 Medical (50/50)
+📦 Other (50/50)
 
 « Back to Main Menu
 ```
@@ -251,15 +250,15 @@ Each category has a default split that applies to new expenses:
 
 | Category | Default Split | Typical Use Case |
 |----------|---------------|------------------|
-| Groceries | 70% / 30% | Household essentials |
-| Bills | 70% / 30% | Shared utilities |
-| Shopping | 70% / 30% | Household items |
+| Groceries | 50% / 50% | Household essentials |
+| Bills | 50% / 50% | Shared utilities |
+| Shopping | 50% / 50% | Household items |
 | Food | 50% / 50% | Dining out together |
 | Travel | 50% / 50% | Shared trips |
 | Entertainment | 50% / 50% | Shared activities |
 | Transport | 50% / 50% | Commuting together |
-| Medical | 70% / 30% | Health expenses |
-| Other | 70% / 30% | Default fallback |
+| Medical | 50% / 50% | Health expenses |
+| Other | 50% / 50% | Default fallback |
 
 **Note:** These are just defaults. You can customize any category to match your spending patterns.
 
@@ -278,7 +277,7 @@ Choose from common split ratios:
 ```
 Editing split for **Groceries**.
 
-Current: User A 70% / User B 30%
+Current: User A 50% / User B 50%
 
 [User A 50% / User B 50%] [User A 60% / User B 40%]
 [User A 70% / User B 30%]
@@ -312,17 +311,17 @@ Type `65` and the bot will set it to 65% / 35%.
 - ✅ You can still override per-transaction using edit commands
 
 **Example:**
-- You change Groceries from 70/30 to 60/40
+- You change Groceries from 50/50 to 60/40
 - All **future** grocery expenses will use 60/40
-- All **past** grocery expenses remain at 70/30
+- All **past** grocery expenses remain at 50/50
 - You can still edit individual transactions to use a different split
 
 ### Example Workflow
 
-**Scenario:** "I want Groceries to be 60/40 instead of 70/30"
+**Scenario:** "I want Groceries to be 60/40 instead of 50/50"
 
 1. Open Dashboard → Click **☰ Menu** → Click **⚙️ Split Rules**
-2. Click **🛒 Groceries (70/30)**
+2. Click **🛒 Groceries (50/50)**
 3. Click **User A 60% / User B 40%** button
 4. Bot confirms: "✅ Updated: User A 60% / User B 40%"
 5. Returns to category list showing updated split

@@ -27,15 +27,15 @@ describe('ExpenseService', () => {
   });
 
   describe('calculateTransactionOwed', () => {
-    it('should calculate 70/30 split correctly when Bryan pays', () => {
+    it('should calculate 50/50 split correctly when Bryan pays', () => {
       const result = expenseService.calculateTransactionOwed(100, 'Bryan');
-      expect(result.hweiYeenOwes).toBe(30);
+      expect(result.hweiYeenOwes).toBe(50);
       expect(result.bryanOwes).toBe(0);
     });
 
-    it('should calculate 70/30 split correctly when Hwei Yeen pays', () => {
+    it('should calculate 50/50 split correctly when Hwei Yeen pays', () => {
       const result = expenseService.calculateTransactionOwed(100, 'HweiYeen');
-      expect(result.bryanOwes).toBe(70);
+      expect(result.bryanOwes).toBe(50);
       expect(result.hweiYeenOwes).toBe(0);
     });
 
@@ -55,15 +55,15 @@ describe('ExpenseService', () => {
       vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockHweiYeen as any);
       
       vi.mocked(prisma.transaction.findMany).mockResolvedValueOnce([
-        { payerId: BigInt(1), amountSGD: 100, isSettled: false, bryanPercentage: 0.7, hweiYeenPercentage: 0.3 },
-        { payerId: BigInt(2), amountSGD: 100, isSettled: false, bryanPercentage: 0.7, hweiYeenPercentage: 0.3 },
+        { payerId: BigInt(1), amountSGD: 100, isSettled: false, bryanPercentage: 0.5, hweiYeenPercentage: 0.5 },
+        { payerId: BigInt(2), amountSGD: 100, isSettled: false, bryanPercentage: 0.5, hweiYeenPercentage: 0.5 },
       ] as any);
 
       const result = await expenseService.calculateOutstandingBalance();
       
-      // Bryan paid 100, owes 70 + 70 = 140. Bryan share paid = 100. Bryan still owes 40.
-      // Hwei Yeen paid 100, owes 30 + 30 = 60. Hwei Yeen share paid = 100. Hwei Yeen owes 0.
-      expect(result.bryanOwes).toBe(40);
+      // Bryan paid 100, owes 50 + 50 = 100. Bryan share paid = 100. Bryan owes 0.
+      // Hwei Yeen paid 100, owes 50 + 50 = 100. Hwei Yeen share paid = 100. Hwei Yeen owes 0.
+      expect(result.bryanOwes).toBe(0);
       expect(result.hweiYeenOwes).toBe(0);
     });
   });
@@ -75,8 +75,8 @@ describe('ExpenseService', () => {
       amountSGD: 100,
       category: 'Groceries',
       description: 'Weekly groceries',
-      bryanPercentage: 0.7,
-      hweiYeenPercentage: 0.3,
+      bryanPercentage: 0.5,
+      hweiYeenPercentage: 0.5,
       payerId: mockBryan.id,
       payer: mockBryan,
       currency: 'SGD',
@@ -93,11 +93,8 @@ describe('ExpenseService', () => {
       vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
     });
 
-    describe('Split Logic - All Categories Default to 50/50', () => {
-      it('should apply 50/50 split for Groceries (default)', async () => {
-        const mockTx = { ...mockTransaction, category: 'Groceries', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
-        vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
-
+    describe('Split Logic - Household Categories (50/50)', () => {
+      it('should apply 50/50 split for Groceries', async () => {
         const result = await expenseService.createSmartExpense(
           mockBryan.id,
           100,
@@ -122,7 +119,7 @@ describe('ExpenseService', () => {
         expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
 
-      it('should apply 50/50 split for Bills (default)', async () => {
+      it('should apply 50/50 split for Bills', async () => {
         const mockTx = { ...mockTransaction, category: 'Bills', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
         vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
 
@@ -146,7 +143,7 @@ describe('ExpenseService', () => {
         expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
 
-      it('should apply 50/50 split for Shopping (default)', async () => {
+      it('should apply 50/50 split for Shopping', async () => {
         const mockTx = { ...mockTransaction, category: 'Shopping', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
         vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
 
@@ -348,6 +345,43 @@ describe('ExpenseService', () => {
       const result2 = expenseService.getFunConfirmation(undefined as any);
       expect(result1).toBeTruthy();
       expect(result2).toBeTruthy();
+    });
+  });
+
+  // TDD Contract Tests (as specified in the plan)
+  describe('TDD Contract Tests', () => {
+    it('Test: Calculation Fallback - should default to 50/50 when percentages are undefined', () => {
+      // Test calculateTransactionOwed with undefined percentages
+      const result = expenseService.calculateTransactionOwed(100, 'Bryan', undefined, undefined);
+      // Should default to 50/50: Bryan paid 100, HweiYeen owes 50 (her 50% share)
+      expect(result.hweiYeenOwes).toBe(50);
+      expect(result.bryanOwes).toBe(0);
+
+      const result2 = expenseService.calculateTransactionOwed(100, 'HweiYeen', undefined, undefined);
+      // Should default to 50/50: HweiYeen paid 100, Bryan owes 50 (his 50% share)
+      expect(result2.bryanOwes).toBe(50);
+      expect(result2.hweiYeenOwes).toBe(0);
+    });
+
+    it('Test: Reporting Safety - should treat null percentages as 50/50 in calculateOutstandingBalance', async () => {
+      const mockBryan = { id: BigInt(1), role: 'Bryan' };
+      const mockHweiYeen = { id: BigInt(2), role: 'HweiYeen' };
+      
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockBryan as any);
+      vi.mocked(prisma.user.findFirst).mockResolvedValueOnce(mockHweiYeen as any);
+      
+      // Mock transaction with null percentages
+      vi.mocked(prisma.transaction.findMany).mockResolvedValueOnce([
+        { payerId: BigInt(1), amountSGD: 100, isSettled: false, bryanPercentage: null, hweiYeenPercentage: null },
+      ] as any);
+
+      const result = await expenseService.calculateOutstandingBalance();
+      
+      // With null percentages, should use 50/50 fallback:
+      // Bryan paid 100, owes 50 (50% of 100). Bryan share paid = 100. Bryan still owes 0.
+      // Hwei Yeen paid 0, owes 50 (50% of 100). Hwei Yeen share paid = 0. Hwei Yeen owes 50.
+      expect(result.bryanOwes).toBe(0);
+      expect(result.hweiYeenOwes).toBe(50);
     });
   });
 });

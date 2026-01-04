@@ -50,9 +50,9 @@ export class ExpenseService {
         hweiYeenPaid += t.amountSGD;
       }
       
-      // Use custom split if available, otherwise default to 70/30
-      const bryanPercent = t.bryanPercentage ?? 0.7;
-      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
+      // Use custom split if available, otherwise default to 50/50
+      const bryanPercent = t.bryanPercentage ?? 0.5;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
       
       bryanShare += t.amountSGD * bryanPercent;
       hweiYeenShare += t.amountSGD * hweiYeenPercent;
@@ -95,8 +95,8 @@ export class ExpenseService {
         bryanShare: 0,
         hweiYeenShare: 0,
         totalSpending: 0,
-        avgBryanPercent: 70,
-        avgHweiYeenPercent: 30,
+        avgBryanPercent: 50,
+        avgHweiYeenPercent: 50,
         bryanNet: 0,
         hweiYeenNet: 0,
       };
@@ -127,8 +127,8 @@ export class ExpenseService {
         hweiYeenPaid += t.amountSGD;
       }
 
-      const bryanPercent = t.bryanPercentage ?? 0.7;
-      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
+      const bryanPercent = t.bryanPercentage ?? 0.5;
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
 
       bryanShare += t.amountSGD * bryanPercent;
       hweiYeenShare += t.amountSGD * hweiYeenPercent;
@@ -138,8 +138,8 @@ export class ExpenseService {
       weightedHweiYeenPercent += t.amountSGD * hweiYeenPercent;
     });
 
-    const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 70;
-    const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 30;
+    const avgBryanPercent = totalAmount > 0 ? (weightedBryanPercent / totalAmount) * 100 : 50;
+    const avgHweiYeenPercent = totalAmount > 0 ? (weightedHweiYeenPercent / totalAmount) * 100 : 50;
     const totalSpending = bryanPaid + hweiYeenPaid;
     const bryanNet = bryanPaid - bryanShare;
     const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
@@ -324,8 +324,8 @@ export class ExpenseService {
     const bryanCategoryMap: { [key: string]: number } = {};
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      // Use custom split if available, otherwise default to 70%
-      const bryanPercent = t.bryanPercentage ?? 0.7;
+      // Use custom split if available, otherwise default to 50%
+      const bryanPercent = t.bryanPercentage ?? 0.5;
       const bryanShare = t.amountSGD * bryanPercent;
       bryanCategoryMap[cat] = (bryanCategoryMap[cat] || 0) + bryanShare;
     });
@@ -339,8 +339,8 @@ export class ExpenseService {
     const hweiYeenCategoryMap: { [key: string]: number } = {};
     transactions.forEach((t) => {
       const cat = t.category || 'Other';
-      // Use custom split if available, otherwise default to 30%
-      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.3;
+      // Use custom split if available, otherwise default to 50%
+      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
       const hweiYeenShare = t.amountSGD * hweiYeenPercent;
       hweiYeenCategoryMap[cat] = (hweiYeenCategoryMap[cat] || 0) + hweiYeenShare;
     });
@@ -374,9 +374,9 @@ export class ExpenseService {
     bryanOwes: number;
     hweiYeenOwes: number;
   } {
-    // Use custom split if provided, otherwise default to 70/30
-    const bryanPercent = bryanPercentage ?? 0.7;
-    const hweiYeenPercent = hweiYeenPercentage ?? 0.3;
+    // Use custom split if provided, otherwise default to 50/50
+    const bryanPercent = bryanPercentage ?? 0.5;
+    const hweiYeenPercent = hweiYeenPercentage ?? 0.5;
     
     const bryanShare = amount * bryanPercent;
     const hweiYeenShare = amount * hweiYeenPercent;
@@ -497,30 +497,34 @@ export class ExpenseService {
     transaction: any;
     balanceMessage: string;
   }> {
-    console.log(`[DIAGNOSTIC] createSmartExpense ENTRY userId=${userId} amount=${amount} category="${category}" description="${description}"`);
+    console.log('[DEBUG] createSmartExpense args:', { 
+      userId: userId.toString(), 
+      amount, 
+      category, 
+      description 
+    });
+    
     // Get split rule from service (configurable, database-backed)
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE calling getSplitRule category="${category}"`);
+    console.log('[DEBUG] createSmartExpense: Looking up split rule for category:', category);
     const splitRule = await this.splitRulesService.getSplitRule(category);
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE getSplitRule result userAPercent=${splitRule.userAPercent} userBPercent=${splitRule.userBPercent}`);
+    console.log('[DEBUG] createSmartExpense: Split rule result:', splitRule);
     
     // Map generic userA/userB to domain-specific bryan/hwei
     const split = {
       bryan: splitRule.userAPercent,
       hwei: splitRule.userBPercent,
     };
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE calculated split bryan=${split.bryan} hwei=${split.hwei}`);
 
     // Look up the user/payer
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE calling user.findUnique userId=${userId}`);
+    console.log('[DEBUG] createSmartExpense: Looking up user:', userId.toString());
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
+    console.log('[DEBUG] createSmartExpense: User lookup result:', user ? { id: user.id.toString(), name: user.name, role: user.role } : 'NOT FOUND');
 
     if (!user) {
-      console.error(`[DIAGNOSTIC] createSmartExpense ERROR user not found userId=${userId}`);
       throw new Error(`User with id ${userId} not found`);
     }
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE user lookup result id=${user.id} role="${user.role}" name="${user.name}"`);
 
     // Create the transaction
     const transactionData = {
@@ -533,14 +537,22 @@ export class ExpenseService {
       bryanPercentage: split.bryan,
       hweiYeenPercentage: split.hwei,
     };
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE creating transaction data amountSGD=${transactionData.amountSGD} category="${transactionData.category}" bryanPercentage=${transactionData.bryanPercentage} hweiYeenPercentage=${transactionData.hweiYeenPercentage}`);
+    console.log('[DEBUG] createSmartExpense: Creating transaction with data:', {
+      ...transactionData,
+      payerId: transactionData.payerId.toString(),
+      date: transactionData.date.toISOString()
+    });
     const transaction = await prisma.transaction.create({
       data: transactionData,
       include: {
         payer: true,
       },
     });
-    console.log(`[DIAGNOSTIC] createSmartExpense STATE transaction created id=${transaction.id}`);
+    console.log('[DEBUG] createSmartExpense: Transaction created successfully:', {
+      id: transaction.id.toString(),
+      amount: transaction.amountSGD,
+      category: transaction.category
+    });
 
     // Emit analytics event
     analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
@@ -554,7 +566,6 @@ export class ExpenseService {
     // Get the updated balance message
     const balanceMessage = await this.getOutstandingBalanceMessage();
 
-    console.log(`[DIAGNOSTIC] createSmartExpense EXIT transactionId=${transaction.id}`);
     return { transaction, balanceMessage };
   }
 

@@ -507,6 +507,7 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
     text: string,
     onFallback?: FallbackCallback
   ): Promise<{ amount: number; description: string; category: string }> {
+    console.log('[DEBUG] processQuickExpense: Called with text:', text);
     const VALID_CATEGORIES = ['Food', 'Transport', 'Shopping', 'Groceries', 'Bills', 'Entertainment', 'Medical', 'Travel', 'Other'];
 
     const prompt = `You are a financial assistant. Parse the following expense message and extract the amount, description, and category.
@@ -535,17 +536,21 @@ Return ONLY valid JSON in this exact format (no markdown, no explanations):
       const responseText = aiResponse.text;
 
       // Extract JSON from response
+      console.log('[DEBUG] processQuickExpense: Extracting JSON from response...');
       const extractedJSON = this.extractJSON(responseText);
       if (!extractedJSON) {
-        console.error('[processQuickExpense] No JSON found in response:', responseText.substring(0, 500));
+        console.error('[FATAL] processQuickExpense: No JSON found in response:', responseText.substring(0, 500));
         throw new Error('No JSON found in response');
       }
+      console.log('[DEBUG] processQuickExpense: Extracted JSON:', extractedJSON);
 
       let parsed;
       try {
+        console.log('[DEBUG] processQuickExpense: Parsing JSON...');
         parsed = JSON.parse(extractedJSON);
+        console.log('[DEBUG] processQuickExpense: Parsed result:', parsed);
       } catch (parseError: any) {
-        console.error('[processQuickExpense] JSON parse error:', {
+        console.error('[FATAL] processQuickExpense: JSON parse error:', {
           error: parseError.message,
           extractedJSON: extractedJSON.substring(0, 200),
           fullResponse: responseText.substring(0, 500)
@@ -560,23 +565,34 @@ Return ONLY valid JSON in this exact format (no markdown, no explanations):
       }
 
       // Validate the parsed data
+      console.log('[DEBUG] processQuickExpense: Validating parsed data...');
       if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
+        console.error('[FATAL] processQuickExpense: Invalid amount:', parsed.amount);
         throw new Error('Invalid amount in response');
       }
       if (typeof parsed.description !== 'string' || parsed.description.trim().length === 0) {
+        console.error('[FATAL] processQuickExpense: Invalid description:', parsed.description);
         throw new Error('Invalid description in response');
       }
       if (typeof parsed.category !== 'string' || !VALID_CATEGORIES.includes(parsed.category)) {
+        console.error('[FATAL] processQuickExpense: Invalid category:', parsed.category, 'Valid categories:', VALID_CATEGORIES);
         throw new Error(`Invalid category in response: ${parsed.category}. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
       }
 
+      console.log('[DEBUG] processQuickExpense: Validation passed, returning result');
       return {
         amount: parsed.amount,
         description: parsed.description.trim(),
         category: parsed.category,
       };
     } catch (error: any) {
-      console.error('Error processing quick expense:', error);
+      console.error('[FATAL] processQuickExpense: Error processing quick expense:', error);
+      console.error('[FATAL] processQuickExpense: Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        text: text
+      });
       Sentry.captureException(error);
       throw error;
     }

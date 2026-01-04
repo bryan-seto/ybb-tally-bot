@@ -198,6 +198,7 @@ export class MessageHandlers {
       // ---------------------------------------------------------------------------
 
       // PRIORITY 1.5: Check for Quick Expense pattern (before other handlers)
+      // Pattern 1: Number first (e.g., "2 coffee", "130 groceries")
       const quickExpensePattern = /^\d+(\.\d{1,2})?\s+[a-zA-Z].*/;
       const patternMatches = quickExpensePattern.test(text);
       console.log('[DEBUG] handleText: Quick Expense pattern check:', {
@@ -207,6 +208,17 @@ export class MessageHandlers {
       });
       if (patternMatches) {
         console.log('[handleText] Quick Expense pattern detected - calling handleQuickExpense');
+        await this.handleQuickExpense(ctx, text);
+        return;
+      }
+      
+      // Pattern 2: Description first (e.g., "coffee 2", "lunch 15.50")
+      // Check if text contains both letters and numbers (likely an expense)
+      const hasLetters = /[a-zA-Z]/.test(text);
+      const hasNumbers = /\d/.test(text);
+      const looksLikeExpense = hasLetters && hasNumbers && text.trim().split(/\s+/).length >= 2;
+      if (looksLikeExpense && !text.startsWith('/') && !text.startsWith('edit ')) {
+        console.log('[handleText] Text looks like expense (description first format) - calling handleQuickExpense');
         await this.handleQuickExpense(ctx, text);
         return;
       }

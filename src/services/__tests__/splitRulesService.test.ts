@@ -22,27 +22,27 @@ describe('SplitRulesService', () => {
   });
 
   describe('SplitRulesService_Defaults', () => {
-    it('should return 50-50 default when Settings table is empty', async () => {
+    it('should return hardcoded defaults when Settings table is empty', async () => {
       // Mock: No setting found
       vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
 
-      // Test: Get split rule for any category (should return 50-50)
+      // Test: Get split rule for known category
       const groceriesRule = await service.getSplitRule('Groceries');
       expect(groceriesRule.userAPercent).toBe(0.5);
       expect(groceriesRule.userBPercent).toBe(0.5);
 
-      // Test: Get split rule for another category
+      // Test: Get split rule for another known category
       const foodRule = await service.getSplitRule('Food');
       expect(foodRule.userAPercent).toBe(0.5);
       expect(foodRule.userBPercent).toBe(0.5);
 
-      // Test: Get split rule for unknown category (should return global 50-50 default)
+      // Test: Get split rule for unknown category (should return global default)
       const unknownRule = await service.getSplitRule('UnknownCategory');
       expect(unknownRule.userAPercent).toBe(0.5);
       expect(unknownRule.userBPercent).toBe(0.5);
     });
 
-    it('should return 50-50 default when Settings.value is null', async () => {
+    it('should return defaults when Settings.value is null', async () => {
       // Mock: Setting exists but value is null
       vi.mocked(prisma.settings.findUnique).mockResolvedValue({
         key: 'category_split_rules',
@@ -74,13 +74,13 @@ describe('SplitRulesService', () => {
       expect(foodRule.userAPercent).toBe(0.6);
       expect(foodRule.userBPercent).toBe(0.4);
 
-      // Test: Groceries should return 50-50 default (not in custom config)
+      // Test: Groceries should return default (not in custom config)
       const groceriesRule = await service.getSplitRule('Groceries');
       expect(groceriesRule.userAPercent).toBe(0.5);
       expect(groceriesRule.userBPercent).toBe(0.5);
     });
 
-    it('should return 50-50 for categories not in custom config', async () => {
+    it('should merge custom config with defaults', async () => {
       // Mock: Database has partial config
       const customConfig = {
         Food: { userAPercent: 0.8, userBPercent: 0.2 },
@@ -97,7 +97,7 @@ describe('SplitRulesService', () => {
       expect(foodRule.userAPercent).toBe(0.8);
       expect(foodRule.userBPercent).toBe(0.2);
 
-      // Test: Groceries uses 50-50 default (not in custom config)
+      // Test: Groceries uses default (merged)
       const groceriesRule = await service.getSplitRule('Groceries');
       expect(groceriesRule.userAPercent).toBe(0.5);
       expect(groceriesRule.userBPercent).toBe(0.5);
@@ -223,7 +223,7 @@ describe('SplitRulesService', () => {
       expect(rule.userBPercent).toBe(0.5);
     });
 
-    it('should return 50-50 default when database contains empty JSON object', async () => {
+    it('should return defaults when database contains empty JSON object', async () => {
       // Mock: Empty object
       vi.mocked(prisma.settings.findUnique).mockResolvedValue({
         key: 'category_split_rules',
@@ -231,7 +231,7 @@ describe('SplitRulesService', () => {
         updatedAt: new Date(),
       } as any);
 
-      // Should return 50-50 default (empty object means no custom rules)
+      // Should return defaults (empty object merged with defaults)
       const rule = await service.getSplitRule('Groceries');
       expect(rule.userAPercent).toBe(0.5);
       expect(rule.userBPercent).toBe(0.5);
@@ -282,12 +282,12 @@ describe('SplitRulesService', () => {
       expect(foodRule.userAPercent).toBe(0.5);
       expect(foodRule.userBPercent).toBe(0.5);
 
-      // Groceries should use 50-50 default (invalid rule filtered out)
+      // Groceries should use default (invalid rule filtered out)
       const groceriesRule = await service.getSplitRule('Groceries');
       expect(groceriesRule.userAPercent).toBe(0.5);
       expect(groceriesRule.userBPercent).toBe(0.5);
 
-      // Bills should use 50-50 default (invalid structure filtered out)
+      // Bills should use default (invalid structure filtered out)
       const billsRule = await service.getSplitRule('Bills');
       expect(billsRule.userAPercent).toBe(0.5);
       expect(billsRule.userBPercent).toBe(0.5);
@@ -400,5 +400,29 @@ describe('SplitRulesService', () => {
       expect(rule.userBPercent).toBe(0.5);
     });
   });
-});
 
+  // TDD Contract Tests (as specified in the plan)
+  describe('TDD Contract Tests', () => {
+    beforeEach(() => {
+      vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
+    });
+
+    it('Test: Household Defaults - should return 50/50 for Groceries', async () => {
+      const rule = await service.getSplitRule('Groceries');
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
+      // Constraint: Must not return 0.7/0.3
+      expect(rule.userAPercent).not.toBe(0.7);
+      expect(rule.userBPercent).not.toBe(0.3);
+    });
+
+    it('Test: Unknown Category Fallback - should return 50/50 for AlienTechnology', async () => {
+      const rule = await service.getSplitRule('AlienTechnology');
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
+      // Constraint: Must use GLOBAL_DEFAULT (no longer 0.7/0.3)
+      expect(rule.userAPercent).not.toBe(0.7);
+      expect(rule.userBPercent).not.toBe(0.3);
+    });
+  });
+});

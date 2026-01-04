@@ -26,8 +26,20 @@ export class ValidationError extends Error {
 }
 
 /**
+ * Default split rules (hardcoded fallback)
+ */
+const DEFAULT_RULES: SplitRulesConfig = {
+  'Groceries': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Bills': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Shopping': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Food': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Travel': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Entertainment': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Transport': { userAPercent: 0.5, userBPercent: 0.5 },
+};
+
+/**
  * Global default (when category not found)
- * All categories default to 50-50 unless overridden in database
  */
 const GLOBAL_DEFAULT: CategorySplitRule = { userAPercent: 0.5, userBPercent: 0.5 };
 
@@ -96,114 +108,85 @@ export class SplitRulesService {
 
   /**
    * Get split rule for a category
-   * Returns: configured rule from database, or global 50-50 default
-   * CRITICAL: Never throws - always returns a valid rule (fail-safe to 50-50)
+   * Returns: configured rule, or default for category, or global default
    */
   async getSplitRule(category: string): Promise<CategorySplitRule> {
-    console.log(`[DIAGNOSTIC] getSplitRule ENTRY category="${category}"`);
-    try {
-      console.log('[DIAGNOSTIC] getSplitRule STATE calling getSplitRulesConfig');
-      const config = await this.getSplitRulesConfig();
-      const configKeys = Object.keys(config);
-      console.log(`[DIAGNOSTIC] getSplitRule STATE getSplitRulesConfig result keys=[${configKeys.join(', ')}]`);
-      const normalizedCategory = this.normalizeCategory(category);
-      console.log(`[DIAGNOSTIC] getSplitRule STATE normalized category="${normalizedCategory}" original="${category}"`);
-      
-      // Try normalized category first
-      if (config[normalizedCategory]) {
-        const rule = config[normalizedCategory];
-        console.log(`[DIAGNOSTIC] getSplitRule STATE found in config (normalized) userAPercent=${rule.userAPercent} userBPercent=${rule.userBPercent}`);
-        console.log(`[DIAGNOSTIC] getSplitRule EXIT userAPercent=${rule.userAPercent} userBPercent=${rule.userBPercent}`);
-        return rule;
-      }
-      
-      // Try original category (case-sensitive)
-      if (config[category]) {
-        const rule = config[category];
-        console.log(`[DIAGNOSTIC] getSplitRule STATE found in config (original) userAPercent=${rule.userAPercent} userBPercent=${rule.userBPercent}`);
-        console.log(`[DIAGNOSTIC] getSplitRule EXIT userAPercent=${rule.userAPercent} userBPercent=${rule.userBPercent}`);
-        return rule;
-      }
-      
-      // Global default: 50-50 for all categories
-      console.log(`[DIAGNOSTIC] getSplitRule STATE using GLOBAL_DEFAULT (no match found)`);
-      console.log(`[DIAGNOSTIC] getSplitRule EXIT userAPercent=${GLOBAL_DEFAULT.userAPercent} userBPercent=${GLOBAL_DEFAULT.userBPercent}`);
-      return GLOBAL_DEFAULT;
-    } catch (error) {
-      // Defensive: If anything goes wrong, return safe default
-      console.error('[DIAGNOSTIC] getSplitRule ERROR', error);
-      console.error('[DIAGNOSTIC] getSplitRule ERROR stack:', error instanceof Error ? error.stack : 'No stack trace');
-      console.log(`[DIAGNOSTIC] getSplitRule EXIT (error fallback) userAPercent=${GLOBAL_DEFAULT.userAPercent} userBPercent=${GLOBAL_DEFAULT.userBPercent}`);
-      return GLOBAL_DEFAULT;
+    const config = await this.getSplitRulesConfig();
+    const normalizedCategory = this.normalizeCategory(category);
+    
+    // Try normalized category first
+    if (config[normalizedCategory]) {
+      return config[normalizedCategory];
     }
+    
+    // Try original category (case-sensitive)
+    if (config[category]) {
+      return config[category];
+    }
+    
+    // Try default rules
+    if (DEFAULT_RULES[normalizedCategory]) {
+      return DEFAULT_RULES[normalizedCategory];
+    }
+    
+    if (DEFAULT_RULES[category]) {
+      return DEFAULT_RULES[category];
+    }
+    
+    // Global default
+    return GLOBAL_DEFAULT;
   }
 
   /**
    * Get all split rules configuration
    * CRITICAL: Fail-safe - always returns valid config, never throws
-   * Returns only database-stored rules (no hardcoded defaults)
    */
   async getSplitRulesConfig(): Promise<SplitRulesConfig> {
-    console.log('[DIAGNOSTIC] getSplitRulesConfig ENTRY');
     // Check cache first
     if (this.cache && Date.now() - this.cache.timestamp < this.CACHE_TTL_MS) {
-      const cacheKeys = Object.keys(this.cache.config);
-      console.log(`[DIAGNOSTIC] getSplitRulesConfig STATE cache hit keys=[${cacheKeys.join(', ')}]`);
-      console.log(`[DIAGNOSTIC] getSplitRulesConfig EXIT cache hit keys=[${cacheKeys.join(', ')}]`);
       return this.cache.config;
     }
-    console.log('[DIAGNOSTIC] getSplitRulesConfig STATE cache miss');
 
     try {
       // Fetch from database
-      console.log(`[DIAGNOSTIC] getSplitRulesConfig STATE calling db query key="${this.SETTINGS_KEY}"`);
       const setting = await prisma.settings.findUnique({
         where: { key: this.SETTINGS_KEY },
       });
 
       if (!setting || !setting.value) {
-        // No config in DB, return empty object (categories will use 50-50 default)
-        console.log('[DIAGNOSTIC] getSplitRulesConfig STATE db query result setting=null');
-        const emptyConfig: SplitRulesConfig = {};
-        this.cache = { config: emptyConfig, timestamp: Date.now() };
-        console.log('[DIAGNOSTIC] getSplitRulesConfig EXIT empty config');
-        return emptyConfig;
+        // No config in DB, return defaults
+        const defaultConfig = { ...DEFAULT_RULES };
+        this.cache = { config: defaultConfig, timestamp: Date.now() };
+        return defaultConfig;
       }
-      console.log('[DIAGNOSTIC] getSplitRulesConfig STATE db query result setting found');
 
       // Parse JSON with error handling
       let parsedConfig: any;
       try {
-        console.log('[DIAGNOSTIC] getSplitRulesConfig STATE parsing JSON');
         parsedConfig = JSON.parse(setting.value);
-        const parsedKeys = Object.keys(parsedConfig);
-        console.log(`[DIAGNOSTIC] getSplitRulesConfig STATE parsed config keys=[${parsedKeys.join(', ')}]`);
       } catch (parseError) {
-        console.error('[DIAGNOSTIC] getSplitRulesConfig ERROR JSON parse failed', parseError);
-        // Return empty config on parse error (categories will use 50-50 default)
-        const emptyConfig: SplitRulesConfig = {};
-        this.cache = { config: emptyConfig, timestamp: Date.now() };
-        console.log('[DIAGNOSTIC] getSplitRulesConfig EXIT empty config (parse error)');
-        return emptyConfig;
+        console.error('❌ [SplitRulesService] Failed to parse JSON from database:', parseError);
+        // Return defaults on parse error
+        const defaultConfig = { ...DEFAULT_RULES };
+        this.cache = { config: defaultConfig, timestamp: Date.now() };
+        return defaultConfig;
       }
 
-      // Validate and sanitize config (returns only valid rules)
+      // Validate and sanitize config
       const validatedConfig = this.validateConfig(parsedConfig);
-      const validatedKeys = Object.keys(validatedConfig);
-      console.log(`[DIAGNOSTIC] getSplitRulesConfig STATE validated config keys=[${validatedKeys.join(', ')}]`);
+      
+      // Merge with defaults (so missing categories use defaults)
+      const mergedConfig = { ...DEFAULT_RULES, ...validatedConfig };
       
       // Update cache
-      this.cache = { config: validatedConfig, timestamp: Date.now() };
-      console.log(`[DIAGNOSTIC] getSplitRulesConfig EXIT keys=[${validatedKeys.join(', ')}]`);
-      return validatedConfig;
+      this.cache = { config: mergedConfig, timestamp: Date.now() };
+      return mergedConfig;
     } catch (error) {
-      console.error('[DIAGNOSTIC] getSplitRulesConfig ERROR', error);
-      console.error('[DIAGNOSTIC] getSplitRulesConfig ERROR stack:', error instanceof Error ? error.stack : 'No stack trace');
-      // Fail-safe: return empty config (categories will use 50-50 default)
-      const emptyConfig: SplitRulesConfig = {};
-      this.cache = { config: emptyConfig, timestamp: Date.now() };
-      console.log('[DIAGNOSTIC] getSplitRulesConfig EXIT empty config (error fallback)');
-      return emptyConfig;
+      console.error('❌ [SplitRulesService] Error fetching config from database:', error);
+      // Fail-safe: return defaults
+      const defaultConfig = { ...DEFAULT_RULES };
+      this.cache = { config: defaultConfig, timestamp: Date.now() };
+      return defaultConfig;
     }
   }
 
