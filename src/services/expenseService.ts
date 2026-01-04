@@ -497,40 +497,50 @@ export class ExpenseService {
     transaction: any;
     balanceMessage: string;
   }> {
+    console.log(`[DIAGNOSTIC] createSmartExpense ENTRY userId=${userId} amount=${amount} category="${category}" description="${description}"`);
     // Get split rule from service (configurable, database-backed)
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE calling getSplitRule category="${category}"`);
     const splitRule = await this.splitRulesService.getSplitRule(category);
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE getSplitRule result userAPercent=${splitRule.userAPercent} userBPercent=${splitRule.userBPercent}`);
     
     // Map generic userA/userB to domain-specific bryan/hwei
     const split = {
       bryan: splitRule.userAPercent,
       hwei: splitRule.userBPercent,
     };
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE calculated split bryan=${split.bryan} hwei=${split.hwei}`);
 
     // Look up the user/payer
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE calling user.findUnique userId=${userId}`);
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user) {
+      console.error(`[DIAGNOSTIC] createSmartExpense ERROR user not found userId=${userId}`);
       throw new Error(`User with id ${userId} not found`);
     }
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE user lookup result id=${user.id} role="${user.role}" name="${user.name}"`);
 
     // Create the transaction
+    const transactionData = {
+      amountSGD: amount,
+      currency: 'SGD',
+      category: category || 'Other',
+      description: description || 'No description',
+      payerId: userId,
+      date: new Date(),
+      bryanPercentage: split.bryan,
+      hweiYeenPercentage: split.hwei,
+    };
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE creating transaction data amountSGD=${transactionData.amountSGD} category="${transactionData.category}" bryanPercentage=${transactionData.bryanPercentage} hweiYeenPercentage=${transactionData.hweiYeenPercentage}`);
     const transaction = await prisma.transaction.create({
-      data: {
-        amountSGD: amount,
-        currency: 'SGD',
-        category: category || 'Other',
-        description: description || 'No description',
-        payerId: userId,
-        date: new Date(),
-        bryanPercentage: split.bryan,
-        hweiYeenPercentage: split.hwei,
-      },
+      data: transactionData,
       include: {
         payer: true,
       },
     });
+    console.log(`[DIAGNOSTIC] createSmartExpense STATE transaction created id=${transaction.id}`);
 
     // Emit analytics event
     analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
@@ -544,6 +554,7 @@ export class ExpenseService {
     // Get the updated balance message
     const balanceMessage = await this.getOutstandingBalanceMessage();
 
+    console.log(`[DIAGNOSTIC] createSmartExpense EXIT transactionId=${transaction.id}`);
     return { transaction, balanceMessage };
   }
 

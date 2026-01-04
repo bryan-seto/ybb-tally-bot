@@ -93,8 +93,11 @@ describe('ExpenseService', () => {
       vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
     });
 
-    describe('Split Logic - Household Categories (70/30)', () => {
-      it('should apply 70/30 split for Groceries', async () => {
+    describe('Split Logic - All Categories Default to 50/50', () => {
+      it('should apply 50/50 split for Groceries (default)', async () => {
+        const mockTx = { ...mockTransaction, category: 'Groceries', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
+        vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
+
         const result = await expenseService.createSmartExpense(
           mockBryan.id,
           100,
@@ -107,20 +110,20 @@ describe('ExpenseService', () => {
             amountSGD: 100,
             category: 'Groceries',
             description: 'Weekly groceries',
-            bryanPercentage: 0.7,
-            hweiYeenPercentage: 0.3,
+            bryanPercentage: 0.5,
+            hweiYeenPercentage: 0.5,
             payerId: mockBryan.id,
           }),
           include: {
             payer: true,
           },
         });
-        expect(result.transaction.bryanPercentage).toBe(0.7);
-        expect(result.transaction.hweiYeenPercentage).toBe(0.3);
+        expect(result.transaction.bryanPercentage).toBe(0.5);
+        expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
 
-      it('should apply 70/30 split for Bills', async () => {
-        const mockTx = { ...mockTransaction, category: 'Bills', bryanPercentage: 0.7, hweiYeenPercentage: 0.3 };
+      it('should apply 50/50 split for Bills (default)', async () => {
+        const mockTx = { ...mockTransaction, category: 'Bills', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
         vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
 
         const result = await expenseService.createSmartExpense(
@@ -132,19 +135,19 @@ describe('ExpenseService', () => {
 
         expect(prisma.transaction.create).toHaveBeenCalledWith({
           data: expect.objectContaining({
-            bryanPercentage: 0.7,
-            hweiYeenPercentage: 0.3,
+            bryanPercentage: 0.5,
+            hweiYeenPercentage: 0.5,
           }),
           include: {
             payer: true,
           },
         });
-        expect(result.transaction.bryanPercentage).toBe(0.7);
-        expect(result.transaction.hweiYeenPercentage).toBe(0.3);
+        expect(result.transaction.bryanPercentage).toBe(0.5);
+        expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
 
-      it('should apply 70/30 split for Shopping', async () => {
-        const mockTx = { ...mockTransaction, category: 'Shopping', bryanPercentage: 0.7, hweiYeenPercentage: 0.3 };
+      it('should apply 50/50 split for Shopping (default)', async () => {
+        const mockTx = { ...mockTransaction, category: 'Shopping', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
         vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
 
         const result = await expenseService.createSmartExpense(
@@ -156,15 +159,15 @@ describe('ExpenseService', () => {
 
         expect(prisma.transaction.create).toHaveBeenCalledWith({
           data: expect.objectContaining({
-            bryanPercentage: 0.7,
-            hweiYeenPercentage: 0.3,
+            bryanPercentage: 0.5,
+            hweiYeenPercentage: 0.5,
           }),
           include: {
             payer: true,
           },
         });
-        expect(result.transaction.bryanPercentage).toBe(0.7);
-        expect(result.transaction.hweiYeenPercentage).toBe(0.3);
+        expect(result.transaction.bryanPercentage).toBe(0.5);
+        expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
     });
 
@@ -267,8 +270,8 @@ describe('ExpenseService', () => {
     });
 
     describe('Default Split Logic', () => {
-      it('should default to 70/30 for unknown categories', async () => {
-        const mockTx = { ...mockTransaction, category: 'Other', bryanPercentage: 0.7, hweiYeenPercentage: 0.3 };
+      it('should default to 50/50 for unknown categories', async () => {
+        const mockTx = { ...mockTransaction, category: 'Other', bryanPercentage: 0.5, hweiYeenPercentage: 0.5 };
         vi.mocked(prisma.transaction.create).mockResolvedValue(mockTx as any);
 
         const result = await expenseService.createSmartExpense(
@@ -280,15 +283,15 @@ describe('ExpenseService', () => {
 
         expect(prisma.transaction.create).toHaveBeenCalledWith({
           data: expect.objectContaining({
-            bryanPercentage: 0.7,
-            hweiYeenPercentage: 0.3,
+            bryanPercentage: 0.5,
+            hweiYeenPercentage: 0.5,
           }),
           include: {
             payer: true,
           },
         });
-        expect(result.transaction.bryanPercentage).toBe(0.7);
-        expect(result.transaction.hweiYeenPercentage).toBe(0.3);
+        expect(result.transaction.bryanPercentage).toBe(0.5);
+        expect(result.transaction.hweiYeenPercentage).toBe(0.5);
       });
     });
 

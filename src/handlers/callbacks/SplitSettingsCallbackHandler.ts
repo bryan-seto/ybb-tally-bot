@@ -73,20 +73,46 @@ export class SplitSettingsCallbackHandler implements ICallbackHandler {
   }
 
   /**
+   * Get list of all known categories
+   */
+  private getKnownCategories(): string[] {
+    return [
+      'Groceries',
+      'Food',
+      'Bills',
+      'Shopping',
+      'Travel',
+      'Entertainment',
+      'Transport',
+      'Medical',
+      'Other',
+    ];
+  }
+
+  /**
    * Render main split settings menu with all categories
    */
   private async handleOpenSplitSettings(ctx: any): Promise<void> {
     await ctx.answerCbQuery();
 
     try {
-      const config = await this.splitRulesService.getSplitRulesConfig();
+      // Get all known categories (not from config, which may be empty)
+      const knownCategories = this.getKnownCategories();
+
+      // Fetch all split rules in parallel for better performance
+      const rules = await Promise.all(
+        knownCategories.map(category => 
+          this.splitRulesService.getSplitRule(category)
+        )
+      );
 
       // Build list of categories with their current splits
       const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
-      const categories = Object.keys(config).sort();
 
-      for (const category of categories) {
-        const rule = config[category];
+      // Iterate over categories and their fetched rules
+      for (let i = 0; i < knownCategories.length; i++) {
+        const category = knownCategories[i];
+        const rule = rules[i];
         const bryPercent = Math.round(rule.userAPercent * 100);
         const hweiPercent = Math.round(rule.userBPercent * 100);
         const emoji = this.getCategoryEmoji(category);
