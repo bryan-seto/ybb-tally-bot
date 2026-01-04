@@ -172,6 +172,17 @@ export class MessageHandlers {
         console.log('[handleText] Is bot tagged?', isBotTagged);
 
         if (isBotTagged) {
+          // PRIORITY 1.5: Check for Quick Expense pattern FIRST when tagged
+          const quickExpensePattern = /^\d+(\.\d{1,2})?\s+[a-zA-Z].*/;
+          const textWithoutTag = text.replace(new RegExp(`@${botUsername}\\s*`, 'g'), '').trim();
+          const patternMatchesWhenTagged = quickExpensePattern.test(textWithoutTag);
+          
+          if (patternMatchesWhenTagged) {
+            console.log('[handleText] Bot tagged AND quick expense pattern detected - routing to handleQuickExpense');
+            await this.handleQuickExpense(ctx, textWithoutTag);
+            return;
+          }
+          
           // If user tags the bot, they likely want to override any manual flow
           if (session.manualAddMode || session.searchMode || session.editingTxId) {
             console.log('[handleText] Clearing manual modes for AI correction');
@@ -188,10 +199,14 @@ export class MessageHandlers {
 
       // PRIORITY 1.5: Check for Quick Expense pattern (before other handlers)
       const quickExpensePattern = /^\d+(\.\d{1,2})?\s+[a-zA-Z].*/;
-      const patternMatch = quickExpensePattern.test(text);
-      console.log(`[DIAGNOSTIC] handleText STATE quickExpensePattern test result=${patternMatch} text="${text}"`);
-      if (patternMatch) {
-        console.log('[DIAGNOSTIC] handleText STATE calling handleQuickExpense');
+      const patternMatches = quickExpensePattern.test(text);
+      console.log('[DEBUG] handleText: Quick Expense pattern check:', {
+        text: text,
+        pattern: quickExpensePattern.toString(),
+        matches: patternMatches
+      });
+      if (patternMatches) {
+        console.log('[handleText] Quick Expense pattern detected - calling handleQuickExpense');
         await this.handleQuickExpense(ctx, text);
         return;
       }
@@ -1173,12 +1188,17 @@ export class MessageHandlers {
    * Handle quick expense one-liner (e.g., "130 groceries")
    */
   private async handleQuickExpense(ctx: any, text: string) {
-    const userId = ctx.from?.id;
-    console.log(`[DIAGNOSTIC] handleQuickExpense ENTRY text="${text}" userId=${userId}`);
+    console.log('[DEBUG] handleQuickExpense triggered with:', text);
+    console.log('[DEBUG] handleQuickExpense context:', {
+      userId: ctx.from?.id,
+      chatId: ctx.chat?.id,
+      chatType: ctx.chat?.type
+    });
     let statusMsg: any = null;
     try {
       // Send initial status message
       statusMsg = await ctx.reply('👀 Processing expense...', { parse_mode: 'HTML' });
+      console.log('[DEBUG] handleQuickExpense: Status message sent');
 
       // Set up fallback callback for real-time status updates
       let fallbackMsgId: number | null = null;
@@ -1202,9 +1222,9 @@ export class MessageHandlers {
       };
 
       // Parse via LLM
-      console.log('[DIAGNOSTIC] handleQuickExpense STATE calling aiService.processQuickExpense');
+      console.log('[DEBUG] handleQuickExpense: Calling aiService.processQuickExpense...');
       const parsed = await this.aiService.processQuickExpense(text, onFallback);
-      console.log(`[DIAGNOSTIC] handleQuickExpense STATE aiParsed result amount=${parsed.amount} category="${parsed.category}" description="${parsed.description}"`);
+      console.log('[DEBUG] handleQuickExpense: AI parsing result:', parsed);
 
       // Cleanup fallback warning if it exists
       if (fallbackMsgId) {
@@ -1226,16 +1246,25 @@ export class MessageHandlers {
 
       // Get user ID
       const userId = BigInt(ctx.from.id);
+      console.log('[DEBUG] handleQuickExpense: User ID:', userId.toString());
 
       // Create smart expense
-      console.log(`[DIAGNOSTIC] handleQuickExpense STATE calling createSmartExpense userId=${userId} amount=${parsed.amount} category="${parsed.category}" description="${parsed.description}"`);
+      console.log('[DEBUG] handleQuickExpense: Calling createSmartExpense with:', {
+        userId: userId.toString(),
+        amount: parsed.amount,
+        category: parsed.category,
+        description: parsed.description
+      });
       const { transaction, balanceMessage } = await this.expenseService.createSmartExpense(
         userId,
         parsed.amount,
         parsed.category,
         parsed.description
       );
-      console.log(`[DIAGNOSTIC] handleQuickExpense STATE createSmartExpense result transactionId=${transaction.id} balanceMessage="${balanceMessage.substring(0, 50)}..."`);
+      console.log('[DEBUG] handleQuickExpense: Transaction created successfully:', {
+        transactionId: transaction.id.toString(),
+        amount: transaction.amountSGD
+      });
 
       // Get fun confirmation message
       const funConfirmation = this.expenseService.getFunConfirmation(parsed.category);
@@ -1279,10 +1308,14 @@ export class MessageHandlers {
       if (this.showDashboard) {
         await this.showDashboard(ctx, false);
       }
-      console.log(`[DIAGNOSTIC] handleQuickExpense EXIT success transactionId=${transaction.id}`);
     } catch (error: any) {
-      console.error('[DIAGNOSTIC] handleQuickExpense ERROR', error);
-      console.error('[DIAGNOSTIC] handleQuickExpense ERROR stack:', error.stack);
+      console.error('[FATAL] handleQuickExpense crashed:', error);
+      console.error('[FATAL] handleQuickExpense error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        text: text
+      });
       if (statusMsg) {
         try {
           await ctx.telegram.editMessageText(

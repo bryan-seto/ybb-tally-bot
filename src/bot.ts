@@ -112,29 +112,6 @@ export class YBBTallyBot {
     );
     // Note: allowedUserIds parameter is kept for backward compatibility but auth is now handled via config
 
-    // GOD MODE: Global packet sniffer - MUST be first middleware
-    this.bot.use(async (ctx, next) => {
-      const updateType = ctx.updateType;
-      const msg = ctx.message as any;
-      const content = msg?.text || msg?.caption || 'NO_TEXT';
-      const userId = ctx.from?.id;
-      const chatId = ctx.chat?.id;
-      
-      console.log(`[DIAGNOSTIC] 📡 INCOMING >> Type: ${updateType} | UserID: ${userId} | ChatID: ${chatId} | Content: "${content}"`);
-      
-      // Log if it's a photo to debug caption issues
-      if (msg?.photo) {
-        console.log(`[DIAGNOSTIC] 📸 PHOTO DETECTED. Caption: "${msg.caption || 'NO_CAPTION'}"`);
-      }
-      
-      // Log callback queries
-      if (ctx.callbackQuery) {
-        console.log(`[DIAGNOSTIC] 🔘 CALLBACK >> Data: "${(ctx.callbackQuery as any).data}"`);
-      }
-
-      await next();
-    });
-
     // Setup session middleware (simple in-memory store)
     this.bot.use(session());
 
@@ -248,7 +225,7 @@ export class YBBTallyBot {
         // Silently reject - do NOT reply to avoid revealing bot existence
         return;
       }
-
+      
       // Log all interactions (only for authorized users)
       try {
         let command = 'photo';
@@ -555,22 +532,7 @@ export class YBBTallyBot {
     // Transaction ID parsing is now handled in MessageHandlers.handleText()
     // Removed old bot.hears handler - it's now in MessageHandlers
     
-    console.log('[DIAGNOSTIC] 🛠 Registering TEXT handler...');
-    this.bot.on('text', async (ctx) => {
-      console.log('[DIAGNOSTIC] ✅ bot.on("text") FIRED');
-      console.log(`[DIAGNOSTIC] bot.on("text") message.text: "${ctx.message?.text}"`);
-      console.log(`[DIAGNOSTIC] bot.on("text") from.id: ${ctx.from?.id}`);
-      try {
-        await this.messageHandlers.handleText(ctx);
-        console.log('[DIAGNOSTIC] bot.on("text") EXIT success');
-      } catch (e) {
-        console.error('[DIAGNOSTIC] 💥 CRITICAL ERROR in bot.on("text"):', e);
-        console.error('[DIAGNOSTIC] 💥 CRITICAL ERROR stack:', e instanceof Error ? e.stack : 'No stack trace');
-        throw e; // Re-throw to let global error handler catch it
-      }
-    });
-    console.log('[DIAGNOSTIC] ✅ TEXT handler registered');
-    
+    this.bot.on('text', async (ctx) => await this.messageHandlers.handleText(ctx));
     this.bot.on('callback_query', async (ctx) => await this.callbackHandlers.handleCallback(ctx));
 
     // Auto-start when added to a group
