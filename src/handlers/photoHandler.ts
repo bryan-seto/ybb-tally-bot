@@ -83,13 +83,21 @@ export class PhotoHandler {
   }
 
   private async processPhotoBatch(ctx: any, chatId: number, collection: PhotoCollection) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'photoHandler.ts:86',message:'PhotoHandler.processPhotoBatch entry',data:{chatId,photoCount:collection.photos.length,userId:String(collection.userId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     try {
       this.photoCollections.delete(chatId);
       if (collection.statusMessageId) {
         try { await ctx.telegram.deleteMessage(chatId, collection.statusMessageId); } catch {}
       }
 
-      if (collection.photos.length === 0) return;
+      if (collection.photos.length === 0) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'photoHandler.ts:93',message:'PhotoHandler.processPhotoBatch - empty collection',data:{chatId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        return;
+      }
 
       const imageBuffers: Buffer[] = [];
       for (const photo of collection.photos) {

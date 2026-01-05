@@ -227,24 +227,33 @@ export class YBBTallyBot {
       }
       
       // Log all interactions (only for authorized users)
+      // Only log if user exists in User table to avoid foreign key constraint errors
       try {
-        let command = 'photo';
-        if (ctx.message && 'text' in ctx.message && ctx.message.text) {
-          command = ctx.message.text;
-        } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery && ctx.callbackQuery.data) {
-          command = ctx.callbackQuery.data;
-        }
-        
-        await prisma.systemLog.create({
-          data: {
-            userId: BigInt(userId),
-            event: 'command_used',
-            metadata: {
-              command,
-              chatType: ctx.chat?.type,
-            },
-          },
+        // Check if user exists before logging
+        const userExists = await prisma.user.findUnique({
+          where: { id: BigInt(userId) },
+          select: { id: true },
         });
+        
+        if (userExists) {
+          let command = 'photo';
+          if (ctx.message && 'text' in ctx.message && ctx.message.text) {
+            command = ctx.message.text;
+          } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery && ctx.callbackQuery.data) {
+            command = ctx.callbackQuery.data;
+          }
+          
+          await prisma.systemLog.create({
+            data: {
+              userId: BigInt(userId),
+              event: 'command_used',
+              metadata: {
+                command,
+                chatType: ctx.chat?.type,
+              },
+            },
+          });
+        }
       } catch (error) {
         console.error('Error logging interaction:', error);
       }

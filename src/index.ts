@@ -78,15 +78,6 @@ async function initializeDatabase(): Promise<void> {
   }
 }
 
-// Unhandled rejection safety net
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[DIAGNOSTIC] 🚨 UNHANDLED REJECTION:', reason);
-  console.error('[DIAGNOSTIC] 🚨 UNHANDLED REJECTION promise:', promise);
-  if (reason instanceof Error) {
-    console.error('[DIAGNOSTIC] 🚨 UNHANDLED REJECTION stack:', reason.stack);
-  }
-});
-
 async function main() {
   try {
     // Verify database connection FIRST (before bot initialization)
