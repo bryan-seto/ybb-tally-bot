@@ -54,12 +54,40 @@ export class ExpenseService {
       const bryanPercent = t.bryanPercentage ?? 0.5;
       const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
       
-      bryanShare += t.amountSGD * bryanPercent;
-      hweiYeenShare += t.amountSGD * hweiYeenPercent;
+      const bryanShareForTx = t.amountSGD * bryanPercent;
+      const hweiYeenShareForTx = t.amountSGD * hweiYeenPercent;
+      bryanShare += bryanShareForTx;
+      hweiYeenShare += hweiYeenShareForTx;
     });
 
-    const bryanOwes = Math.max(0, bryanShare - bryanPaid);
-    const hweiYeenOwes = Math.max(0, hweiYeenShare - hweiYeenPaid);
+    // Calculate net amounts: paid - share
+    // Positive net = person overpaid (other person owes them)
+    // Negative net = person underpaid (they owe the other person)
+    const bryanNet = bryanPaid - bryanShare;
+    const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
+    
+    // Calculate outstanding balances:
+    // If Bryan overpaid and HY underpaid: HY owes (Bryan's overpayment + HY's underpayment)
+    // If HY overpaid and Bryan underpaid: Bryan owes (HY's overpayment + Bryan's underpayment)
+    // If both underpaid: both owe their respective amounts
+    let bryanOwes = 0;
+    let hweiYeenOwes = 0;
+    
+    if (bryanNet > 0 && hweiYeenNet < 0) {
+      // Bryan overpaid, HY underpaid
+      hweiYeenOwes = bryanNet + Math.abs(hweiYeenNet);
+    } else if (hweiYeenNet > 0 && bryanNet < 0) {
+      // HY overpaid, Bryan underpaid
+      bryanOwes = hweiYeenNet + Math.abs(bryanNet);
+    } else if (bryanNet < 0 && hweiYeenNet < 0) {
+      // Both underpaid (edge case)
+      bryanOwes = Math.abs(bryanNet);
+      hweiYeenOwes = Math.abs(hweiYeenNet);
+    } else {
+      // Both overpaid or both even (edge case)
+      bryanOwes = Math.max(0, -bryanNet);
+      hweiYeenOwes = Math.max(0, -hweiYeenNet);
+    }
 
     return { bryanOwes, hweiYeenOwes };
   }
