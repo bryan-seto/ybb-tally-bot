@@ -129,12 +129,13 @@ export class SettleCallbackHandler implements ICallbackHandler {
                   metadata: {
                     method: 'callback_confirm',
                     transactionCount: result.count,
-                  watermarkID: rawId, // Store as string
-                  transactionIds: transactionIds.slice(0, 100), // Limit to first 100 IDs
-                  timestamp: new Date().toISOString(),
+                    watermarkID: rawId, // Store as string
+                    transactionIds: transactionIds.slice(0, 100), // Limit to first 100 IDs
+                    timestamp: new Date().toISOString(),
+                  },
                 },
-              },
-            });
+              });
+            }
           } catch (logError) {
             console.error('Error logging settlement:', logError);
           }
