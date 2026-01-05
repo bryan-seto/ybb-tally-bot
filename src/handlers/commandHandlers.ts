@@ -114,19 +114,27 @@ export class CommandHandlers {
       const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
       if (userId) {
         try {
-          await prisma.systemLog.create({
-            data: {
-              userId,
-              event: 'settle_command_attempted',
-              metadata: {
-                method: 'command',
-                transactionCount,
-                totalAmount,
-                watermarkID: watermarkString, // Store as string in JSON
-                timestamp: new Date().toISOString(),
-              },
-            },
+          // Check if user exists before logging
+          const userExists = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
           });
+          
+          if (userExists) {
+            await prisma.systemLog.create({
+              data: {
+                userId,
+                event: 'settle_command_attempted',
+                metadata: {
+                  method: 'command',
+                  transactionCount,
+                  totalAmount,
+                  watermarkID: watermarkString, // Store as string in JSON
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+          }
         } catch (logError) {
           console.error('Error logging settlement attempt:', logError);
         }

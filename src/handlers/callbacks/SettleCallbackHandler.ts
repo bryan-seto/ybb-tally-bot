@@ -115,13 +115,20 @@ export class SettleCallbackHandler implements ICallbackHandler {
         const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
         if (userId) {
           try {
-            await prisma.systemLog.create({
-              data: {
-                userId,
-                event: 'settlement_executed',
-                metadata: {
-                  method: 'callback_confirm',
-                  transactionCount: result.count,
+            // Check if user exists before logging
+            const userExists = await prisma.user.findUnique({
+              where: { id: userId },
+              select: { id: true },
+            });
+            
+            if (userExists) {
+              await prisma.systemLog.create({
+                data: {
+                  userId,
+                  event: 'settlement_executed',
+                  metadata: {
+                    method: 'callback_confirm',
+                    transactionCount: result.count,
                   watermarkID: rawId, // Store as string
                   transactionIds: transactionIds.slice(0, 100), // Limit to first 100 IDs
                   timestamp: new Date().toISOString(),

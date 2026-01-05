@@ -256,19 +256,30 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
 
       const latencyMs = Date.now() - startTime;
 
-      // Log to SystemLog (include model info)
-      await prisma.systemLog.create({
-        data: {
-          userId,
-          event: 'receipt_processed',
-          metadata: {
-            latencyMs,
-            isValid: receiptData.isValid,
-            success: true,
-            usedModel,
-          },
-        },
-      });
+      // Log to SystemLog (include model info) - only if user exists
+      try {
+        const userExists = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        
+        if (userExists) {
+          await prisma.systemLog.create({
+            data: {
+              userId,
+              event: 'receipt_processed',
+              metadata: {
+                latencyMs,
+                isValid: receiptData.isValid,
+                success: true,
+                usedModel,
+              },
+            },
+          });
+        }
+      } catch (logError) {
+        console.error('Error logging receipt processing:', logError);
+      }
 
       return receiptData;
     } catch (error: any) {
@@ -282,18 +293,29 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
         Sentry.captureException(error);
       });
 
-      // Log error to SystemLog
-      await prisma.systemLog.create({
-        data: {
-          userId,
-          event: 'receipt_processed',
-          metadata: {
-            latencyMs,
-            success: false,
-            errorMsg: error.message || 'Unknown error',
-          },
-        },
-      });
+      // Log error to SystemLog - only if user exists
+      try {
+        const userExists = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        
+        if (userExists) {
+          await prisma.systemLog.create({
+            data: {
+              userId,
+              event: 'receipt_processed',
+              metadata: {
+                latencyMs,
+                success: false,
+                errorMsg: error.message || 'Unknown error',
+              },
+            },
+          });
+        }
+      } catch (logError) {
+        console.error('Error logging receipt processing error:', logError);
+      }
 
       throw error;
     }
