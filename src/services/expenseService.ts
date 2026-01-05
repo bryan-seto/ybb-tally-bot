@@ -594,6 +594,41 @@ export class ExpenseService {
    * Automatically record transactions extracted by AI
    */
   async recordAISavedTransactions(receiptData: any, userId: bigint) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:596',message:'recordAISavedTransactions entry',data:{userId:String(userId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
+    // Ensure user exists in User table before creating transactions
+    let payerId = userId;
+    try {
+      const userExists = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      
+      if (!userExists) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:606',message:'User does not exist, finding default user',data:{userId:String(userId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        // User doesn't exist - find first available user (fallback to USER_A)
+        const defaultUser = await prisma.user.findFirst({
+          where: { role: 'Bryan' },
+          select: { id: true },
+        });
+        if (defaultUser) {
+          payerId = defaultUser.id;
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:615',message:'Using default user as payer',data:{originalUserId:String(userId),payerId:String(payerId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+        } else {
+          throw new Error(`User ${userId} does not exist and no default user found`);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking/creating user:', error);
+      throw error;
+    }
+    
     const savedTransactions: Array<{
       id: bigint;
       createdAt: Date;
@@ -625,13 +660,16 @@ export class ExpenseService {
     }] : []);
 
     for (const item of items) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:642',message:'Creating transaction',data:{payerId:String(payerId),amount:item.amount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       const tx = await prisma.transaction.create({
         data: {
           amountSGD: item.amount,
           currency: 'SGD',
           category: item.category || 'Other',
           description: item.merchant || 'Unknown Merchant',
-          payerId: userId,
+          payerId: payerId,
           date: item.date ? new Date(item.date) : new Date(),
         },
         include: {
