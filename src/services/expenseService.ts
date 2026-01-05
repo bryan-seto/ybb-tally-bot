@@ -655,6 +655,9 @@ export class ExpenseService {
     }] : []);
 
     for (const item of items) {
+      // Get split rule for this category
+      const splitRuleForItem = await this.splitRulesService.getSplitRule(item.category || 'Other');
+      
       const tx = await prisma.transaction.create({
         data: {
           amountSGD: item.amount,
@@ -663,6 +666,8 @@ export class ExpenseService {
           description: item.merchant || 'Unknown Merchant',
           payerId: payerId,
           date: item.date ? new Date(item.date) : new Date(),
+          bryanPercentage: splitRuleForItem.userAPercent,
+          hweiYeenPercentage: splitRuleForItem.userBPercent,
         },
         include: {
           payer: true
