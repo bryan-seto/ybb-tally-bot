@@ -8,6 +8,10 @@ import { TransactionDetailHandler } from './TransactionDetailHandler';
 import { QuickExpenseHandler } from './QuickExpenseHandler';
 import { EditHandler } from './EditHandler';
 import { AICorrectionHandler } from './AICorrectionHandler';
+import { ManualAddHandler } from './ManualAddHandler';
+import { RecurringHandler } from './RecurringHandler';
+import { SplitSettingsHandler } from './SplitSettingsHandler';
+import { SearchHandler } from './SearchHandler';
 
 /**
  * Router that dispatches text messages to appropriate handlers
@@ -44,6 +48,18 @@ export class MessageRouter {
       
       // Priority 3: Quick expense (130 groceries)
       new QuickExpenseHandler(expenseService, aiService, historyService, sessionManager, getBotUsername, showDashboard, splitRulesService),
+      
+      // Priority 4: Manual add flow (multi-step)
+      new ManualAddHandler(expenseService, aiService, historyService, sessionManager),
+      
+      // Priority 4.5: Recurring expense flow (multi-step)
+      new RecurringHandler(expenseService, aiService, historyService, sessionManager),
+      
+      // Priority 4.6: Split settings custom input
+      new SplitSettingsHandler(expenseService, aiService, historyService, sessionManager, splitRulesService),
+      
+      // Priority 5: Search flow
+      new SearchHandler(expenseService, aiService, historyService, sessionManager),
       
       // Priority 5: Manual add flow (multi-step) - will be added after extraction
       // new ManualAddHandler(...),
