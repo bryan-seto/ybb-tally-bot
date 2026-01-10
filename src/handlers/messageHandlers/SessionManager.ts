@@ -16,7 +16,6 @@ export class SessionManager {
     session.recurringStep = undefined;
     session.editLastMode = false;
     session.editLastAction = undefined;
-    session.searchMode = false;
     session.awaitingAmountConfirmation = false;
     session.awaitingPayer = false;
     session.editingTxId = undefined;
@@ -56,12 +55,5 @@ export class SessionManager {
    */
   isRecurringMode(session: any): boolean {
     return session?.recurringMode === true;
-  }
-
-  /**
-   * Check if session is in search mode
-   */
-  isSearchMode(session: any): boolean {
-    return session?.searchMode === true;
   }
 }

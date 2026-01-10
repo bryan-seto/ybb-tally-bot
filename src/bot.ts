@@ -46,7 +46,6 @@ export interface BotSession {
   editLastMode?: boolean;
   editLastAction?: 'amount' | 'category' | 'split';
   editLastTransactionId?: bigint;
-  searchMode?: boolean;
   pendingReceipts?: { [key: string]: any };
   waitingForSplitInput?: boolean;
   splitSettingsCategory?: string;
@@ -480,9 +479,6 @@ export class YBBTallyBot {
 
     // Settle all expenses command
     this.bot.command('settle', async (ctx) => await this.commandHandlers.handleSettle(ctx));
-
-    // Monthly report command
-    this.bot.command('report', async (ctx) => await this.commandHandlers.handleReport(ctx));
 
     // Manual add command
     this.bot.command('add', async (ctx) => {

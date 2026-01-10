@@ -66,7 +66,6 @@ export class MessageHandlers {
       // - ManualAddHandler (Priority 4)
       // - RecurringHandler (Priority 4.5)
       // - SplitSettingsHandler (Priority 4.6)
-      // - SearchHandler (Priority 5)
       
       console.log('[handleText] No action taken for this message');
     } catch (error: any) {
@@ -94,7 +93,6 @@ export class MessageHandlers {
 
   // handleRecurringAddFlow is now in RecurringHandler
   // handleSplitSettingsInput is now in SplitSettingsHandler
-  // handleSearchFlow is now in SearchHandler
 
   // executeCorrectionActions is now in shared utility CorrectionActionExecutor
 

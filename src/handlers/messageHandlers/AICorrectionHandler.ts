@@ -42,7 +42,7 @@ export class AICorrectionHandler extends BaseMessageHandler {
       const session = ctx.session || {};
       
       // If user tags the bot, they likely want to override any manual flow
-      if (session.manualAddMode || session.searchMode || session.editingTxId) {
+      if (session.manualAddMode || session.editingTxId) {
         console.log('[handleAICorrection] Clearing manual modes for AI correction');
         this.sessionManager.clearSession(session);
       }

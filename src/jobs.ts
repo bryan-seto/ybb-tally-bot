@@ -3,8 +3,7 @@ import { prisma } from './lib/prisma';
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
 import { RecurringExpenseService } from './services/recurringExpenseService';
-import { getDayOfMonth, getNow, formatDate, getMonthsAgo } from './utils/dateHelpers';
-import QuickChart from 'quickchart-js';
+import { getDayOfMonth, getNow } from './utils/dateHelpers';
 import { CONFIG } from './config';
 
 export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
@@ -46,18 +45,6 @@ export function setupJobs(bot: YBBTallyBot, expenseService: ExpenseService) {
       await bot.sendToPrimaryGroup(summary, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Error processing recurring expenses:', error);
-    }
-  });
-
-  // Monthly report on 1st of month at 09:00 Asia/Singapore time = 01:00 UTC
-  cron.schedule('0 1 1 * *', async () => {
-    try {
-      const report = await expenseService.getMonthlyReport(1);
-      const reportDate = getMonthsAgo(1);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-      await bot.sendToPrimaryGroup(`📊 Monthly Report - ${monthName}: Total Spend SGD $${report.totalSpend.toFixed(2)}`);
-    } catch (error) {
-      console.error('Error sending monthly report:', error);
     }
   });
 

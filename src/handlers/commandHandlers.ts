@@ -3,8 +3,7 @@ import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { AnalyticsService } from '../services/analyticsService';
 import { HistoryService } from '../services/historyService';
-import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
-import QuickChart from 'quickchart-js';
+import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES, CONFIG, USER_IDS, getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 
 export class CommandHandlers {
@@ -142,79 +141,6 @@ export class CommandHandlers {
     } catch (error: any) {
       console.error('Error handling settle command:', error);
       await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
-
-  async handleReport(ctx: any) {
-    const args = ctx.message.text.split(' ').slice(1);
-    let monthOffset = 0;
-    
-    if (args.length > 0) {
-      const offset = parseInt(args[0]);
-      if (!isNaN(offset)) {
-        monthOffset = offset;
-      } else {
-        await ctx.reply(
-          'Invalid month offset. Use:\n' +
-          '`/report` - Current month\n' +
-          '`/report 1` - Last month\n',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-    }
-
-    try {
-      await ctx.reply('Generating monthly report... At your service!');
-
-      const report = await this.expenseService.getMonthlyReport(monthOffset);
-      const reportDate = getMonthsAgo(monthOffset);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-
-      if (report.transactionCount === 0) {
-        const allTransactions = await prisma.transaction.findMany({
-          include: { payer: true },
-          orderBy: { date: 'desc' },
-        });
-
-        if (allTransactions.length > 0) {
-          const transactionsByMonth: { [key: string]: number } = {};
-          allTransactions.forEach(t => {
-            const monthKey = formatDate(t.date, 'yyyy-MM');
-            if (!transactionsByMonth[monthKey]) transactionsByMonth[monthKey] = 0;
-            transactionsByMonth[monthKey] += t.amountSGD;
-          });
-
-          const monthList = Object.entries(transactionsByMonth)
-            .sort((a, b) => b[0].localeCompare(a[0]))
-            .map(([key, total]) => {
-              const name = formatDate(new Date(key + '-01'), 'MMMM yyyy');
-              return `• ${name}: SGD $${total.toFixed(2)}`;
-            })
-            .join('\n');
-          
-          await ctx.reply(`No transactions found for ${monthName}.\n\nAvailable months:\n${monthList}`, { parse_mode: 'Markdown' });
-          return;
-        }
-      }
-
-      const chart = new QuickChart();
-      chart.setConfig({
-        type: 'bar',
-        data: {
-          labels: report.topCategories.map((c) => c.category),
-          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-        },
-      });
-      chart.setWidth(800);
-      chart.setHeight(400);
-      const chartUrl = chart.getUrl();
-
-      const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error: any) {
-      console.error('Error generating report:', error);
-      await ctx.reply('Error generating report.');
     }
   }
 

@@ -1,12 +1,11 @@
 import { Context, Markup } from 'telegraf';
-import QuickChart from 'quickchart-js';
 import { prisma } from '../../lib/prisma';
 import { USER_NAMES } from '../../config';
 import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
-import { getMonthsAgo, formatDate } from '../../utils/dateHelpers';
+import { formatDate } from '../../utils/dateHelpers';
 
 /**
  * Handler for menu navigation callbacks
@@ -21,8 +20,6 @@ export class MenuCallbackHandler implements ICallbackHandler {
 
   canHandle(data: string): boolean {
     return data === 'open_menu' || 
-           data === 'menu_search' || 
-           data === 'menu_reports' || 
            data === 'menu_balance' || 
            data === 'menu_unsettled' || 
            data === 'menu_history' || 
@@ -40,10 +37,6 @@ export class MenuCallbackHandler implements ICallbackHandler {
         {
           reply_markup: {
             inline_keyboard: [
-              [
-                { text: '🔍 Search', callback_data: 'menu_search' },
-                { text: '📊 Reports', callback_data: 'menu_reports' },
-              ],
               [
                 { text: '🔄 Recurring', callback_data: 'menu_recurring' },
                 { text: '⚙️ Split Rules', callback_data: 'OPEN_SPLIT_SETTINGS' },
@@ -98,38 +91,6 @@ export class MenuCallbackHandler implements ICallbackHandler {
       session.manualAddMode = true;
       session.manualAddStep = 'description';
       await ctx.reply('What is the description for the expense?', Markup.keyboard([['❌ Cancel']]).resize());
-      return;
-    }
-
-    if (data === 'menu_search') {
-      await ctx.answerCbQuery();
-      
-      session.searchMode = true;
-      await ctx.reply('Type a keyword to search (e.g., "Grab" or "Sushi"):', Markup.keyboard([['❌ Cancel']]).resize());
-      return;
-    }
-
-    if (data === 'menu_reports') {
-      await ctx.answerCbQuery();
-      
-      const report = await this.expenseService.getMonthlyReport(0);
-      const reportDate = getMonthsAgo(0);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-
-      const chart = new QuickChart();
-      chart.setConfig({
-        type: 'bar',
-        data: {
-          labels: report.topCategories.map((c) => c.category),
-          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-        },
-      });
-      chart.setWidth(800);
-      chart.setHeight(400);
-      const chartUrl = chart.getUrl();
-
-      const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
-      await ctx.reply(message, { parse_mode: 'Markdown' });
       return;
     }
 
