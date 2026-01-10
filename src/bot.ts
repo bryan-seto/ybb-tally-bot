@@ -27,7 +27,7 @@ function getGreeting(userId: string): string {
 }
 
 // Session data interface
-interface BotSession {
+export interface BotSession {
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
@@ -50,6 +50,7 @@ interface BotSession {
   pendingReceipts?: { [key: string]: any };
   waitingForSplitInput?: boolean;
   splitSettingsCategory?: string;
+  editingTxId?: string;
 }
 
 interface PendingPhoto {

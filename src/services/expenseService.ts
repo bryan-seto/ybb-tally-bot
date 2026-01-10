@@ -19,9 +19,6 @@ export class ExpenseService {
     bryanOwes: number;
     hweiYeenOwes: number;
   }> {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:18',message:'calculateOutstandingBalance entry',data:{env:process.env.NODE_ENV||'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'production-verification',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     // Get users
     const bryan = await prisma.user.findFirst({
       where: { role: 'Bryan' },
@@ -31,9 +28,6 @@ export class ExpenseService {
     });
 
     if (!bryan || !hweiYeen) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:31',message:'Users not found, returning zeros',data:{bryanFound:!!bryan,hweiYeenFound:!!hweiYeen},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       return { bryanOwes: 0, hweiYeenOwes: 0 };
     }
 
@@ -43,10 +37,6 @@ export class ExpenseService {
         isSettled: false,
       },
     });
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:39',message:'Found unsettled transactions',data:{transactionCount:transactions.length,transactions:transactions.map(t=>({id:t.id?.toString()||'missing',amount:t.amountSGD,payerId:t.payerId?.toString()||'missing',bryanPercent:t.bryanPercentage??0.5,hweiYeenPercent:t.hweiYeenPercentage??0.5,description:t.description||null}))},timestamp:Date.now(),sessionId:'debug-session',runId:'production-verification',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     let bryanPaid = 0;
     let hweiYeenPaid = 0;
@@ -76,10 +66,6 @@ export class ExpenseService {
     const bryanNet = bryanPaid - bryanShare;
     const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:66',message:'Intermediate calculations BEFORE balance logic',data:{bryanPaid,bryanShare,bryanNet,hweiYeenPaid,hweiYeenShare,hweiYeenNet},timestamp:Date.now(),sessionId:'debug-session',runId:'production-verification',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    
     // Calculate outstanding balances:
     // Net amount represents: paid - share
     // Positive net = person overpaid (other person owes them)
@@ -88,41 +74,21 @@ export class ExpenseService {
     let bryanOwes = 0;
     let hweiYeenOwes = 0;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:76',message:'Balance calculation branch decision',data:{bryanNetPos:bryanNet>0,bryanNetNeg:bryanNet<0,hweiYeenNetPos:hweiYeenNet>0,hweiYeenNetNeg:hweiYeenNet<0},timestamp:Date.now(),sessionId:'debug-session',runId:'production-verification',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-    
     if (bryanNet > 0 && hweiYeenNet < 0) {
       // Bryan overpaid, HY underpaid - HY owes her share (just the absolute of her negative net)
       hweiYeenOwes = Math.abs(hweiYeenNet);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:78',message:'Branch: Bryan overpaid, HY underpaid',data:{bryanNet,absHweiYeenNet:Math.abs(hweiYeenNet),calculatedHweiYeenOwes:hweiYeenOwes},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     } else if (hweiYeenNet > 0 && bryanNet < 0) {
       // HY overpaid, Bryan underpaid - Bryan owes his share (just the absolute of his negative net)
       bryanOwes = Math.abs(bryanNet);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:81',message:'Branch: HY overpaid, Bryan underpaid',data:{hweiYeenNet,absBryanNet:Math.abs(bryanNet),calculatedBryanOwes:bryanOwes},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     } else if (bryanNet < 0 && hweiYeenNet < 0) {
       // Both underpaid (edge case)
       bryanOwes = Math.abs(bryanNet);
       hweiYeenOwes = Math.abs(hweiYeenNet);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:84',message:'Branch: Both underpaid',data:{bryanOwes,hweiYeenOwes},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     } else {
       // Both overpaid or both even (edge case)
       bryanOwes = Math.max(0, -bryanNet);
       hweiYeenOwes = Math.max(0, -hweiYeenNet);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:88',message:'Branch: Both overpaid or even',data:{bryanOwes,hweiYeenOwes},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'expenseService.ts:92',message:'Final balance result',data:{bryanOwes,hweiYeenOwes},timestamp:Date.now(),sessionId:'debug-session',runId:'production-verification',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
 
     return { bryanOwes, hweiYeenOwes };
   }
