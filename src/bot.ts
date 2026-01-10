@@ -307,25 +307,13 @@ export class YBBTallyBot {
     const bryanName = getUserNameByRole('Bryan');
     const hweiYeenName = getUserNameByRole('HweiYeen');
 
-    // Pick random template
-    const templates: string[] = [];
-    
     if (balance.bryanOwes > 0) {
-      templates.push(`📈 Scoreboard: ${hweiYeenName} is up by $${balance.bryanOwes.toFixed(2)}`);
-      templates.push(`👸 ${hweiYeenName} ➡️ 🤴 ${bryanName}: $${balance.bryanOwes.toFixed(2)}`);
-      templates.push(`🍪 Treat Status: ${bryanName} owes ${hweiYeenName} $${balance.bryanOwes.toFixed(2)}`);
+      return `⚖️ To even out: $${balance.bryanOwes.toFixed(2)} to ${hweiYeenName}`;
     } else if (balance.hweiYeenOwes > 0) {
-      templates.push(`📈 Scoreboard: ${bryanName} is up by $${balance.hweiYeenOwes.toFixed(2)}`);
-      templates.push(`🤴 ${bryanName} ➡️ 👸 ${hweiYeenName}: $${balance.hweiYeenOwes.toFixed(2)}`);
-      templates.push(`🍪 Treat Status: ${hweiYeenName} owes ${bryanName} $${balance.hweiYeenOwes.toFixed(2)}`);
+      return `⚖️ To even out: $${balance.hweiYeenOwes.toFixed(2)} to ${bryanName}`;
     }
 
-    if (templates.length === 0) {
-      return '💰 Balance Status';
-    }
-
-    const randomIndex = Math.floor(Math.random() * templates.length);
-    return templates[randomIndex];
+    return '💰 Balance Status';
   }
 
   /**
