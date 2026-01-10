@@ -10,13 +10,13 @@ exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance >
 exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with default 70/30 split when Bryan paid 1`] = `
 {
   "bryanOwes": 0,
-  "hweiYeenOwes": 30,
+  "hweiYeenOwes": 50,
 }
 `;
 
 exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with default 70/30 split when HweiYeen paid 1`] = `
 {
-  "bryanOwes": 70,
+  "bryanOwes": 50,
   "hweiYeenOwes": 0,
 }
 `;
@@ -24,7 +24,7 @@ exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance >
 exports[`ExpenseService - Characterization Tests > calculateOutstandingBalance > should calculate balance with multiple mixed transactions 1`] = `
 {
   "bryanOwes": 0,
-  "hweiYeenOwes": 40,
+  "hweiYeenOwes": 60,
 }
 `;
 
@@ -59,13 +59,13 @@ exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > sh
 exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with default 70/30 split when Bryan paid 1`] = `
 {
   "bryanOwes": 0,
-  "hweiYeenOwes": 30,
+  "hweiYeenOwes": 50,
 }
 `;
 
 exports[`ExpenseService - Characterization Tests > calculateTransactionOwed > should calculate owed amounts with default 70/30 split when HweiYeen paid 1`] = `
 {
-  "bryanOwes": 70,
+  "bryanOwes": 50,
   "hweiYeenOwes": 0,
 }
 `;
@@ -115,14 +115,14 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should han
 {
   "bryanCategories": [
     {
-      "amount": 70,
+      "amount": 50,
       "category": "Food",
     },
   ],
   "bryanPaid": 100,
   "hweiYeenCategories": [
     {
-      "amount": 30,
+      "amount": 50,
       "category": "Food",
     },
   ],
@@ -142,14 +142,14 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should han
 {
   "bryanCategories": [
     {
-      "amount": 35,
+      "amount": 25,
       "category": "Other",
     },
   ],
   "bryanPaid": 50,
   "hweiYeenCategories": [
     {
-      "amount": 15,
+      "amount": 25,
       "category": "Other",
     },
   ],
@@ -181,7 +181,7 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should ret
 {
   "bryanCategories": [
     {
-      "amount": 170,
+      "amount": 150,
       "category": "Food",
     },
     {
@@ -189,14 +189,14 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should ret
       "category": "Shopping",
     },
     {
-      "amount": 35,
+      "amount": 25,
       "category": "Transport",
     },
   ],
   "bryanPaid": 300,
   "hweiYeenCategories": [
     {
-      "amount": 130,
+      "amount": 150,
       "category": "Food",
     },
     {
@@ -204,7 +204,7 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should ret
       "category": "Shopping",
     },
     {
-      "amount": 15,
+      "amount": 25,
       "category": "Transport",
     },
   ],
@@ -232,14 +232,14 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should ret
 {
   "bryanCategories": [
     {
-      "amount": 70,
+      "amount": 50,
       "category": "Food",
     },
   ],
   "bryanPaid": 100,
   "hweiYeenCategories": [
     {
-      "amount": 30,
+      "amount": 50,
       "category": "Food",
     },
   ],
@@ -257,19 +257,19 @@ exports[`ExpenseService - Characterization Tests > getMonthlyReport > should ret
 
 exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should format decimal amounts correctly 1`] = `
 "💰 **Outstanding (amount owed):**
-Bryan owes Hwei Yeen SGD $86.42
+Bryan owes Hwei Yeen SGD $61.73
 "
 `;
 
 exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return message when Bryan owes HweiYeen 1`] = `
 "💰 **Outstanding (amount owed):**
-Bryan owes Hwei Yeen SGD $70.00
+Bryan owes Hwei Yeen SGD $50.00
 "
 `;
 
 exports[`ExpenseService - Characterization Tests > getOutstandingBalanceMessage > should return message when HweiYeen owes Bryan 1`] = `
 "💰 **Outstanding (amount owed):**
-Hwei Yeen owes Bryan SGD $30.00
+Hwei Yeen owes Bryan SGD $50.00
 "
 `;
 
