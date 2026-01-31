@@ -12,12 +12,16 @@ export class ExpenseService {
     this.splitRulesService = splitRulesService || new SplitRulesService();
   }
   /**
-   * Calculate outstanding balance between users
-   * Returns: { bryanOwes: number, hweiYeenOwes: number }
+   * Calculate net outstanding balance using pure tabulation approach
+   * Uses ALL transactions (expenses + payments) regardless of settled status
+   * Returns: { bryanOwes: number, hweiYeenOwes: number, netOutstanding: number, whoOwes: 'Bryan' | 'HweiYeen' | null }
    */
-  async calculateOutstandingBalance(): Promise<{
+  async calculateNetBalance(): Promise<{
     bryanOwes: number;
     hweiYeenOwes: number;
+    netOutstanding: number;
+    whoOwes: 'Bryan' | 'HweiYeen' | null;
+    whoIsOwed: 'Bryan' | 'HweiYeen' | null;
   }> {
     // Get users
     const bryan = await prisma.user.findFirst({
@@ -28,69 +32,138 @@ export class ExpenseService {
     });
 
     if (!bryan || !hweiYeen) {
-      return { bryanOwes: 0, hweiYeenOwes: 0 };
+      return { 
+        bryanOwes: 0, 
+        hweiYeenOwes: 0, 
+        netOutstanding: 0,
+        whoOwes: null,
+        whoIsOwed: null
+      };
     }
 
-    // Get all unsettled transactions
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        isSettled: false,
-      },
-    });
+    // Get ALL transactions (expenses + payments) - pure tabulation approach
+    // Note: transactionType field will be added via migration, for now we check category
+    const allTransactions = await prisma.transaction.findMany({});
 
     let bryanPaid = 0;
     let hweiYeenPaid = 0;
     let bryanShare = 0;
     let hweiYeenShare = 0;
+    let bryanPayments = 0;
+    let hweiYeenPayments = 0;
 
-    transactions.forEach((t) => {
-      if (t.payerId === bryan.id) {
-        bryanPaid += t.amountSGD;
-      } else if (t.payerId === hweiYeen.id) {
-        hweiYeenPaid += t.amountSGD;
+    allTransactions.forEach((t) => {
+      // Check if this is a payment transaction (category = 'Settlement' or 'Payment')
+      const isPayment = t.category === 'Settlement' || t.category === 'Payment';
+      
+      if (isPayment) {
+        // Payment transactions reduce balance
+        if (t.payerId === bryan.id) {
+          bryanPayments += Number(t.amountSGD);
+        } else if (t.payerId === hweiYeen.id) {
+          hweiYeenPayments += Number(t.amountSGD);
+        }
+      } else {
+        // Expense transactions - calculate based on split
+        const txAmount = Number(t.amountSGD);
+        const bryanPercent = t.bryanPercentage ?? 0.5;
+        const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
+        const bryanShareForTx = txAmount * bryanPercent;
+        const hweiYeenShareForTx = txAmount * hweiYeenPercent;
+        
+        if (t.payerId === bryan.id) {
+          bryanPaid += txAmount;
+        } else if (t.payerId === hweiYeen.id) {
+          hweiYeenPaid += txAmount;
+        }
+      
+        bryanShare += bryanShareForTx;
+        hweiYeenShare += hweiYeenShareForTx;
       }
-      
-      // Use custom split if available, otherwise default to 50/50
-      const bryanPercent = t.bryanPercentage ?? 0.5;
-      const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
-      
-      const bryanShareForTx = t.amountSGD * bryanPercent;
-      const hweiYeenShareForTx = t.amountSGD * hweiYeenPercent;
-      bryanShare += bryanShareForTx;
-      hweiYeenShare += hweiYeenShareForTx;
     });
 
-    // Calculate net amounts: paid - share
+    // Calculate net amounts from expenses only (before payments)
     // Positive net = person overpaid (other person owes them)
     // Negative net = person underpaid (they owe the other person)
-    const bryanNet = bryanPaid - bryanShare;
-    const hweiYeenNet = hweiYeenPaid - hweiYeenShare;
+    const bryanNetBeforePayments = bryanPaid - bryanShare;
+    const hweiYeenNetBeforePayments = hweiYeenPaid - hweiYeenShare;
+
+    // Apply payments to net amounts
+    // CRITICAL FIX: The formula was inverted! When Bryan pays, his debt should DECREASE (net becomes less negative)
+    // So we should ADD payments to reduce debt, not subtract them
+    // The correct formula: bryanNet = bryanNetBeforePayments + bryanPayments - hweiYeenPayments
+    // When Bryan pays $X: his net improves by $X (ADD payments to reduce debt)
+    // When HweiYeen pays $Y to Bryan: Bryan's net improves by $Y (SUBTRACT what HweiYeen paid, which is ADD to Bryan)
+    let bryanNet: number;
+    let hweiYeenNet: number;
     
+    // Bryan's net after payments: ADD what he paid (reduces debt), SUBTRACT what HweiYeen paid to him (reduces credit)
+    bryanNet = bryanNetBeforePayments + bryanPayments - hweiYeenPayments;
+    
+    // HweiYeen's net after payments: ADD what she paid (reduces debt), SUBTRACT what Bryan paid to her (reduces credit)
+    hweiYeenNet = hweiYeenNetBeforePayments + hweiYeenPayments - bryanPayments;
+
     // Calculate outstanding balances:
-    // Net amount represents: paid - share
-    // Positive net = person overpaid (other person owes them)
-    // Negative net = person underpaid (they owe the other person)
-    // The outstanding balance is simply the absolute value of the negative net
+    // Net represents: positive = person is owed money, negative = person owes money
+    // In a two-person system, we need to find who owes whom
+    // CRITICAL FIX: The outstanding balance should be based on the net position, not the difference
+    // If bryanNet is positive, Bryan is owed money (hweiYeen owes bryanNet)
+    // If bryanNet is negative, Bryan owes money (bryanOwes = |bryanNet|)
+    // Since bryanNet + hweiYeenNet = 0 (they sum to zero in a two-person system),
+    // we can use either net value to determine the balance
     let bryanOwes = 0;
     let hweiYeenOwes = 0;
     
-    if (bryanNet > 0 && hweiYeenNet < 0) {
-      // Bryan overpaid, HY underpaid - HY owes her share (just the absolute of her negative net)
-      hweiYeenOwes = Math.abs(hweiYeenNet);
-    } else if (hweiYeenNet > 0 && bryanNet < 0) {
-      // HY overpaid, Bryan underpaid - Bryan owes his share (just the absolute of his negative net)
+    // Use bryanNet to determine outstanding balances
+    // bryanNet > 0 means Bryan is owed money, so HweiYeen owes |bryanNet|
+    // bryanNet < 0 means Bryan owes money, so bryanOwes = |bryanNet|
+    if (bryanNet > 0) {
+      // Bryan is owed money - HweiYeen owes Bryan
+      hweiYeenOwes = bryanNet;
+    } else if (bryanNet < 0) {
+      // Bryan owes money
       bryanOwes = Math.abs(bryanNet);
-    } else if (bryanNet < 0 && hweiYeenNet < 0) {
-      // Both underpaid (edge case)
-      bryanOwes = Math.abs(bryanNet);
-      hweiYeenOwes = Math.abs(hweiYeenNet);
-    } else {
-      // Both overpaid or both even (edge case)
-      bryanOwes = Math.max(0, -bryanNet);
-      hweiYeenOwes = Math.max(0, -hweiYeenNet);
+    }
+    // If bryanNet === 0, both are zero (all settled)
+
+    // Calculate net outstanding (difference)
+    const netOutstanding = Math.abs(bryanOwes - hweiYeenOwes);
+    
+    // Determine who owes whom
+    let whoOwes: 'Bryan' | 'HweiYeen' | null = null;
+    let whoIsOwed: 'Bryan' | 'HweiYeen' | null = null;
+    
+    if (bryanOwes > hweiYeenOwes) {
+      whoOwes = 'Bryan';
+      whoIsOwed = 'HweiYeen';
+    } else if (hweiYeenOwes > bryanOwes) {
+      whoOwes = 'HweiYeen';
+      whoIsOwed = 'Bryan';
     }
 
-    return { bryanOwes, hweiYeenOwes };
+    return { 
+      bryanOwes, 
+      hweiYeenOwes, 
+      netOutstanding,
+      whoOwes,
+      whoIsOwed
+    };
+  }
+
+  /**
+   * Calculate outstanding balance between users (legacy method - kept for backward compatibility)
+   * Now uses calculateNetBalance internally
+   * Returns: { bryanOwes: number, hweiYeenOwes: number }
+   */
+  async calculateOutstandingBalance(): Promise<{
+    bryanOwes: number;
+    hweiYeenOwes: number;
+  }> {
+    const netBalance = await this.calculateNetBalance();
+    return {
+      bryanOwes: netBalance.bryanOwes,
+      hweiYeenOwes: netBalance.hweiYeenOwes
+    };
   }
 
   /**
@@ -449,6 +522,8 @@ export class ExpenseService {
 
   /**
    * Automatically record transactions extracted by AI
+   * FIXED: Calculates balance in-memory by adding new transactions to existing balance
+   * to avoid race condition where balance query doesn't see newly created transactions
    */
   async recordAISavedTransactions(receiptData: any, userId: bigint) {
     // Ensure user exists in User table before creating transactions
@@ -511,41 +586,315 @@ export class ExpenseService {
       date: receiptData.date
     }] : []);
 
-    for (const item of items) {
-      // Get split rule for this category
-      const splitRuleForItem = await this.splitRulesService.getSplitRule(item.category || 'Other');
-      
-      const tx = await prisma.transaction.create({
-        data: {
-          amountSGD: item.amount,
-          currency: 'SGD',
-          category: item.category || 'Other',
-          description: item.merchant || 'Unknown Merchant',
-          payerId: payerId,
-          date: item.date ? new Date(item.date) : new Date(),
-          bryanPercentage: splitRuleForItem.userAPercent,
-          hweiYeenPercentage: splitRuleForItem.userBPercent,
-        },
-        include: {
-          payer: true
-        }
-      });
-      savedTransactions.push(tx);
+    // FIX: Wrap all transaction creates in a single Prisma transaction
+    // This ensures all transactions are committed atomically before balance calculation
+    await prisma.$transaction(async (tx) => {
+      for (const item of items) {
+        // Get split rule for this category
+        const splitRuleForItem = await this.splitRulesService.getSplitRule(item.category || 'Other');
+        
+        const createdTx = await tx.transaction.create({
+          data: {
+            amountSGD: item.amount,
+            currency: 'SGD',
+            category: item.category || 'Other',
+            description: item.merchant || 'Unknown Merchant',
+            payerId: payerId,
+            date: item.date ? new Date(item.date) : new Date(),
+            bryanPercentage: splitRuleForItem.userAPercent,
+            hweiYeenPercentage: splitRuleForItem.userBPercent,
+          },
+          include: {
+            payer: true
+          }
+        });
+        
+        savedTransactions.push(createdTx);
 
-      // Emit analytics event for each transaction
-      analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
-        userId,
-        transactionId: tx.id,
-        amount: tx.amountSGD,
-        category: tx.category || 'Other',
-        description: tx.description,
-      });
-    }
+        // Emit analytics event for each transaction
+        analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
+          userId,
+          transactionId: createdTx.id,
+          amount: createdTx.amountSGD,
+          category: createdTx.category || 'Other',
+          description: createdTx.description,
+        });
+      }
+    });
 
-    // Get the updated balance message
-    const balanceMessage = await this.getOutstandingBalanceMessage();
+    // FIX: Calculate balance AFTER all transactions are committed
+    // The Prisma transaction above ensures all creates are committed atomically
+    // Now the balance query will see all newly created transactions
+    const updatedBalance = await this.calculateNetBalance();
+
+    // Generate balance message from updated balance
+    const balanceMessage = this.formatOutstandingBalanceMessage(updatedBalance);
     
     return { savedTransactions, balanceMessage };
+  }
+
+  /**
+   * Format outstanding balance message from balance data
+   * Extracted from getOutstandingBalanceMessage for reuse
+   */
+  private formatOutstandingBalanceMessage(balance: {
+    bryanOwes: number;
+    hweiYeenOwes: number;
+  }): string {
+    // Guard clause: Happy path - all settled
+    if (balance.bryanOwes === 0 && balance.hweiYeenOwes === 0) {
+      return '✅ All expenses are settled! No outstanding balance.';
+    }
+
+    const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+    const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+    
+    // Guard clause: Both owe each other (edge case)
+    if (balance.bryanOwes > 0 && balance.hweiYeenOwes > 0) {
+      return '💰 **Outstanding (amount owed):**\n' +
+        `${userAName} owes: SGD $${balance.bryanOwes.toFixed(2)}\n` +
+        `${userBName} owes: SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+    }
+
+    // Guard clause: User A owes User B
+    if (balance.bryanOwes > 0) {
+      return '💰 **Outstanding (amount owed):**\n' +
+        `${userAName} owes ${userBName} SGD $${balance.bryanOwes.toFixed(2)}\n`;
+    }
+
+    // Guard clause: User B owes User A
+    if (balance.hweiYeenOwes > 0) {
+      return '💰 **Outstanding (amount owed):**\n' +
+        `${userBName} owes ${userAName} SGD $${balance.hweiYeenOwes.toFixed(2)}\n`;
+    }
+
+    // Fallback (should never reach here, but for safety)
+    return '💰 **Outstanding (amount owed):**\n';
+  }
+
+  /**
+   * Record a payment transaction with state validation and ACID transaction
+   * Re-fetches balance before committing to prevent race conditions
+   * Returns the payment transaction and new balance state
+   */
+  async recordPayment(
+    payerId: bigint,
+    amount: number,
+    description: string = 'Settlement payment'
+  ): Promise<{
+    payment: any;
+    newBalance: {
+      bryanOwes: number;
+      hweiYeenOwes: number;
+      netOutstanding: number;
+      whoOwes: 'Bryan' | 'HweiYeen' | null;
+      whoIsOwed: 'Bryan' | 'HweiYeen' | null;
+    };
+    wasSettled: boolean;
+  }> {
+    // Step 1: Re-fetch current balance (state validation)
+    const currentBalance = await this.calculateNetBalance();
+    
+    // Step 2: Get payer user to determine who owes
+    const payer = await prisma.user.findUnique({
+      where: { id: payerId },
+    });
+    
+    if (!payer) {
+      throw new Error(`User with id ${payerId} not found`);
+    }
+    
+    // Step 3: Determine who owes and validate payment amount
+    const payerRole = payer.role as 'Bryan' | 'HweiYeen';
+    let userOwes = 0;
+    
+    if (payerRole === 'Bryan') {
+      userOwes = currentBalance.bryanOwes;
+    } else {
+      userOwes = currentBalance.hweiYeenOwes;
+    }
+    
+    // State validation: Check if amount is still valid
+    // Use a small tolerance (0.01) for floating-point precision issues
+    // Allow payment if amount is within tolerance of what's owed (for exact full settlements)
+    const TOLERANCE = 0.01;
+    if (amount > userOwes + TOLERANCE) {
+      throw new Error(`Payment amount ($${amount.toFixed(2)}) exceeds outstanding balance ($${userOwes.toFixed(2)}). Balance may have changed. Please try again.`);
+    }
+    
+    // Clamp amount to userOwes to handle floating-point precision issues
+    // If amount is very close to userOwes (within tolerance), use userOwes
+    const actualAmount = Math.abs(amount - userOwes) <= TOLERANCE ? userOwes : amount;
+    
+    if (actualAmount <= 0) {
+      throw new Error('Payment amount must be greater than zero.');
+    }
+    
+    // Step 4: Record payment and update settlement status in ACID transaction
+    // Use actualAmount instead of amount to handle floating-point precision
+    return await prisma.$transaction(async (tx) => {
+      // Create payment transaction
+      const payment = await tx.transaction.create({
+        data: {
+          amountSGD: actualAmount,
+          currency: 'SGD',
+          category: 'Settlement',
+          description: description,
+          payerId: payerId,
+          date: new Date(),
+          // Note: transactionType field will be added via migration
+          // For now, using category='Settlement' to distinguish payments
+          isSettled: false, // Payment transactions don't need settled flag
+          bryanPercentage: null, // Payments don't have splits
+          hweiYeenPercentage: null,
+        },
+        include: {
+          payer: true,
+        },
+      });
+      
+      // Re-calculate balance with new payment included
+      // We need to recalculate within transaction using the same tx client
+      const bryan = await tx.user.findFirst({ where: { role: 'Bryan' } });
+      const hweiYeen = await tx.user.findFirst({ where: { role: 'HweiYeen' } });
+      
+      if (!bryan || !hweiYeen) {
+        throw new Error('Users not found');
+      }
+      
+      // Get all transactions including the new payment
+      const allTransactions = await tx.transaction.findMany({});
+      
+      let bryanPaid = 0;
+      let hweiYeenPaid = 0;
+      let bryanShare = 0;
+      let hweiYeenShare = 0;
+      let bryanPayments = 0;
+      let hweiYeenPayments = 0;
+
+      allTransactions.forEach((t) => {
+        const isPayment = t.category === 'Settlement' || t.category === 'Payment';
+        
+        if (isPayment) {
+          if (t.payerId === bryan.id) {
+            bryanPayments += Number(t.amountSGD);
+          } else if (t.payerId === hweiYeen.id) {
+            hweiYeenPayments += Number(t.amountSGD);
+          }
+        } else {
+          if (t.payerId === bryan.id) {
+            bryanPaid += Number(t.amountSGD);
+          } else if (t.payerId === hweiYeen.id) {
+            hweiYeenPaid += Number(t.amountSGD);
+          }
+          
+          const bryanPercent = t.bryanPercentage ?? 0.5;
+          const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
+          
+          bryanShare += Number(t.amountSGD) * bryanPercent;
+          hweiYeenShare += Number(t.amountSGD) * hweiYeenPercent;
+        }
+      });
+
+      // Calculate net amounts from expenses only (before payments)
+      const bryanNetBeforePayments = bryanPaid - bryanShare;
+      const hweiYeenNetBeforePayments = hweiYeenPaid - hweiYeenShare;
+      
+      // Apply payments to net amounts
+      // CRITICAL FIX: The formula was inverted! When Bryan pays, his debt should DECREASE (net becomes less negative)
+      // So we should ADD payments to reduce debt, not subtract them
+      // The correct formula: bryanNet = bryanNetBeforePayments + bryanPayments - hweiYeenPayments
+      // When Bryan pays $X: his net improves by $X (ADD payments to reduce debt)
+      // When HweiYeen pays $Y to Bryan: Bryan's net improves by $Y (SUBTRACT what HweiYeen paid, which is ADD to Bryan)
+      let bryanNet: number;
+      let hweiYeenNet: number;
+      
+      // Bryan's net after payments: ADD what he paid (reduces debt), SUBTRACT what HweiYeen paid to him (reduces credit)
+      bryanNet = bryanNetBeforePayments + bryanPayments - hweiYeenPayments;
+      
+      // HweiYeen's net after payments: ADD what she paid (reduces debt), SUBTRACT what Bryan paid to her (reduces credit)
+      hweiYeenNet = hweiYeenNetBeforePayments + hweiYeenPayments - bryanPayments;
+      
+      // Calculate outstanding balances using direct net position (same logic as calculateNetBalance)
+      // CRITICAL FIX: Use bryanNet directly instead of netDifference to avoid double-counting
+      let bryanOwes = 0;
+      let hweiYeenOwes = 0;
+      
+      // Use bryanNet to determine outstanding balances
+      // bryanNet > 0 means Bryan is owed money, so HweiYeen owes |bryanNet|
+      // bryanNet < 0 means Bryan owes money, so bryanOwes = |bryanNet|
+      if (bryanNet > 0) {
+        // Bryan is owed money - HweiYeen owes Bryan
+        hweiYeenOwes = bryanNet;
+      } else if (bryanNet < 0) {
+        // Bryan owes money
+        bryanOwes = Math.abs(bryanNet);
+      }
+      // If bryanNet === 0, both are zero (all settled)
+
+      const netOutstanding = Math.abs(bryanOwes - hweiYeenOwes);
+      
+      let whoOwes: 'Bryan' | 'HweiYeen' | null = null;
+      let whoIsOwed: 'Bryan' | 'HweiYeen' | null = null;
+      
+      if (bryanOwes > hweiYeenOwes) {
+        whoOwes = 'Bryan';
+        whoIsOwed = 'HweiYeen';
+      } else if (hweiYeenOwes > bryanOwes) {
+        whoOwes = 'HweiYeen';
+        whoIsOwed = 'Bryan';
+      }
+      
+      const newBalance = {
+        bryanOwes,
+        hweiYeenOwes,
+        netOutstanding,
+        whoOwes,
+        whoIsOwed
+      };
+      
+      // Step 5: If balance reaches $0, mark all expense transactions as settled
+      let wasSettled = false;
+      if (netOutstanding === 0) {
+        // Mark all expense transactions (exclude Settlement/Payment transactions) as settled
+        // Use OR with expense categories, or check if category is NULL (defaults to expense)
+        const expenseCategories = ['Food', 'Transport', 'Groceries', 'Shopping', 'Bills', 'Utilities', 'Medical', 'Travel', 'Entertainment', 'Other'];
+        const result = await tx.transaction.updateMany({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { category: { in: expenseCategories } },
+                  { category: null }, // Handle transactions with no category (treated as expenses)
+                ],
+              },
+              { category: { not: 'Settlement' } },
+              { category: { not: 'Payment' } },
+            ],
+            isSettled: false,
+          },
+          data: {
+            isSettled: true,
+          },
+        });
+        wasSettled = result.count > 0;
+      }
+      
+      // Emit analytics event
+      analyticsBus.emit(AnalyticsEventType.TRANSACTION_CREATED, {
+        userId: payerId,
+        transactionId: payment.id,
+        amount: payment.amountSGD,
+        category: payment.category || 'Settlement',
+        description: payment.description,
+      });
+      
+      return {
+        payment,
+        newBalance,
+        wasSettled
+      };
+    });
   }
 }
 
