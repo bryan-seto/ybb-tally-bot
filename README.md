@@ -290,11 +290,23 @@ npm test
 
 ## Deployment
 
-The bot includes a keep-alive HTTP server for Render.com deployment:
+The bot is deployed on Railway.app and includes a keep-alive HTTP server:
 
-- Listens on `PORT` environment variable (default: 8080)
-- Responds to HTTP requests to prevent Render from killing the bot
+- Listens on `PORT` environment variable (default: 10000)
+- Responds to HTTP requests for health checks
 - Server starts immediately when the application loads
+- Webhook URL: `https://ybb-tally-bot-production.up.railway.app/webhook`
+
+### Railway Deployment
+
+The service is configured via `railway.json` and automatically deploys from the `main` branch:
+
+- **Build Command**: `npm ci && npm run build && npm run db:verify`
+- **Start Command**: `npm start`
+- **Health Check**: `/health` endpoint
+- **Public URL**: `https://ybb-tally-bot-production.up.railway.app`
+
+Environment variables are configured in the Railway dashboard under the service's Variables tab.
 
 ## Project Structure
 

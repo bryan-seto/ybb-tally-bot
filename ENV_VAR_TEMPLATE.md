@@ -1,6 +1,6 @@
-# Environment Variables Template for Render.com
+# Environment Variables Template for Railway.app
 
-Copy and paste these into Render.com dashboard → Environment tab:
+Copy and paste these into Railway.app dashboard → Service → Variables tab:
 
 ## Required Variables (Copy-Paste This Section)
 
@@ -31,7 +31,7 @@ WEBHOOK_URL=
 - `TELEGRAM_BOT_TOKEN` = [Create new bot via @BotFather on Telegram]
 - `DATABASE_URL` = [Create new Supabase project → Settings → Database → Connection string URI]
 - `GEMINI_API_KEY` = [Reuse existing or create new at https://aistudio.google.com/apikey]
-- `WEBHOOK_URL` = [Set AFTER first deploy - use the Render service URL, e.g., https://your-service-name.onrender.com]
+- `WEBHOOK_URL` = [Set AFTER first deploy - use the Railway service URL, e.g., https://ybb-tally-bot-production.up.railway.app]
 
 ### Standard Values:
 - `NODE_ENV` = `production`
@@ -48,7 +48,7 @@ WEBHOOK_URL=
 - [ ] Copy connection string (replace password placeholder)
 - [ ] Have Gemini API key ready
 - [ ] Fill in template above
-- [ ] Paste into Render.com Environment Variables
-- [ ] Deploy service
-- [ ] Update WEBHOOK_URL after first deploy
+- [ ] Paste into Railway.app Environment Variables (Service → Variables tab)
+- [ ] Deploy service (automatic from GitHub)
+- [ ] Update WEBHOOK_URL after first deploy with Railway public URL
 
