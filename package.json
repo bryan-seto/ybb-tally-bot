@@ -1,6 +1,6 @@
 {
   "name": "ybb-tally-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Private Telegram bot for managing shared expenses",
   "main": "dist/index.js",
   "scripts": {
