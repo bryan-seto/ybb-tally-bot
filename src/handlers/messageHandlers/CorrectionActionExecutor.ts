@@ -46,19 +46,33 @@ export async function executeCorrectionActions(
       const chatType = ctx.chat?.type;
 
       if (step.action === 'UPDATE_SPLIT' && step.transactionId && step.data) {
+        const bryanPercent = step.data.bryanPercentage ?? 0;
+        const hweiYeenPercent = step.data.hweiYeenPercentage ?? 0;
+        const sum = bryanPercent + hweiYeenPercent;
+        
+        // Validate that percentages add up to 1.0 (within small tolerance for floating point)
+        if (Math.abs(sum - 1.0) > 0.001) {
+          throw new Error(`Invalid split: percentages must add up to 1.0 (got ${bryanPercent} + ${hweiYeenPercent} = ${sum})`);
+        }
+        
+        // Normalize to ensure they're in 0.0-1.0 range (in case AI sent values > 1.0)
+        const normalizedBryan = Math.max(0, Math.min(1, bryanPercent));
+        const normalizedHweiYeen = Math.max(0, Math.min(1, hweiYeenPercent));
+        
         const updated = await prisma.transaction.update({
           where: { id: step.transactionId },
           data: {
-            bryanPercentage: step.data.bryanPercentage,
-            hweiYeenPercentage: step.data.hweiYeenPercentage,
+            bryanPercentage: normalizedBryan,
+            hweiYeenPercentage: normalizedHweiYeen,
           },
           include: {
             payer: true,
           },
         });
+        
         updatedTransaction = updated;
-        const bryanSplit = Math.round((step.data.bryanPercentage ?? 0.7) * 100);
-        const hweiYeenSplit = Math.round((step.data.hweiYeenPercentage ?? 0.3) * 100);
+        const bryanSplit = Math.round(normalizedBryan * 100);
+        const hweiYeenSplit = Math.round(normalizedHweiYeen * 100);
         results.push(`✅ Split updated for "${updated.description}" to ${bryanSplit}-${hweiYeenSplit}`);
         
         // Emit analytics event
@@ -66,7 +80,7 @@ export async function executeCorrectionActions(
           analyticsBus.emit(AnalyticsEventType.TRANSACTION_UPDATED, {
             userId,
             transactionId: step.transactionId,
-            changes: { bryanPercentage: step.data.bryanPercentage, hweiYeenPercentage: step.data.hweiYeenPercentage },
+            changes: { bryanPercentage: normalizedBryan, hweiYeenPercentage: normalizedHweiYeen },
             chatId,
             chatType,
           });

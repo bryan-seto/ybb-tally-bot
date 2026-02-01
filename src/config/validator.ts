@@ -92,6 +92,7 @@ export const ConfigSchema = z.object({
   // Required - Bot Configuration
   TELEGRAM_BOT_TOKEN: BotTokenSchema,
   GEMINI_API_KEY: ApiKeySchema,
+  GROQ_API_KEY: OptionalStringSchema.default(''), // Optional - Groq API key for additional models
   BACKUP_RECIPIENT_ID: UserIdSchema,
   
   // Required - Database
@@ -133,6 +134,7 @@ export function validateConfig(env: NodeJS.ProcessEnv): ValidatedConfig {
     USER_B_NAME: sanitize(env.USER_B_NAME),
     TELEGRAM_BOT_TOKEN: sanitize(env.TELEGRAM_BOT_TOKEN),
     GEMINI_API_KEY: sanitize(env.GEMINI_API_KEY),
+    GROQ_API_KEY: sanitize(env.GROQ_API_KEY),
     BACKUP_RECIPIENT_ID: sanitize(env.BACKUP_RECIPIENT_ID),
     DATABASE_URL: sanitize(env.DATABASE_URL),
     PORT: env.PORT,

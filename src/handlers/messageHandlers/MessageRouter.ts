@@ -11,6 +11,7 @@ import { AICorrectionHandler } from './AICorrectionHandler';
 import { ManualAddHandler } from './ManualAddHandler';
 import { RecurringHandler } from './RecurringHandler';
 import { SplitSettingsHandler } from './SplitSettingsHandler';
+import { PaymentHandler } from './PaymentHandler';
 
 /**
  * Router that dispatches text messages to appropriate handlers
@@ -38,6 +39,9 @@ export class MessageRouter {
     this.handlers = [
       // Priority 0: AI Correction (@bot ...) - Check bot tags FIRST (highest priority when tagged)
       new AICorrectionHandler(expenseService, aiService, historyService, sessionManager, getBotUsername),
+      
+      // Priority 0.5: Payment input mode - Check early since it's a specific state
+      new PaymentHandler(expenseService, aiService, historyService, sessionManager, getBotUsername, showDashboard),
       
       // Priority 1: Transaction ID commands (/77, /74)
       new TransactionDetailHandler(expenseService, aiService, historyService, sessionManager, showDashboard),

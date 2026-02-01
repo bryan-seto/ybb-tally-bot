@@ -21,7 +21,22 @@ export class SessionManager {
     session.editingTxId = undefined;
     session.waitingForSplitInput = false;
     session.splitSettingsCategory = undefined;
+    session.paymentMode = false;
+    session.paymentOutstanding = undefined;
+    session.paymentUserOwes = undefined;
+    session.paymentOwedTo = undefined;
     // Note: Do not clear pendingReceipts - it's managed by PhotoHandler
+  }
+
+  /**
+   * Clear payment mode flags
+   * @param session - The session object from ctx.session
+   */
+  clearPaymentMode(session: any): void {
+    session.paymentMode = false;
+    session.paymentOutstanding = undefined;
+    session.paymentUserOwes = undefined;
+    session.paymentOwedTo = undefined;
   }
 
   /**
@@ -55,5 +70,12 @@ export class SessionManager {
    */
   isRecurringMode(session: any): boolean {
     return session?.recurringMode === true;
+  }
+
+  /**
+   * Check if session is in payment mode
+   */
+  isPaymentMode(session: any): boolean {
+    return session?.paymentMode === true;
   }
 }

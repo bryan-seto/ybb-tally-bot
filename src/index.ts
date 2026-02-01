@@ -31,7 +31,8 @@ const expenseService = new ExpenseService();
 const bot = new YBBTallyBot(
   CONFIG.TELEGRAM_TOKEN,
   CONFIG.GEMINI_API_KEY,
-  CONFIG.ALLOWED_USER_IDS.join(',')
+  CONFIG.ALLOWED_USER_IDS.join(','),
+  CONFIG.GROQ_API_KEY
 );
 
 global.botInstance = bot;

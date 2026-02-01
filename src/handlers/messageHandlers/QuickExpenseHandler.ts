@@ -6,6 +6,7 @@ import { SplitRulesService } from '../../services/splitRulesService';
 import { SessionManager } from './SessionManager';
 import { Markup } from 'telegraf';
 import { getUserAName, getUserBName } from '../../config';
+import { parseQuickExpense } from '../../utils/quickExpenseParser';
 
 /**
  * Handler for quick expense one-liners (e.g., "130 groceries", "5.50 coffee")
@@ -72,39 +73,33 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       statusMsg = await ctx.reply('👀 Processing expense...', { parse_mode: 'HTML' });
       console.log('[DEBUG] handleQuickExpense: Status message sent');
 
-      // Set up fallback callback for real-time status updates
-      let fallbackMsgId: number | null = null;
+      // Try regex parsing first (saves LLM costs)
+      let parsed;
+      const regexParsed = parseQuickExpense(text);
       
-      const onFallback = async (failed: string, next: string) => {
-        if (!fallbackMsgId) {
-          const msg = await ctx.reply(`⚠️ Limit hit for ${failed}. Switching to ${next}...`);
-          fallbackMsgId = msg.message_id;
-        } else {
-          try {
-            await ctx.telegram.editMessageText(
-              ctx.chat.id,
-              fallbackMsgId,
-              undefined,
-              `⚠️ Limit hit for ${failed}. Switching to ${next}...`
-            );
-          } catch (e) {
-            // Ignore edit errors
-          }
-        }
-      };
+      if (regexParsed) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:76',message:'QuickExpenseHandler: Regex parsing succeeded',data:{text,parsed:regexParsed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+        // #endregion
+        console.log('[DEBUG] handleQuickExpense: Regex parsing succeeded, skipping AI:', regexParsed);
+        parsed = regexParsed;
+      } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:81',message:'QuickExpenseHandler: Regex parsing failed, using AI',data:{text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+        // #endregion
+        console.log('[DEBUG] handleQuickExpense: Regex parsing failed, using AI...');
+        
+        // Set up fallback callback (silent - quota errors will be shown in final error message)
+        const onFallback = async (failed: string, next: string) => {
+          // Don't show fallback messages - they're noisy and quota errors will be shown in the final error message
+          // Just log for debugging
+          console.log(`[DEBUG] Model ${failed} failed, trying ${next}...`);
+        };
 
-      // Parse via LLM
-      console.log('[DEBUG] handleQuickExpense: Calling aiService.processQuickExpense...');
-      const parsed = await this.aiService.processQuickExpense(text, onFallback);
-      console.log('[DEBUG] handleQuickExpense: AI parsing result:', parsed);
-
-      // Cleanup fallback warning if it exists
-      if (fallbackMsgId) {
-        try {
-          await ctx.telegram.deleteMessage(ctx.chat.id, fallbackMsgId);
-        } catch (e) {
-          // Ignore delete errors
-        }
+        // Parse via LLM (fallback for complex patterns)
+        console.log('[DEBUG] handleQuickExpense: Calling aiService.processQuickExpense...');
+        parsed = await this.aiService.processQuickExpense(text, onFallback);
+        console.log('[DEBUG] handleQuickExpense: AI parsing result:', parsed);
       }
 
       // Update status message
@@ -181,6 +176,9 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         await this.showDashboard(ctx, false);
       }
     } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:183',message:'QuickExpenseHandler: Error caught',data:{error:error.message,stack:error.stack?.substring(0,500),name:error.name,text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       console.error('[FATAL] handleQuickExpense crashed:', error);
       console.error('[FATAL] handleQuickExpense error details:', {
         message: error.message,
@@ -188,19 +186,44 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         name: error.name,
         text: text
       });
+      
+      // Check if it's a quota/rate limit error
+      // Check both the error message and the error chain (some errors wrap quota errors)
+      const errorMsg = error.message?.toLowerCase() || '';
+      const errorStack = error.stack?.toLowerCase() || '';
+      const fullErrorText = (errorMsg + ' ' + errorStack).toLowerCase();
+      
+      const isQuotaError = fullErrorText.includes('quota') || 
+                          fullErrorText.includes('rate limit') || 
+                          fullErrorText.includes('429') ||
+                          fullErrorText.includes('exceeded') ||
+                          fullErrorText.includes('free tier') ||
+                          fullErrorText.includes('limits ran out') ||
+                          fullErrorText.includes('too many requests') ||
+                          error.status === 429 ||
+                          error.code === 429 ||
+                          error.name === 'QuotaExceededError';
+      
+      let userMessage: string;
+      if (isQuotaError) {
+        userMessage = '🚫 AI daily free limits ran out. Upgrade to get more limits.\n\n💡 Tip: Use simple format like "5 coffee" or "120 pork" to avoid AI usage.';
+      } else {
+        userMessage = '❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "5 coffee" or "120 pork"';
+      }
+      
       if (statusMsg) {
         try {
           await ctx.telegram.editMessageText(
             ctx.chat.id,
             statusMsg.message_id,
             undefined,
-            '❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"'
+            userMessage
           );
         } catch (editError) {
-          await ctx.reply('❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"');
+          await ctx.reply(userMessage);
         }
       } else {
-        await ctx.reply('❌ Sorry, I couldn\'t process that expense. Please try again or use the format: "130 groceries"');
+        await ctx.reply(userMessage);
       }
     }
   }

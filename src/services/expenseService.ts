@@ -23,6 +23,11 @@ export class ExpenseService {
     whoOwes: 'Bryan' | 'HweiYeen' | null;
     whoIsOwed: 'Bryan' | 'HweiYeen' | null;
   }> {
+    // #region agent log
+    const dbUrl = process.env.DATABASE_URL || 'NOT_SET';
+    const dbUrlMasked = dbUrl.includes('@') ? dbUrl.split('@')[1] : dbUrl.substring(0, 50);
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:19',message:'calculateNetBalance: Entry',data:{databaseUrl:dbUrlMasked,nodeEnv:process.env.NODE_ENV},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     // Get users
     const bryan = await prisma.user.findFirst({
       where: { role: 'Bryan' },
@@ -31,7 +36,14 @@ export class ExpenseService {
       where: { role: 'HweiYeen' },
     });
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:33',message:'calculateNetBalance: User lookup result',data:{bryanFound:!!bryan,bryanId:bryan?.id?.toString(),hweiYeenFound:!!hweiYeen,hweiYeenId:hweiYeen?.id?.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+
     if (!bryan || !hweiYeen) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:35',message:'calculateNetBalance: Users not found, returning zeros',data:{bryanFound:!!bryan,hweiYeenFound:!!hweiYeen},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
       return { 
         bryanOwes: 0, 
         hweiYeenOwes: 0, 
@@ -44,6 +56,10 @@ export class ExpenseService {
     // Get ALL transactions (expenses + payments) - pure tabulation approach
     // Note: transactionType field will be added via migration, for now we check category
     const allTransactions = await prisma.transaction.findMany({});
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:46',message:'calculateNetBalance: Transaction query result',data:{transactionCount:allTransactions.length,transactions:allTransactions.map(t=>({id:t.id.toString(),amountSGD:t.amountSGD,category:t.category,payerId:t.payerId.toString(),bryanPercent:t.bryanPercentage,hweiYeenPercent:t.hweiYeenPercentage})),databaseUrl:process.env.DATABASE_URL?.substring(0,30)+'...'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     let bryanPaid = 0;
     let hweiYeenPaid = 0;
@@ -53,8 +69,15 @@ export class ExpenseService {
     let hweiYeenPayments = 0;
 
     allTransactions.forEach((t) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:55',message:'calculateNetBalance: Processing transaction',data:{txId:t.id.toString(),amountSGD:t.amountSGD,category:t.category,payerId:t.payerId.toString(),bryanId:bryan.id.toString(),hweiYeenId:hweiYeen.id.toString(),bryanPercent:t.bryanPercentage,hweiYeenPercent:t.hweiYeenPercentage},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       // Check if this is a payment transaction (category = 'Settlement' or 'Payment')
       const isPayment = t.category === 'Settlement' || t.category === 'Payment';
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:57',message:'calculateNetBalance: Transaction classification',data:{txId:t.id.toString(),category:t.category,isPayment},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       
       if (isPayment) {
         // Payment transactions reduce balance
@@ -70,6 +93,10 @@ export class ExpenseService {
         const hweiYeenPercent = t.hweiYeenPercentage ?? 0.5;
         const bryanShareForTx = txAmount * bryanPercent;
         const hweiYeenShareForTx = txAmount * hweiYeenPercent;
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:70',message:'calculateNetBalance: Expense calculation',data:{txId:t.id.toString(),txAmount,bryanPercent,hweiYeenPercent,bryanShareForTx,hweiYeenShareForTx,payerId:t.payerId.toString(),bryanId:bryan.id.toString(),hweiYeenId:hweiYeen.id.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         
         if (t.payerId === bryan.id) {
           bryanPaid += txAmount;
@@ -88,6 +115,10 @@ export class ExpenseService {
     const bryanNetBeforePayments = bryanPaid - bryanShare;
     const hweiYeenNetBeforePayments = hweiYeenPaid - hweiYeenShare;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:88',message:'calculateNetBalance: Before payments calculation',data:{bryanPaid,bryanShare,bryanNetBeforePayments,hweiYeenPaid,hweiYeenShare,hweiYeenNetBeforePayments,bryanPayments,hweiYeenPayments},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
     // Apply payments to net amounts
     // CRITICAL FIX: The formula was inverted! When Bryan pays, his debt should DECREASE (net becomes less negative)
     // So we should ADD payments to reduce debt, not subtract them
@@ -102,6 +133,10 @@ export class ExpenseService {
     
     // HweiYeen's net after payments: ADD what she paid (reduces debt), SUBTRACT what Bryan paid to her (reduces credit)
     hweiYeenNet = hweiYeenNetBeforePayments + hweiYeenPayments - bryanPayments;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:104',message:'calculateNetBalance: After payments calculation',data:{bryanNet,hweiYeenNet},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // Calculate outstanding balances:
     // Net represents: positive = person is owed money, negative = person owes money
@@ -140,6 +175,10 @@ export class ExpenseService {
       whoOwes = 'HweiYeen';
       whoIsOwed = 'Bryan';
     }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/expenseService.ts:144',message:'calculateNetBalance: Final result',data:{bryanOwes,hweiYeenOwes,netOutstanding,whoOwes,whoIsOwed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     return { 
       bryanOwes, 

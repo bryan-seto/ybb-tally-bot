@@ -84,6 +84,7 @@ const validatedConfig: ValidatedConfig = validateConfig(process.env);
 export const CONFIG = {
   TELEGRAM_TOKEN: validatedConfig.TELEGRAM_BOT_TOKEN,
   GEMINI_API_KEY: validatedConfig.GEMINI_API_KEY,
+  GROQ_API_KEY: validatedConfig.GROQ_API_KEY || undefined, // Optional, convert empty string to undefined
   ALLOWED_USER_IDS: validatedConfig.ALLOWED_USER_IDS,
   DATABASE_URL: validatedConfig.DATABASE_URL,
   PORT: validatedConfig.PORT,

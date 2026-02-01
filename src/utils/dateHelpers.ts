@@ -135,6 +135,21 @@ export function getNextRecurringDate(dayOfMonth: number, timezone: string = TIME
 }
 
 /**
+ * Get end of previous month in Asia/Singapore timezone
+ * Returns the very last millisecond of the previous month
+ * @param date - Reference date (defaults to now)
+ * @returns End of previous month as Date
+ */
+export function getEndOfPreviousMonth(date: Date = getNow()): Date {
+  const zonedDate = toZonedTime(date, TIMEZONE);
+  // Get first day of current month, then subtract 1 day to get last day of previous month
+  const firstOfCurrentMonth = startOfMonth(zonedDate);
+  const lastOfPreviousMonth = subDays(firstOfCurrentMonth, 1);
+  const endOfPreviousMonth = endOfDay(lastOfPreviousMonth);
+  return fromZonedTime(endOfPreviousMonth, TIMEZONE);
+}
+
+/**
  * Get ordinal suffix for a day number (1st, 2nd, 3rd, 4th, etc.)
  * @param day - Day of month (1-31)
  * @returns Ordinal suffix string ('st', 'nd', 'rd', or 'th')

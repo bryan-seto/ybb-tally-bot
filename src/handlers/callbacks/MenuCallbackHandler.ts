@@ -5,6 +5,7 @@ import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
+import { MonthlyExpenseReportService } from '../../services/monthlyExpenseReportService';
 import { formatDate } from '../../utils/dateHelpers';
 
 /**
@@ -24,7 +25,8 @@ export class MenuCallbackHandler implements ICallbackHandler {
            data === 'menu_unsettled' || 
            data === 'menu_history' || 
            data === 'menu_add' ||
-           data === 'menu_edit_last';
+           data === 'menu_edit_last' ||
+           data === 'menu_monthly_report';
   }
 
   async handle(ctx: any, data: string): Promise<void> {
@@ -40,6 +42,9 @@ export class MenuCallbackHandler implements ICallbackHandler {
               [
                 { text: '🔄 Recurring', callback_data: 'menu_recurring' },
                 { text: '⚙️ Split Rules', callback_data: 'OPEN_SPLIT_SETTINGS' },
+              ],
+              [
+                { text: '📊 Monthly Report', callback_data: 'menu_monthly_report' },
               ],
               [
                 { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
@@ -124,6 +129,15 @@ export class MenuCallbackHandler implements ICallbackHandler {
           },
         }
       );
+      return;
+    }
+
+    if (data === 'menu_monthly_report') {
+      await ctx.answerCbQuery();
+      
+      const monthlyReportService = new MonthlyExpenseReportService();
+      const report = await monthlyReportService.getDetailedMonthlyReport();
+      await ctx.reply(report, { parse_mode: 'Markdown' });
       return;
     }
   }

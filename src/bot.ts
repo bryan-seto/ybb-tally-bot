@@ -50,6 +50,11 @@ export interface BotSession {
   waitingForSplitInput?: boolean;
   splitSettingsCategory?: string;
   editingTxId?: string;
+  // Payment mode for partial settlement
+  paymentMode?: boolean;
+  paymentOutstanding?: number;
+  paymentUserOwes?: number;
+  paymentOwedTo?: string;
 }
 
 interface PendingPhoto {
@@ -80,9 +85,9 @@ export class YBBTallyBot {
   private botUsername: string = '';
   private isColdStart: boolean = true;
 
-  constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
+  constructor(token: string, geminiApiKey: string, allowedUserIds: string, groqApiKey?: string) {
     this.bot = new Telegraf(token);
-    this.aiService = new AIService(geminiApiKey);
+    this.aiService = new AIService(geminiApiKey, groqApiKey);
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
@@ -296,12 +301,29 @@ export class YBBTallyBot {
    * Get random balance header from templates
    */
   private async getRandomBalanceHeader(): Promise<string> {
-    const balance = await this.expenseService.calculateOutstandingBalance();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:303',message:'getRandomBalanceHeader: Before calculateOutstandingBalance',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     
-    // Handle settled state
-    if (balance.bryanOwes === 0 && balance.hweiYeenOwes === 0) {
+    // Use calculateNetBalance directly to get more detailed info
+    const netBalance = await this.expenseService.calculateNetBalance();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:304',message:'getRandomBalanceHeader: After calculateNetBalance',data:{bryanOwes:netBalance.bryanOwes,hweiYeenOwes:netBalance.hweiYeenOwes,netOutstanding:netBalance.netOutstanding,bothZero:netBalance.bryanOwes===0&&netBalance.hweiYeenOwes===0,whoOwes:netBalance.whoOwes,whoIsOwed:netBalance.whoIsOwed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // Handle settled state - check netOutstanding instead of individual owes amounts
+    if (netBalance.netOutstanding === 0) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:307',message:'getRandomBalanceHeader: Returning settled message',data:{bryanOwes:netBalance.bryanOwes,hweiYeenOwes:netBalance.hweiYeenOwes,netOutstanding:netBalance.netOutstanding},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       return '🎉 All settled! Balance is $0.00';
     }
+    
+    const balance = {
+      bryanOwes: netBalance.bryanOwes,
+      hweiYeenOwes: netBalance.hweiYeenOwes
+    };
 
     // Get user names from config
     const bryanName = getUserNameByRole('Bryan');
