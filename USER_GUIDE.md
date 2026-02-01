@@ -152,7 +152,7 @@ The Dashboard is your main hub. Access it with `/menu` or `/start`.
 Click **☰ Menu** to access additional tools:
 - **🔍 Search** - Find transactions by keyword
 - **📊 Reports** - View monthly spending reports with charts
-- **📊 Monthly Report** - View a detailed breakdown of spending for the last 3 months (including current month progress)
+- **📊 Monthly Report** - View a detailed breakdown of spending for the last 3 months (3-month rolling window, including current month progress if not yet complete)
 - **🔄 Recurring** - Set up recurring expenses
 - **⚙️ Split Rules** - Configure category-based split percentages
 - **❓ User Guide** - Link to this documentation
