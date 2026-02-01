@@ -5,8 +5,9 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 
-# Copy package files
+# Copy package files and prisma schema (needed for postinstall script)
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 
 # Install dependencies with cache mount (line 24 - modified cache ID to fix EBUSY)
 RUN --mount=type=cache,id=s/dfcc2668-df5d-4a1e-89be-3fae693fb258-node_modules/cache-fix1,target=/root/.npm \
