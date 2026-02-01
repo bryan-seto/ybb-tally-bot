@@ -36,12 +36,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
 
-# Expose port
+# Expose port (Railway sets PORT dynamically, default to 10000)
 EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:10000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+# Note: Railway handles healthchecks via its own system, not Docker HEALTHCHECK
+# The healthcheck path is configured in railway.json
 
 # Start the application
 CMD ["npm", "start"]

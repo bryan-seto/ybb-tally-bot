@@ -81,14 +81,16 @@ async function initializeDatabase(): Promise<void> {
 
 async function main() {
   try {
-    // Verify database connection FIRST (before bot initialization)
+    // Start server FIRST (before async operations) so healthcheck can pass
+    // This ensures Railway healthcheck works even if async init takes time
+    const server = setupServer(bot);
+    setupJobs(bot, expenseService);
+    
+    // Verify database connection (after server starts)
     await verifyDatabaseConnection();
     
     // Then initialize database (create users, etc.)
     await initializeDatabase();
-    
-    setupServer(bot);
-    setupJobs(bot, expenseService);
 
     const environment = CONFIG.NODE_ENV || 'development';
     const isProduction = environment === 'production';
