@@ -110,9 +110,16 @@ export class MonthlyExpenseReportService {
    * @returns Formatted message string ready for Telegram with monthly breakdown
    */
   async getDetailedMonthlyReport(): Promise<string> {
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:112',message:'getDetailedMonthlyReport: Entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     const now = getNow();
     const currentDay = getDayOfMonth(now);
     const isFirstOfMonth = currentDay === 1;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:115',message:'getDetailedMonthlyReport: Date calculation',data:{now:now.toISOString(),currentDay,isFirstOfMonth},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     let endDate: Date;
     let startDate: Date;
@@ -131,6 +138,10 @@ export class MonthlyExpenseReportService {
       isCurrentMonthPartial = true;
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:133',message:'getDetailedMonthlyReport: Date range BEFORE query',data:{startDate:startDate.toISOString(),endDate:endDate.toISOString(),startDateSGT:toZonedTime(startDate,'Asia/Singapore').toISOString(),endDateSGT:toZonedTime(endDate,'Asia/Singapore').toISOString(),isCurrentMonthPartial},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
     // Query transactions within date range
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -143,6 +154,10 @@ export class MonthlyExpenseReportService {
         payer: true,
       },
     });
+
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:145',message:'getDetailedMonthlyReport: Query result',data:{transactionCount:transactions.length,transactionIds:transactions.map(t=>t.id.toString()),transactionDates:transactions.map(t=>({id:t.id.toString(),dateUTC:t.date.toISOString(),dateSGT:toZonedTime(t.date,'Asia/Singapore').toISOString(),amount:t.amountSGD,payerRole:t.payer.role})),totalAmount:transactions.reduce((sum,t)=>sum+t.amountSGD,0)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     // Group transactions by month
     interface MonthData {
@@ -160,6 +175,10 @@ export class MonthlyExpenseReportService {
       const monthKey = format(txDate, 'yyyy-MM'); // "2025-01"
       const monthName = format(txDate, 'MMM yyyy'); // "Jan 2025"
 
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:158',message:'getDetailedMonthlyReport: Processing transaction',data:{txId:transaction.id.toString(),dateUTC:transaction.date.toISOString(),dateSGT:txDate.toISOString(),monthKey,monthName,amount:transaction.amountSGD,payerRole:transaction.payer.role,bryanPercent:transaction.bryanPercentage,hweiYeenPercent:transaction.hweiYeenPercentage},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+
       if (!monthMap.has(monthKey)) {
         monthMap.set(monthKey, {
           monthKey,
@@ -172,19 +191,37 @@ export class MonthlyExpenseReportService {
 
       const monthData = monthMap.get(monthKey)!;
       const amount = transaction.amountSGD;
-      const payerRole = transaction.payer.role;
+      
+      // Calculate each person's share based on split percentages
+      // Default to 50/50 if percentages are null
+      const bryanPercent = transaction.bryanPercentage ?? 0.5;
+      const hweiYeenPercent = transaction.hweiYeenPercentage ?? 0.5;
+      
+      const bryanShare = amount * bryanPercent;
+      const hweiYeenShare = amount * hweiYeenPercent;
 
-      if (payerRole === USER_A_ROLE_KEY) {
-        monthData.bryanTotal += amount;
-      } else if (payerRole === USER_B_ROLE_KEY) {
-        monthData.hweiYeenTotal += amount;
-      }
+      // #region agent log
+      const beforeBryan = monthData.bryanTotal;
+      const beforeHweiYeen = monthData.hweiYeenTotal;
+      // #endregion
+
+      // Add each person's share to their total (not based on who paid)
+      monthData.bryanTotal += bryanShare;
+      monthData.hweiYeenTotal += hweiYeenShare;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:195',message:'getDetailedMonthlyReport: Added shares by split percentage',data:{txId:transaction.id.toString(),amount,bryanShare,hweiYeenShare,beforeBryan,afterBryan:monthData.bryanTotal,beforeHweiYeen,afterHweiYeen:monthData.hweiYeenTotal,monthKey,bryanPercent,hweiYeenPercent},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     }
 
     // Sort months chronologically (oldest to newest)
     const sortedMonths = Array.from(monthMap.values()).sort((a, b) => 
       a.monthKey.localeCompare(b.monthKey)
     );
+
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/2d51ec0e-ae8f-48f8-a307-06b6f8c21e39',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'monthlyExpenseReportService.ts:185',message:'getDetailedMonthlyReport: Monthly totals BEFORE formatting',data:{months:sortedMonths.map(m=>({month:m.monthName,bryan:m.bryanTotal,hweiYeen:m.hweiYeenTotal,total:m.bryanTotal+m.hweiYeenTotal})),grandTotalBryan:sortedMonths.reduce((sum,m)=>sum+m.bryanTotal,0),grandTotalHweiYeen:sortedMonths.reduce((sum,m)=>sum+m.hweiYeenTotal,0)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
 
     // Get display names from environment variables
     const bryanName = getUserNameByRole(USER_A_ROLE_KEY);
