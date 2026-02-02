@@ -1,5 +1,5 @@
-# Use Node.js LTS version
-FROM node:20-alpine AS base
+# Use Node.js LTS version (Debian-based for better Prisma compatibility)
+FROM node:20-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -30,8 +30,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install OpenSSL 1.1 compatibility libraries required by Prisma
-RUN apk add --no-cache openssl1.1-compat
+# Install OpenSSL libraries required by Prisma (Debian/Ubuntu)
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Copy necessary files
 COPY --from=builder /app/dist ./dist
