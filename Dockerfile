@@ -30,6 +30,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Install OpenSSL 1.1 compatibility libraries required by Prisma
+RUN apk add --no-cache openssl1.1-compat
+
 # Copy necessary files
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
