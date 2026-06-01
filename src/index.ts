@@ -13,6 +13,7 @@ import { setupServer } from './server';
 import { setupJobs } from './jobs';
 import { UserRole } from '@prisma/client';
 import { verifyDatabaseConnection } from './utils/databaseVerification';
+import { shouldUseWebhook } from './utils/transportMode';
 
 declare global {
   var botInstance: YBBTallyBot | undefined;
@@ -93,10 +94,8 @@ async function main() {
     await initializeDatabase();
 
     const environment = CONFIG.NODE_ENV || 'development';
-    const isProduction = environment === 'production';
-    const isStaging = environment === 'staging';
 
-    if ((isProduction || isStaging) && CONFIG.WEBHOOK_URL) {
+    if (shouldUseWebhook(environment, CONFIG.WEBHOOK_URL)) {
       const fullWebhookUrl = `${CONFIG.WEBHOOK_URL}/webhook`;
       console.log(`🌐 Running in ${environment.toUpperCase()} mode with WEBHOOKS`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
