@@ -247,6 +247,7 @@ export class ExpenseService {
     const transactions = await prisma.transaction.findMany({
       where: {
         isSettled: false,
+        category: { notIn: ['Settlement', 'Payment'] },
       },
       include: {
         payer: true,
@@ -262,6 +263,11 @@ export class ExpenseService {
     let weightedHweiYeenPercent = 0;
 
     transactions.forEach((t) => {
+      // Skip Settlement/Payment transactions — they affect net balance but not detailed spending
+      if (t.category === 'Settlement' || t.category === 'Payment') {
+        return;
+      }
+
       if (t.payerId === bryan.id) {
         bryanPaid += t.amountSGD;
       } else if (t.payerId === hweiYeen.id) {

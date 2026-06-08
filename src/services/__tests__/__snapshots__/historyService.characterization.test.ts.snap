@@ -9,7 +9,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 💰 **Amount:** SGD $50.50
 📂 **Category:** Food
 👤 **Paid By:** Bryan
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
 ✅ Settled (No active debt)
 📝 **Description:** Lunch"
@@ -69,7 +69,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 💰 **Amount:** SGD $5.50
 📂 **Category:** Food
 👤 **Paid By:** Bryan
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
 ✅ Settled (No active debt)
 📝 **Description:** Coffee"
@@ -99,9 +99,9 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 💰 **Amount:** SGD $25.75
 📂 **Category:** Transport
 👤 **Paid By:** Hwei Yeen
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
-🔴 👉 Bryan owes Hwei Yeen $18.02
+🔴 👉 Bryan owes Hwei Yeen $12.88
 📝 **Description:** Taxi ride"
 `;
 

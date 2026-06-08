@@ -43,7 +43,7 @@ export class HistoryService {
       merchant: t.description || 'No description',
       amount: t.amountSGD,
       currency: t.currency,
-      status: t.isSettled ? 'settled' : 'unsettled',
+      status: (t.isSettled || t.category === 'Settlement' || t.category === 'Payment') ? 'settled' : 'unsettled',
       category: t.category || 'Other',
       description: t.description || 'No description',
       paidBy: t.payer.name,
@@ -189,8 +189,8 @@ export class HistoryService {
 
     // 2. The Constants
     const AMOUNT = Number(tx.amount);
-    const BRYAN_PCT = tx.bryanPercentage ?? 0.7; // Default fallback
-    const HY_PCT = tx.hweiYeenPercentage ?? 0.3; // Default fallback
+    const BRYAN_PCT = tx.bryanPercentage ?? 0.5; // Default fallback
+    const HY_PCT = tx.hweiYeenPercentage ?? 0.5; // Default fallback
 
     // 3. The Ledger (Who paid what vs Who consumed what)
     // We use the immutable 'role' field to identify the payer
@@ -232,8 +232,8 @@ export class HistoryService {
     const balanceImpact = this.formatBalanceImpact(tx);
 
     // Format percentages for display
-    const bryanPercent = Math.round((tx.bryanPercentage ?? 0.7) * 100);
-    const hyPercent = Math.round((tx.hweiYeenPercentage ?? 0.3) * 100);
+    const bryanPercent = Math.round((tx.bryanPercentage ?? 0.5) * 100);
+    const hyPercent = Math.round((tx.hweiYeenPercentage ?? 0.5) * 100);
 
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +

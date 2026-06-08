@@ -23,6 +23,7 @@ export class SettleCallbackHandler implements ICallbackHandler {
            data === 'menu_settle' || 
            data.startsWith('settle_confirm_') || 
            data.startsWith('settle_pay_full_') ||
+           data.startsWith('settle_ok_') ||
            data === 'settle_cancel';
   }
 
@@ -119,78 +120,68 @@ export class SettleCallbackHandler implements ICallbackHandler {
       return;
     }
 
-    // Handle "Pay Full Amount" button click
+    // Handle "Pay Full Amount" button click — show confirmation card first
     if (data.startsWith('settle_pay_full_')) {
       await ctx.answerCbQuery();
-      
+
+      const amountStr = data.replace('settle_pay_full_', '');
+      const amount = parseFloat(amountStr);
+
+      if (isNaN(amount) || amount <= 0) {
+        await ctx.reply('❌ Invalid payment amount. Please try again.');
+        return;
+      }
+
+      // Get other user's name for the confirmation card
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+      let otherUserName = 'the other party';
+      if (userId) {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (user) {
+          const userRole = user.role as 'Bryan' | 'HweiYeen';
+          const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+          const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+          otherUserName = userRole === 'Bryan' ? userBName : userAName;
+        }
+      }
+
+      await ctx.reply(
+        `💰 **Confirm Payment**\n\nRecord payment of **SGD $${amount.toFixed(2)}** to ${otherUserName}?\n\nOnce confirmed, this will be added to your transaction history.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ Yes, confirm', callback_data: `settle_ok_${amount.toFixed(2)}` }],
+              [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
+            ],
+          },
+          parse_mode: 'Markdown',
+        }
+      );
+      return;
+    }
+
+    // Finalise payment after confirmation
+    if (data.startsWith('settle_ok_')) {
+      await ctx.answerCbQuery();
+      const amount = parseFloat(data.replace('settle_ok_', ''));
+      if (isNaN(amount) || amount <= 0) {
+        await ctx.reply('❌ Invalid amount. Please try again.');
+        return;
+      }
+      const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
+      if (!userId) {
+        await ctx.reply('❌ Unable to identify user.');
+        return;
+      }
       try {
-        const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
-        if (!userId) {
-          await ctx.editMessageText('❌ Unable to identify user. Please try again.');
-          return;
-        }
-        
-        // Extract amount from callback data
-        const amountStr = data.replace('settle_pay_full_', '');
-        const amount = parseFloat(amountStr);
-        
-        if (isNaN(amount) || amount <= 0) {
-          await ctx.editMessageText('❌ Invalid payment amount. Please try again.');
-          return;
-        }
-        
-        // Record payment with state validation and ACID transaction
-        const result = await this.expenseService.recordPayment(
-          userId,
-          amount,
-          'Settlement payment'
-        );
-        
-        // Clear payment mode from session
-        if (session) {
-          session.paymentMode = false;
-          delete session.paymentOutstanding;
-          delete session.paymentUserOwes;
-          delete session.paymentOwedTo;
-        }
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/callbacks/SettleCallbackHandler.ts:143',message:'settle_pay_full: Payment recorded',data:{amount,wasSettled:result.wasSettled,newBalance:result.newBalance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-        // #endregion
-        
-        // Success response
-        if (result.wasSettled) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/callbacks/SettleCallbackHandler.ts:158',message:'settle_pay_full: wasSettled is true',data:{amount,newBalance:result.newBalance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
-          await ctx.editMessageText(
-            `✅ Payment of $${amount.toFixed(2)} recorded.\n\n` +
-            `🎉 All settled! Balance cleared.\n` +
-            `All transactions marked as settled.`
-          );
-        } else {
-          await ctx.editMessageText(
-            `✅ Payment of $${amount.toFixed(2)} recorded.\n\n` +
-            `Remaining balance: $${result.newBalance.netOutstanding.toFixed(2)} to ${result.newBalance.whoIsOwed === 'Bryan' ? getUserNameByRole(USER_A_ROLE_KEY) : getUserNameByRole(USER_B_ROLE_KEY)}.\n` +
-            `Payment has been added to your transaction history.`
-          );
-        }
-        
-        // Return to dashboard after payment
-        // Recalculate balance before showing dashboard to ensure it's up-to-date
+        await this.expenseService.recordPayment(userId, amount, 'Settlement payment');
+        await ctx.reply('✅ Payment recorded! Great teamwork — all settled up. 🎉\n\n💡 Check /balance to see the updated totals.');
         if (this.showDashboard) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/callbacks/SettleCallbackHandler.ts:173',message:'settle_pay_full: Before showDashboard',data:{wasSettled:result.wasSettled,newBalance:result.newBalance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
-          await this.showDashboard(ctx, false);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/callbacks/SettleCallbackHandler.ts:176',message:'settle_pay_full: After showDashboard',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
+          await this.showDashboard(ctx, true);
         }
       } catch (error: any) {
         console.error('Error recording payment:', error);
-        const errorMessage = error.message || 'Sorry, an error occurred during payment. Please try again.';
-        await ctx.editMessageText(`❌ ${errorMessage}`);
+        await ctx.reply('❌ Error recording payment. Please try again.');
       }
       return;
     }
