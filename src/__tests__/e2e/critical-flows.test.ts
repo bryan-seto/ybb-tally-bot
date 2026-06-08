@@ -345,7 +345,8 @@ describe('Critical Flows E2E', () => {
       // Verify cancel was handled (editMessageText should be called)
       expect(cancelCtx.editMessageText).toHaveBeenCalled();
       const cancelMessage = (cancelCtx.editMessageText as any).mock.calls[0][0];
-      expect(cancelMessage).toContain('cancelled');
+      // ARIA-approved copy (HY UX sprint): warmer than the old "❌ Settlement cancelled."
+      expect(cancelMessage).toContain('No rush');
 
       // Verify transaction is still unsettled
       const unsettledCount = await prisma.transaction.count({
