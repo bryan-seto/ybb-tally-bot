@@ -175,6 +175,13 @@ export class SettleCallbackHandler implements ICallbackHandler {
       }
       try {
         await this.expenseService.recordPayment(userId, amount, 'Settlement payment');
+        // Clear session state so message router doesn't stay in payment-input mode
+        if (ctx.session) {
+          ctx.session.paymentMode = false;
+          delete ctx.session.paymentOutstanding;
+          delete ctx.session.paymentUserOwes;
+          delete ctx.session.paymentOwedTo;
+        }
         await ctx.reply('✅ Payment recorded! Great teamwork — all settled up. 🎉\n\n💡 Check /balance to see the updated totals.');
         if (this.showDashboard) {
           await this.showDashboard(ctx, true);

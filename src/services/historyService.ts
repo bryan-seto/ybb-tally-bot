@@ -71,7 +71,7 @@ export class HistoryService {
       merchant: rawTx.description || 'No description',
       amount: rawTx.amountSGD,
       currency: rawTx.currency,
-      status: rawTx.isSettled ? 'settled' : 'unsettled',
+      status: (rawTx.isSettled || rawTx.category === 'Settlement' || rawTx.category === 'Payment') ? 'settled' : 'unsettled',
       category: rawTx.category || 'Other',
       description: rawTx.description || 'No description',
       paidBy: rawTx.payer.name,
