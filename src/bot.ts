@@ -8,6 +8,7 @@ import { RecurringExpenseService } from './services/recurringExpenseService';
 import { AnalyticsService } from './services/analyticsService';
 import { SplitRulesService } from './services/splitRulesService';
 import { formatDate } from './utils/dateHelpers';
+import { formatBalanceHeader } from './utils/balanceHeader';
 import { prisma } from './lib/prisma';
 import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId, getUserNameByRole } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
@@ -301,41 +302,19 @@ export class YBBTallyBot {
    * Get random balance header from templates
    */
   private async getRandomBalanceHeader(): Promise<string> {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:303',message:'getRandomBalanceHeader: Before calculateOutstandingBalance',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    // Use calculateNetBalance directly to get more detailed info
+    // Use calculateNetBalance directly to get who-owes-whom info
     const netBalance = await this.expenseService.calculateNetBalance();
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:304',message:'getRandomBalanceHeader: After calculateNetBalance',data:{bryanOwes:netBalance.bryanOwes,hweiYeenOwes:netBalance.hweiYeenOwes,netOutstanding:netBalance.netOutstanding,bothZero:netBalance.bryanOwes===0&&netBalance.hweiYeenOwes===0,whoOwes:netBalance.whoOwes,whoIsOwed:netBalance.whoIsOwed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    // Handle settled state - check netOutstanding instead of individual owes amounts
-    if (netBalance.netOutstanding === 0) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot.ts:307',message:'getRandomBalanceHeader: Returning settled message',data:{bryanOwes:netBalance.bryanOwes,hweiYeenOwes:netBalance.hweiYeenOwes,netOutstanding:netBalance.netOutstanding},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      return '🎉 All settled! Balance is $0.00';
-    }
-    
-    const balance = {
-      bryanOwes: netBalance.bryanOwes,
-      hweiYeenOwes: netBalance.hweiYeenOwes
-    };
 
     // Get user names from config
     const bryanName = getUserNameByRole('Bryan');
     const hweiYeenName = getUserNameByRole('HweiYeen');
 
-    if (netBalance.whoOwes === 'HweiYeen') {
-      return `⚖️ ${hweiYeenName} owes \$${netBalance.netOutstanding.toFixed(2)} to ${bryanName}`;
-    } else if (netBalance.whoOwes === 'Bryan') {
-      return `⚖️ ${bryanName} owes \$${netBalance.netOutstanding.toFixed(2)} to ${hweiYeenName}`;
-    }
-
-    return '💰 Balance Status';
+    // Delegate to the pure, unit-tested helper (FEAT-2: subject-inclusive header)
+    return formatBalanceHeader(
+      { netOutstanding: netBalance.netOutstanding, whoOwes: netBalance.whoOwes },
+      bryanName,
+      hweiYeenName
+    );
   }
 
   /**
