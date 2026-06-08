@@ -146,12 +146,12 @@ export class SettleCallbackHandler implements ICallbackHandler {
       }
 
       await ctx.reply(
-        `💰 **Confirm Payment**\n\nRecord payment of **SGD $${amount.toFixed(2)}** to ${otherUserName}?\n\nOnce confirmed, this will be added to your transaction history.`,
+        `⚖️ Confirm payment of SGD $${amount.toFixed(2)} to ${otherUserName}?\n\nThis will be logged as a settlement.`,
         {
           reply_markup: {
             inline_keyboard: [
               [{ text: '✅ Yes, confirm', callback_data: `settle_ok_${amount.toFixed(2)}` }],
-              [{ text: '❌ Cancel', callback_data: 'settle_cancel' }],
+              [{ text: '❌ Never mind', callback_data: 'settle_cancel' }],
             ],
           },
           parse_mode: 'Markdown',
@@ -182,7 +182,15 @@ export class SettleCallbackHandler implements ICallbackHandler {
           delete ctx.session.paymentUserOwes;
           delete ctx.session.paymentOwedTo;
         }
-        await ctx.reply('✅ Payment recorded! Great teamwork — all settled up. 🎉\n\n💡 Check /balance to see the updated totals.');
+        // Role-based butler success message
+        const payerUser = await prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+        const payerRole = payerUser?.role as 'Bryan' | 'HweiYeen' | undefined;
+        const salutation = payerRole === 'HweiYeen' ? 'Madam Hwei Yeen — we\'re all square!' : 'The slate is clean, Sir Bryan — you\'re all square!';
+        // Resolve recipient name for success message
+        const userAName = getUserNameByRole(USER_A_ROLE_KEY);
+        const userBName = getUserNameByRole(USER_B_ROLE_KEY);
+        const recipientName = payerRole === 'Bryan' ? userBName : userAName;
+        await ctx.reply(`🎉 Done! SGD $${amount.toFixed(2)} paid to ${recipientName}.\n\n${salutation}`);
         if (this.showDashboard) {
           await this.showDashboard(ctx, true);
         }
@@ -310,13 +318,13 @@ export class SettleCallbackHandler implements ICallbackHandler {
       
       try {
         // Edit the message to show cancellation and remove buttons
-        await ctx.editMessageText('❌ Settlement cancelled.', {
+        await ctx.editMessageText('No rush — the ledger will wait. 📒', {
           reply_markup: { inline_keyboard: [] } // Remove buttons
         });
       } catch (editError) {
         // If edit fails (e.g., message too old), try to reply
         try {
-          await ctx.reply('❌ Settlement cancelled.');
+          await ctx.reply('No rush — the ledger will wait. 📒');
         } catch (replyError) {
           console.error('Error handling cancel:', replyError);
         }

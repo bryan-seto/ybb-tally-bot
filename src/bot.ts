@@ -329,10 +329,10 @@ export class YBBTallyBot {
     const bryanName = getUserNameByRole('Bryan');
     const hweiYeenName = getUserNameByRole('HweiYeen');
 
-    if (balance.bryanOwes > 0) {
-      return `⚖️ To even out: $${balance.bryanOwes.toFixed(2)} to ${hweiYeenName}`;
-    } else if (balance.hweiYeenOwes > 0) {
-      return `⚖️ To even out: $${balance.hweiYeenOwes.toFixed(2)} to ${bryanName}`;
+    if (netBalance.whoOwes === 'HweiYeen') {
+      return `⚖️ ${hweiYeenName} owes \$${netBalance.netOutstanding.toFixed(2)} to ${bryanName}`;
+    } else if (netBalance.whoOwes === 'Bryan') {
+      return `⚖️ ${bryanName} owes \$${netBalance.netOutstanding.toFixed(2)} to ${hweiYeenName}`;
     }
 
     return '💰 Balance Status';

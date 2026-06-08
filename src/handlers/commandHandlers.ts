@@ -68,7 +68,7 @@ export class CommandHandlers {
     try {
       // Fetch all unsettled transactions (shared system)
       const unsettled = await prisma.transaction.findMany({
-        where: { isSettled: false },
+        where: { isSettled: false, category: { notIn: ['Settlement', 'Payment'] } },
         orderBy: { id: 'desc' }
       });
       

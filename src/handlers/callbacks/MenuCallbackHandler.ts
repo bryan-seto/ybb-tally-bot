@@ -63,7 +63,7 @@ export class MenuCallbackHandler implements ICallbackHandler {
     if (data === 'menu_balance') {
       await ctx.answerCbQuery();
       
-      const message = await this.expenseService.getDetailedBalanceMessage();
+      const message = await this.expenseService.getOutstandingBalanceMessage();
       await ctx.reply(message, { parse_mode: 'Markdown' });
       return;
     }
