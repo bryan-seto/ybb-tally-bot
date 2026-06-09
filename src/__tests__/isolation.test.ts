@@ -3,6 +3,21 @@ import dotenv from 'dotenv';
 import * as fs from 'fs';
 import path from 'path';
 
+// config.ts gates .env.local loading on fs.existsSync(). Mock fs so tests can
+// control whether .env.local "exists". Preserve all other fs functions.
+// config.ts uses `import fs from 'fs'` (default) while this test uses
+// `import * as fs` (named); both must point at the SAME mock fn so that
+// vi.mocked(fs.existsSync) here actually controls config's fs.existsSync.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const existsSync = vi.fn(actual.existsSync);
+  return {
+    ...actual,
+    existsSync,
+    default: { ...actual, existsSync },
+  };
+});
+
 describe('Multi-Instance Isolation Tests', () => {
   const originalEnv = process.env;
   let dotenvConfigSpy: any;
@@ -63,6 +78,12 @@ describe('Multi-Instance Isolation Tests', () => {
         }
         return { parsed: {} };
       });
+
+      // config.ts only loads .env.local when fs.existsSync(envLocal) is true.
+      // fs is mocked at module top (vi.mock('fs')); point existsSync at .env.local here.
+      vi.mocked(fs.existsSync).mockImplementation((p: any) =>
+        String(p).includes('.env.local')
+      );
 
       // Set process.env to different value (will be overridden by .env.local)
       process.env.USER_A_NAME = 'EnvValue';

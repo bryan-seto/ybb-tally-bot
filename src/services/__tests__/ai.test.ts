@@ -8,6 +8,11 @@ vi.mock('../../lib/prisma', () => ({
     systemLog: {
       create: vi.fn(),
     },
+    user: {
+      // processReceipt guards logging behind a user-exists check (findUnique);
+      // default to returning a user so the receipt_processed log path is reached.
+      findUnique: vi.fn().mockResolvedValue({ id: BigInt(1) }),
+    },
   },
 }));
 
