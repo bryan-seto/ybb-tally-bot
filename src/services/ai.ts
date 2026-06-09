@@ -221,9 +221,6 @@ export class AIService {
     
     for (let i = 0; i < modelPriority.length; i++) {
       const modelName = modelPriority[i];
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/ai.ts:224',message:'generateContentWithFallback: Trying model',data:{modelName,modelIndex:i,totalModels:modelPriority.length,provider:modelName.startsWith('groq:')?'groq':'gemini'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
       try {
         let text: string;
         const isGroqModel = modelName.startsWith('groq:');
@@ -259,9 +256,6 @@ export class AIService {
           text = response.text();
         }
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/ai.ts:240',message:'generateContentWithFallback: Model succeeded',data:{modelName,responseLength:text.length,provider:isGroqModel?'groq':'gemini'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
         
         // Success - return with model info
         return {
@@ -289,9 +283,6 @@ export class AIService {
           hadQuotaError = true; // Track that we had quota errors
         }
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/ai.ts:292',message:'generateContentWithFallback: Model failed',data:{modelName,modelIndex:i,error:error.message,status:error.status||error.code,isFatal,isRetryable,isQuotaError,hasNextModel:i<modelPriority.length-1},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
         
         // Check for fatal errors (e.g., invalid API key) - don't try other models
         if (isFatal) {

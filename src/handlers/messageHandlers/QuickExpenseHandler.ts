@@ -78,15 +78,9 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       const regexParsed = parseQuickExpense(text);
       
       if (regexParsed) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:76',message:'QuickExpenseHandler: Regex parsing succeeded',data:{text,parsed:regexParsed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-        // #endregion
         console.log('[DEBUG] handleQuickExpense: Regex parsing succeeded, skipping AI:', regexParsed);
         parsed = regexParsed;
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:81',message:'QuickExpenseHandler: Regex parsing failed, using AI',data:{text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
-        // #endregion
         console.log('[DEBUG] handleQuickExpense: Regex parsing failed, using AI...');
         
         // Set up fallback callback (silent - quota errors will be shown in final error message)
@@ -176,9 +170,6 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         await this.showDashboard(ctx, false);
       }
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1fa2aab8-5b39-462f-acf7-40a78e91602f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'handlers/messageHandlers/QuickExpenseHandler.ts:183',message:'QuickExpenseHandler: Error caught',data:{error:error.message,stack:error.stack?.substring(0,500),name:error.name,text},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       console.error('[FATAL] handleQuickExpense crashed:', error);
       console.error('[FATAL] handleQuickExpense error details:', {
         message: error.message,
