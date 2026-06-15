@@ -321,27 +321,34 @@ export class YBBTallyBot {
    * Get dashboard message content
    */
   private async getDashboardMessage(): Promise<string> {
-    // Get random header
-    const header = await this.getRandomBalanceHeader();
-    
-    // Get last 3 transactions
-    const transactions = await this.historyService.getRecentTransactions(3, 0);
-    
-    // Build activity feed
-    let activityFeed = '';
-    if (transactions.length > 0) {
-      activityFeed = '\n\n📋 **Latest Activity:**\n';
-      for (const tx of transactions) {
-        const line = this.historyService.formatTransactionListItem(tx);
-        activityFeed += `${line}\n`;
-      }
-    } else {
-      activityFeed = '\n\n📋 **Latest Activity:**\nNo transactions yet.';
+    // Get random header — falls back gracefully on DB error
+    let header = '💰 Balance Status';
+    try {
+      header = await this.getRandomBalanceHeader();
+    } catch (headerErr: any) {
+      console.error('[getDashboardMessage] Balance header failed:', headerErr?.message ?? headerErr);
     }
-    
+
+    // Get last 3 transactions — falls back gracefully on DB error
+    let activityFeed = '\n\n📋 **Latest Activity:**\nUnavailable right now.';
+    try {
+      const transactions = await this.historyService.getRecentTransactions(3, 0);
+      if (transactions.length > 0) {
+        activityFeed = '\n\n📋 **Latest Activity:**\n';
+        for (const tx of transactions) {
+          const line = this.historyService.formatTransactionListItem(tx);
+          activityFeed += `${line}\n`;
+        }
+      } else {
+        activityFeed = '\n\n📋 **Latest Activity:**\nNo transactions yet.';
+      }
+    } catch (histErr: any) {
+      console.error('[getDashboardMessage] Recent transactions failed:', histErr?.message ?? histErr);
+    }
+
     // Footer instruction
     const footer = '\n👇 **Quick Record:** Send a photo or type \'5 Coffee\'.\n💡 **Tip:** Made a mistake? Type \'edit /15 20\' to change amount, or \'edit /15 lunch\' to change description.';
-    
+
     return `${header}${activityFeed}${footer}`;
   }
 

@@ -101,6 +101,14 @@ async function main() {
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
       await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
       console.log(`📡 Webhook set: ${fullWebhookUrl}`);
+
+      // Verify the webhook actually took — guards against races with stale deployments
+      const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+      const registeredUrl = webhookInfo.url ?? '';
+      if (registeredUrl !== fullWebhookUrl) {
+        throw new Error(`[Startup] Webhook mismatch after set: expected ${fullWebhookUrl} but got ${registeredUrl}`);
+      }
+      console.log(`✅ Webhook verified: ${registeredUrl}`);
       
       // Cache bot username and setup commands for webhook mode
       await bot.cacheBotUsername();
