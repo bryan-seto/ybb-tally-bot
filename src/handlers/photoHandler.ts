@@ -183,7 +183,7 @@ export class PhotoHandler {
       const escapeMd = (s: string) => s.replace(/[*_`[\]()~>#+=|{}.!\\-]/g, '\\$&');
 
       savedTransactions.forEach(tx => {
-        summary += `• **${escapeMd(tx.description)}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})`;
+        summary += `• **${escapeMd(tx.description ?? '')}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})`;
         
         // Add split details if available
         if (tx.bryanPercentage !== null && tx.hweiYeenPercentage !== null) {
