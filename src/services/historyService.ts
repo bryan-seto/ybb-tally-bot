@@ -109,10 +109,18 @@ export class HistoryService {
   }
 
   /**
-   * Escape Markdown special characters
+   * Escape Markdown special characters for Telegram Markdown V1.
+   *
+   * IMPORTANT: Telegram Markdown V1 (parse_mode: 'Markdown') does NOT support
+   * backslash escaping — a backslash before a special char is treated as a
+   * literal backslash, not an escape sequence. Using \* in a merchant name like
+   * "AMAZE\* KLOOK..." still leaves an unmatched * that breaks entity parsing.
+   *
+   * Solution: strip the four chars that open/close Markdown formatting markers
+   * (* _ ` [ ]) rather than attempting to escape them.
    */
   private escapeMarkdown(text: string): string {
-    return text.replace(/([_*\[\]()~`>#+=|{}.!-])/g, '\\$1');
+    return text.replace(/[*_`[\]]/g, '');
   }
 
   /**
