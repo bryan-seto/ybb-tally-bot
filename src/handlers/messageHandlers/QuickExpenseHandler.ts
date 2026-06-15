@@ -120,12 +120,27 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         userId,
         parsed.amount,
         parsed.category,
-        parsed.description
+        parsed.description,
+        (parsed as any).currency ?? 'SGD'
       );
       console.log('[DEBUG] handleQuickExpense: Transaction created successfully:', {
         transactionId: transaction.id.toString(),
         amount: transaction.amountSGD
       });
+
+      // Stale manual rate warning (non-SGD only)
+      const parsedCurrency: string = (parsed as any).currency ?? 'SGD';
+      let staleRateWarning = '';
+      if (parsedCurrency !== 'SGD') {
+        try {
+          const isStale = await this.expenseService.fxRateService.isManualRateStale(parsedCurrency);
+          if (isStale) {
+            staleRateWarning = `\n\n⚠️ You set this ${parsedCurrency} rate over 14 days ago — still correct? /clearrate ${parsedCurrency}`;
+          }
+        } catch {
+          // Non-fatal: stale check failure shouldn't break expense recording
+        }
+      }
 
       // Get fun confirmation message
       const funConfirmation = this.expenseService.getFunConfirmation(parsed.category);
@@ -164,6 +179,11 @@ export class QuickExpenseHandler extends BaseMessageHandler {
           reply_markup: keyboard.reply_markup,
         }
       );
+
+      // Send stale rate warning as a separate reply (so tests can detect via ctx.reply)
+      if (staleRateWarning) {
+        await ctx.reply(staleRateWarning.trim());
+      }
 
       // Show fresh dashboard after expense save
       if (this.showDashboard) {

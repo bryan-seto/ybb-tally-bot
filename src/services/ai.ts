@@ -349,7 +349,7 @@ IMPORTANT:
 - If multiple images are provided, check if they are parts of the same long receipt. If so, combine them into one transaction.
 - If they are different receipts, provide individual details for each in the "transactions" array.
 - For each transaction, extract:
-  - amount: The total amount in SGD (numbers only).
+  - amount: The exact numeric amount shown (do NOT convert currencies).
   - merchant: The store or service provider name.
   - category: One of "Food", "Transport", "Shopping", "Bills", "Travel", "Other".
   - date: The date in YYYY-MM-DD format (if found).
@@ -365,7 +365,8 @@ Extract the following information in JSON format:
       "date": "string"
     }
   ],
-  "total": number (sum of all amounts in SGD),
+  "total": number (sum of all amounts shown on the receipt),
+  "currency": "string" (the 3-letter ISO currency code from the receipt, e.g. "SGD", "VND", "MYR", "JPY"; default "SGD" if not shown),
   "merchant": "string" (Main merchant or "Multiple Merchants"),
   "category": "string" (Main category or "Multiple Categories")
 }

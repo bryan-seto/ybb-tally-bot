@@ -3,13 +3,16 @@ import { prisma } from '../lib/prisma';
 import { getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { SplitRulesService } from './splitRulesService';
 import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
+import { FxRateService } from './fxRateService';
 
 export class ExpenseService {
   private splitRulesService: SplitRulesService;
+  public fxRateService: FxRateService;
 
-  constructor(splitRulesService?: SplitRulesService) {
+  constructor(splitRulesService?: SplitRulesService, fxRateService?: FxRateService) {
     // Allow injection for testing, or create default instance
     this.splitRulesService = splitRulesService || new SplitRulesService();
+    this.fxRateService = fxRateService || new FxRateService();
   }
   /**
    * Calculate net outstanding balance using pure tabulation approach
@@ -435,7 +438,8 @@ export class ExpenseService {
     userId: bigint,
     amount: number,
     category: string,
-    description: string
+    description: string,
+    currency = 'SGD'
   ): Promise<{
     transaction: any;
     balanceMessage: string;
@@ -444,7 +448,8 @@ export class ExpenseService {
       userId: userId.toString(), 
       amount, 
       category, 
-      description 
+      description,
+      currency
     });
     
     // Get split rule from service (configurable, database-backed)
@@ -469,10 +474,25 @@ export class ExpenseService {
       throw new Error(`User with id ${userId} not found`);
     }
 
+    // FX conversion
+    let amountSGD = amount;
+    let originalAmount: number | null = null;
+    let fxRate: number | null = null;
+    const resolvedCurrency = currency.toUpperCase();
+
+    if (resolvedCurrency !== 'SGD') {
+      const fx = await this.fxRateService.convertToSGD(amount, resolvedCurrency);
+      amountSGD = fx.sgdAmount;
+      originalAmount = amount;
+      fxRate = fx.fxRate;
+    }
+
     // Create the transaction
     const transactionData = {
-      amountSGD: amount,
-      currency: 'SGD',
+      amountSGD,
+      currency: resolvedCurrency,
+      originalAmount,
+      fxRate,
       category: category || 'Other',
       description: description || 'No description',
       payerId: userId,
@@ -574,6 +594,8 @@ export class ExpenseService {
       createdAt: Date;
       updatedAt: Date;
       amountSGD: number;
+      originalAmount: number | null;
+      fxRate: number | null;
       currency: string;
       category: string | null;
       description: string | null;
@@ -599,17 +621,34 @@ export class ExpenseService {
       date: receiptData.date
     }] : []);
 
+    // Determine receipt-level currency (may be null/undefined for SGD)
+    const receiptCurrency: string = (receiptData.currency || 'SGD').toUpperCase();
+
     // FIX: Wrap all transaction creates in a single Prisma transaction
     // This ensures all transactions are committed atomically before balance calculation
     await prisma.$transaction(async (tx) => {
       for (const item of items) {
         // Get split rule for this category
         const splitRuleForItem = await this.splitRulesService.getSplitRule(item.category || 'Other');
+
+        // FX conversion if receipt is in foreign currency
+        let amountSGD = item.amount;
+        let originalAmount: number | null = null;
+        let itemFxRate: number | null = null;
+
+        if (receiptCurrency !== 'SGD') {
+          const fx = await this.fxRateService.convertToSGD(item.amount, receiptCurrency);
+          amountSGD = fx.sgdAmount;
+          originalAmount = item.amount;
+          itemFxRate = fx.fxRate;
+        }
         
         const createdTx = await tx.transaction.create({
           data: {
-            amountSGD: item.amount,
-            currency: 'SGD',
+            amountSGD,
+            currency: receiptCurrency,
+            originalAmount,
+            fxRate: itemFxRate,
             category: item.category || 'Other',
             description: item.merchant || 'Unknown Merchant',
             payerId: payerId,

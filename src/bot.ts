@@ -509,6 +509,10 @@ export class YBBTallyBot {
     // Detailed balance command
     this.bot.command('detailedBalance', async (ctx) => await this.commandHandlers.handleDetailedBalance(ctx));
 
+    // FX rate management
+    this.bot.command('setrate', async (ctx) => await this.commandHandlers.handleSetRate(ctx));
+    this.bot.command('clearrate', async (ctx) => await this.commandHandlers.handleClearRate(ctx));
+
     // Fixed command (admin only - for error recovery)
     this.bot.command('fixed', async (ctx) => await this.commandHandlers.handleFixed(ctx));
 

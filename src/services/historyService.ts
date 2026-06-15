@@ -19,6 +19,8 @@ export interface TransactionDetail extends TransactionListItem {
   splitType?: string;
   bryanPercentage?: number;
   hweiYeenPercentage?: number;
+  originalAmount?: number | null;
+  fxRate?: number | null;
 }
 
 export class HistoryService {
@@ -80,6 +82,8 @@ export class HistoryService {
       splitType: rawTx.splitType || undefined,
       bryanPercentage: rawTx.bryanPercentage ?? undefined,
       hweiYeenPercentage: rawTx.hweiYeenPercentage ?? undefined,
+      originalAmount: rawTx.originalAmount ?? null,
+      fxRate: rawTx.fxRate ?? null,
     };
   }
 
@@ -235,7 +239,16 @@ export class HistoryService {
     const statusEmoji = this.getStatusEmoji(tx.status);
     const statusText = this.getStatusText(tx.status);
     const dateStr = formatDate(tx.date, 'dd MMM yyyy, hh:mm a');
-    const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
+
+    // Amount display: show original foreign currency + SGD equivalent when applicable
+    let amountStr: string;
+    if (tx.currency !== 'SGD' && tx.originalAmount != null) {
+      const fmtOriginal = tx.originalAmount.toLocaleString();
+      amountStr = `${tx.currency} ${fmtOriginal} (≈ SGD $${tx.amount.toFixed(2)})`;
+    } else {
+      amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
+    }
+
     const splitDetails = this.formatSplitDetails(tx);
     const balanceImpact = this.formatBalanceImpact(tx);
 

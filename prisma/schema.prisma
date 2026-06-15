@@ -30,6 +30,8 @@ model Transaction {
   description        String?
   payerId            BigInt
   date               DateTime  @default(now())
+  originalAmount     Float?
+  fxRate             Float?
   isSettled          Boolean   @default(false)
   splitType          SplitType @default(FULL)
   bryanPercentage    Float?    @default(0.7)

@@ -20,7 +20,8 @@ export async function setupTestDb() {
     execSync(`npx prisma db push --accept-data-loss`, {
       env: {
         ...process.env,
-        DATABASE_URL: TEST_DB_URL
+        DATABASE_URL: TEST_DB_URL,
+        PATH: `/Users/bryan.seto/.nvm/versions/node/v24.13.1/bin:/opt/homebrew/bin:${process.env.PATH || ''}`,
       },
       stdio: 'ignore' // Suppress logs
     });
