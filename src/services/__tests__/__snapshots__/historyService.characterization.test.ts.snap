@@ -105,7 +105,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 📝 **Description:** Taxi ride"
 `;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Store\\_with\\_underscores\\*and\\*special\\[chars\\]* - $100.00"`;
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Storewithunderscoresandspecialchars* - $100.00"`;
 
 exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format SGD currency transaction 1`] = `"/1 ✅ *Restaurant* - $50.50"`;
 
@@ -168,9 +168,11 @@ exports[`HistoryService - Characterization Tests > getTransactionById > should h
   "currency": "SGD",
   "date": 2024-01-15T12:00:00.000Z,
   "description": "Grocery shopping",
+  "fxRate": null,
   "hweiYeenPercentage": 0.3,
   "id": 2n,
   "merchant": "Grocery shopping",
+  "originalAmount": null,
   "paidBy": "Hwei Yeen",
   "payerId": 424894363n,
   "payerRole": "HweiYeen",
@@ -187,9 +189,11 @@ exports[`HistoryService - Characterization Tests > getTransactionById > should r
   "currency": "SGD",
   "date": 2024-01-15T12:00:00.000Z,
   "description": "Lunch",
+  "fxRate": null,
   "hweiYeenPercentage": 0.5,
   "id": 1n,
   "merchant": "Lunch",
+  "originalAmount": null,
   "paidBy": "Bryan",
   "payerId": 109284773n,
   "payerRole": "Bryan",

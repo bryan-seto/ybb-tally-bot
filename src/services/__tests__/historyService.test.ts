@@ -82,6 +82,11 @@ describe('HistoryService', () => {
         paidBy: 'Bryan',
         payerId: BigInt(10),
         payerRole: 'Bryan',
+        splitType: undefined,
+        bryanPercentage: undefined,
+        hweiYeenPercentage: undefined,
+        originalAmount: null,
+        fxRate: null,
       });
     });
 
