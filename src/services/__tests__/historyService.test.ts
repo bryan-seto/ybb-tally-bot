@@ -45,6 +45,8 @@ describe('HistoryService', () => {
         merchant: 'Lunch',
         amount: 50.5,
         currency: 'SGD',
+        originalAmount: null,
+        fxRate: null,
         status: 'unsettled',
         category: 'Food',
         description: 'Lunch',
@@ -112,7 +114,7 @@ describe('HistoryService', () => {
         currency: 'SGD',
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
-      expect(line).toBe('/123 🔴 *Grab* - $15.50');
+      expect(line).toBe('/123 🔴 *Grab* - S$15.50');
     });
 
     it('strips * from merchant name (Telegram Markdown V1 cannot escape it)', () => {
@@ -127,7 +129,7 @@ describe('HistoryService', () => {
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
       // Must NOT contain * outside the surrounding bold markers
-      expect(line).toBe('/315 🔴 *AMAZE KLOOK TRAVEL SINGAPORE SGP* - $109.79');
+      expect(line).toBe('/315 🔴 *AMAZE KLOOK TRAVEL SINGAPORE SGP* - S$109.79');
       // Crucially: no backslash-asterisk that would confuse Telegram
       expect(line).not.toContain('\\*');
       // Only two * chars: the surrounding bold markers
@@ -143,7 +145,7 @@ describe('HistoryService', () => {
         currency: 'SGD',
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
-      expect(line).toBe('/1 ✅ *ShopName* - $20.00');
+      expect(line).toBe('/1 ✅ *ShopName* - S$20.00');
       expect(line).not.toContain('_');
     });
   });

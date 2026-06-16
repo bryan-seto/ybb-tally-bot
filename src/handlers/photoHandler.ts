@@ -195,7 +195,7 @@ export class PhotoHandler {
           const userBPercent = Math.round(tx.hweiYeenPercentage * 100);
           const userAAmount = tx.amountSGD * tx.bryanPercentage;
           const userBAmount = tx.amountSGD * tx.hweiYeenPercentage;
-          summary += `\n  📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+          summary += `\n  📊 Split: ${userAName} ${userAPercent}% (S$${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% (S$${userBAmount.toFixed(2)})`;
         }
         summary += '\n';
       });

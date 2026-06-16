@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { formatDate } from '../utils/dateHelpers';
+import { formatFxAmountString } from '../utils/fxFormat';
 
 export interface TransactionListItem {
   id: bigint;
@@ -11,6 +12,8 @@ export interface TransactionListItem {
   category: string;
   description: string;
   paidBy: string;
+  originalAmount?: number | null;
+  fxRate?: number | null;
 }
 
 export interface TransactionDetail extends TransactionListItem {
@@ -45,6 +48,8 @@ export class HistoryService {
       merchant: t.description || 'No description',
       amount: t.amountSGD,
       currency: t.currency,
+      originalAmount: t.originalAmount ?? null,
+      fxRate: t.fxRate ?? null,
       status: (t.isSettled || t.category === 'Settlement' || t.category === 'Payment') ? 'settled' : 'unsettled',
       category: t.category || 'Other',
       description: t.description || 'No description',
@@ -128,23 +133,19 @@ export class HistoryService {
   }
 
   /**
-   * Format amount string based on currency (for list items)
+   * Format amount string based on currency (for list items in activity feed).
+   * Uses fxFormat so foreign items show "JPY 1,200 → S$10.51 (@ 0.008759)"
+   * instead of the old (broken) "JPY 9.61".
    */
-  private formatAmountString(amount: number, currency: string): string {
-    if (currency === 'SGD') {
-      return `$${amount.toFixed(2)}`;
-    }
-    return `${currency} ${amount.toFixed(2)}`;
+  private formatAmountString(amount: number, currency: string, originalAmount?: number | null, fxRate?: number | null): string {
+    return formatFxAmountString(amount, currency, originalAmount, fxRate);
   }
 
   /**
-   * Format amount string for detail view (includes currency prefix for SGD)
+   * Format amount string for detail view (includes currency prefix for SGD).
    */
-  private formatAmountStringForDetail(amount: number, currency: string): string {
-    if (currency === 'SGD') {
-      return `SGD $${amount.toFixed(2)}`;
-    }
-    return `${currency} ${amount.toFixed(2)}`;
+  private formatAmountStringForDetail(amount: number, currency: string, originalAmount?: number | null, fxRate?: number | null): string {
+    return formatFxAmountString(amount, currency, originalAmount, fxRate);
   }
 
   /**
@@ -152,7 +153,7 @@ export class HistoryService {
    */
   formatTransactionListItem(tx: TransactionListItem): string {
     const statusEmoji = this.getStatusEmoji(tx.status);
-    const amountStr = this.formatAmountString(tx.amount, tx.currency);
+    const amountStr = this.formatAmountString(tx.amount, tx.currency, tx.originalAmount, tx.fxRate);
     
     // Escape merchant name to prevent Markdown parsing errors
     const merchant = this.escapeMarkdown(tx.merchant);
@@ -240,14 +241,10 @@ export class HistoryService {
     const statusText = this.getStatusText(tx.status);
     const dateStr = formatDate(tx.date, 'dd MMM yyyy, hh:mm a');
 
-    // Amount display: show original foreign currency + SGD equivalent when applicable
-    let amountStr: string;
-    if (tx.currency !== 'SGD' && tx.originalAmount != null) {
-      const fmtOriginal = tx.originalAmount.toLocaleString();
-      amountStr = `${tx.currency} ${fmtOriginal} (≈ SGD $${tx.amount.toFixed(2)})`;
-    } else {
-      amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
-    }
+    // Amount display: delegate to shared FX formatter
+    // Non-SGD with data: "JPY 1,200 → S$10.51 (@ 0.008759)"
+    // SGD or old record:  "S$45.00"
+    const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency, tx.originalAmount, tx.fxRate);
 
     const splitDetails = this.formatSplitDetails(tx);
     const balanceImpact = this.formatBalanceImpact(tx);

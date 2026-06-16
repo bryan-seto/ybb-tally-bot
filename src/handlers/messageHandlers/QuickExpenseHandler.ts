@@ -7,6 +7,7 @@ import { SessionManager } from './SessionManager';
 import { Markup } from 'telegraf';
 import { getUserAName, getUserBName } from '../../config';
 import { parseQuickExpense } from '../../utils/quickExpenseParser';
+import { formatFxAmountString } from '../../utils/fxFormat';
 
 /**
  * Handler for quick expense one-liners (e.g., "130 groceries", "5.50 coffee")
@@ -152,16 +153,26 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         const userBName = getUserBName();
         const userAPercent = Math.round(transaction.bryanPercentage * 100);
         const userBPercent = Math.round(transaction.hweiYeenPercentage * 100);
-        const userAAmount = parsed.amount * transaction.bryanPercentage;
-        const userBAmount = parsed.amount * transaction.hweiYeenPercentage;
-        splitDetails = `\n📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+        // Split amounts are always in SGD (amountSGD * percentage)
+        const userAAmount = transaction.amountSGD * transaction.bryanPercentage;
+        const userBAmount = transaction.amountSGD * transaction.hweiYeenPercentage;
+        splitDetails = `\n📊 Split: ${userAName} ${userAPercent}% (S$${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% (S$${userBAmount.toFixed(2)})`;
       }
 
       // Generate tip footer (20% chance = 1/5 times)
       const tipFooter = Math.random() < 0.2 ? "\n\n💡 Tip: Tap 'Undo' if you made a mistake!" : "";
 
+      // Build confirmation headline: show original amount + SGD conversion for FX expenses
+      const parsedCurrencyUpper: string = (parsed as any).currency ?? 'SGD';
+      const amountDisplay = formatFxAmountString(
+        transaction.amountSGD,
+        parsedCurrencyUpper,
+        transaction.originalAmount,
+        transaction.fxRate,
+      );
+
       // Build final message
-      const finalMessage = `${funConfirmation} ${parsed.description} - $${parsed.amount.toFixed(2)} (${parsed.category})${splitDetails}\n\n${balanceMessage}${tipFooter}`;
+      const finalMessage = `${funConfirmation} ${parsed.description} — ${amountDisplay} (${parsed.category})${splitDetails}\n\n${balanceMessage}${tipFooter}`;
 
       // Create inline keyboard with Undo button
       const keyboard = Markup.inlineKeyboard([

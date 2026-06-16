@@ -322,7 +322,7 @@ describe('E2E: Foreign Currency', () => {
     // Must show BOTH the original VND and SGD equivalent
     expect(detail).toMatch(/VND/);
     expect(detail).toMatch(/50[,.]?000/);
-    expect(detail).toMatch(/SGD/);
+    expect(detail).toMatch(/S\$/);   // new format: "VND 50,000 → S$2.45 (@ ...)"
     expect(detail).toMatch(/2\.4[0-9]/);
   });
 
