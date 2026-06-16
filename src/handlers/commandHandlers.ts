@@ -3,16 +3,20 @@ import { prisma } from '../lib/prisma';
 import { ExpenseService } from '../services/expenseService';
 import { AnalyticsService } from '../services/analyticsService';
 import { HistoryService } from '../services/historyService';
-import { formatDate, getMonthsAgo, getNow } from '../utils/dateHelpers';
-import QuickChart from 'quickchart-js';
+import { FxRateService } from '../services/fxRateService';
+import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES, CONFIG, USER_IDS, getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 
 export class CommandHandlers {
+  private fxRateService: FxRateService;
+
   constructor(
     private expenseService: ExpenseService,
     private analyticsService: AnalyticsService,
     private historyService?: HistoryService
-  ) {}
+  ) {
+    this.fxRateService = expenseService.fxRateService;
+  }
 
   async handleBalance(ctx: Context) {
     const balanceMessage = await this.expenseService.getOutstandingBalanceMessage();
@@ -69,7 +73,7 @@ export class CommandHandlers {
     try {
       // Fetch all unsettled transactions (shared system)
       const unsettled = await prisma.transaction.findMany({
-        where: { isSettled: false },
+        where: { isSettled: false, category: { notIn: ['Settlement', 'Payment'] } },
         orderBy: { id: 'desc' }
       });
       
@@ -114,19 +118,27 @@ export class CommandHandlers {
       const userId = ctx.from?.id ? BigInt(ctx.from.id) : null;
       if (userId) {
         try {
-          await prisma.systemLog.create({
-            data: {
-              userId,
-              event: 'settle_command_attempted',
-              metadata: {
-                method: 'command',
-                transactionCount,
-                totalAmount,
-                watermarkID: watermarkString, // Store as string in JSON
-                timestamp: new Date().toISOString(),
-              },
-            },
+          // Check if user exists before logging
+          const userExists = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
           });
+          
+          if (userExists) {
+            await prisma.systemLog.create({
+              data: {
+                userId,
+                event: 'settle_command_attempted',
+                metadata: {
+                  method: 'command',
+                  transactionCount,
+                  totalAmount,
+                  watermarkID: watermarkString, // Store as string in JSON
+                  timestamp: new Date().toISOString(),
+                },
+              },
+            });
+          }
         } catch (logError) {
           console.error('Error logging settlement attempt:', logError);
         }
@@ -134,79 +146,6 @@ export class CommandHandlers {
     } catch (error: any) {
       console.error('Error handling settle command:', error);
       await ctx.reply('Sorry, I encountered an error. Please try again.');
-    }
-  }
-
-  async handleReport(ctx: any) {
-    const args = ctx.message.text.split(' ').slice(1);
-    let monthOffset = 0;
-    
-    if (args.length > 0) {
-      const offset = parseInt(args[0]);
-      if (!isNaN(offset)) {
-        monthOffset = offset;
-      } else {
-        await ctx.reply(
-          'Invalid month offset. Use:\n' +
-          '`/report` - Current month\n' +
-          '`/report 1` - Last month\n',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-    }
-
-    try {
-      await ctx.reply('Generating monthly report... At your service!');
-
-      const report = await this.expenseService.getMonthlyReport(monthOffset);
-      const reportDate = getMonthsAgo(monthOffset);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-
-      if (report.transactionCount === 0) {
-        const allTransactions = await prisma.transaction.findMany({
-          include: { payer: true },
-          orderBy: { date: 'desc' },
-        });
-
-        if (allTransactions.length > 0) {
-          const transactionsByMonth: { [key: string]: number } = {};
-          allTransactions.forEach(t => {
-            const monthKey = formatDate(t.date, 'yyyy-MM');
-            if (!transactionsByMonth[monthKey]) transactionsByMonth[monthKey] = 0;
-            transactionsByMonth[monthKey] += t.amountSGD;
-          });
-
-          const monthList = Object.entries(transactionsByMonth)
-            .sort((a, b) => b[0].localeCompare(a[0]))
-            .map(([key, total]) => {
-              const name = formatDate(new Date(key + '-01'), 'MMMM yyyy');
-              return `• ${name}: SGD $${total.toFixed(2)}`;
-            })
-            .join('\n');
-          
-          await ctx.reply(`No transactions found for ${monthName}.\n\nAvailable months:\n${monthList}`, { parse_mode: 'Markdown' });
-          return;
-        }
-      }
-
-      const chart = new QuickChart();
-      chart.setConfig({
-        type: 'bar',
-        data: {
-          labels: report.topCategories.map((c) => c.category),
-          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-        },
-      });
-      chart.setWidth(800);
-      chart.setHeight(400);
-      const chartUrl = chart.getUrl();
-
-      const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error: any) {
-      console.error('Error generating report:', error);
-      await ctx.reply('Error generating report.');
     }
   }
 
@@ -325,6 +264,55 @@ export class CommandHandlers {
     } catch (error: any) {
       console.error('Error getting detailed balance:', error);
       await ctx.reply('Sorry, I encountered an error retrieving detailed balance. Please try again.');
+    }
+  }
+
+  /**
+   * /setrate VND 20000
+   * Sets a manual exchange rate: 1 SGD = 20,000 VND
+   */
+  async handleSetRate(ctx: Context) {
+    try {
+      const text = (ctx.message as any)?.text?.trim() ?? '';
+      // e.g. "/setrate VND 20000"
+      const match = text.match(/^\/setrate\s+([A-Za-z]+)\s+([\d,.]+)/i);
+      if (!match) {
+        await ctx.reply('Usage: /setrate VND 20000\n(sets 1 SGD = 20,000 VND)');
+        return;
+      }
+      const currency = match[1].toUpperCase();
+      const rate = parseFloat(match[2].replace(/,/g, ''));
+      if (!rate || rate <= 0) {
+        await ctx.reply('❌ Invalid rate. Usage: /setrate VND 20000');
+        return;
+      }
+      await this.fxRateService.setManualRate(currency, rate);
+      const rateFormatted = rate.toLocaleString();
+      await ctx.reply(`✅ Manual rate set: 1 SGD = ${rateFormatted} ${currency}. Use /clearrate ${currency} to remove.`);
+    } catch (error: any) {
+      console.error('Error setting manual rate:', error);
+      await ctx.reply('❌ Failed to set manual rate. Please try again.');
+    }
+  }
+
+  /**
+   * /clearrate VND
+   * Clears the manual exchange rate override for VND (live rates will be used).
+   */
+  async handleClearRate(ctx: Context) {
+    try {
+      const text = (ctx.message as any)?.text?.trim() ?? '';
+      const match = text.match(/^\/clearrate\s+([A-Za-z]+)/i);
+      if (!match) {
+        await ctx.reply('Usage: /clearrate VND');
+        return;
+      }
+      const currency = match[1].toUpperCase();
+      await this.fxRateService.clearManualRate(currency);
+      await ctx.reply(`✅ Manual ${currency} rate cleared. Live rates will be used.`);
+    } catch (error: any) {
+      console.error('Error clearing manual rate:', error);
+      await ctx.reply('❌ Failed to clear manual rate. Please try again.');
     }
   }
 }

@@ -179,20 +179,46 @@ describe('Critical Flows E2E', () => {
   // ⚡ FLOW 2: Quick Text Input
   // ==========================================
   describe('Flow 2: Quick Expense Text', () => {
-    it('should parse "15.50 coffee" and create expense', async () => {
+    it('should parse "15.50 coffee" via regex (no AI call) and create expense', async () => {
       const ctx = createMockContext('15.50 coffee', userA);
-      
-      // Mock AI
+
+      // Mock AI as a guard: if the handler wrongly calls AI, we'd see "Afternoon Coffee".
+      // The regex parser SHOULD handle "15.50 coffee" directly and skip AI entirely
+      // (intentional design in quickExpenseParser.ts — "saves LLM costs").
       mockAIService.processQuickExpense.mockResolvedValue(MOCK_AI_RESPONSES.QUICK_EXPENSE_COFFEE);
 
-      // 1. Handle Text (this will detect quick expense pattern and call handleQuickExpense)
+      // 1. Handle Text (quick expense pattern → handleQuickExpense → regex parse)
       await messageHandlers.handleText(ctx);
 
-      // 2. Verify DB
+      // 2. AI must NOT have been called — regex covers this input
+      expect(mockAIService.processQuickExpense).not.toHaveBeenCalled();
+
+      // 3. Verify DB: description is the raw token "coffee" (regex), not the AI's "Afternoon Coffee"
+      const tx = await prisma.transaction.findFirst({
+        where: { description: 'coffee' }
+      });
+
+      expect(tx).toBeTruthy();
+      expect(Number(tx?.amountSGD)).toBe(15.50);
+      expect(tx?.category).toBe('Food'); // inferCategory('coffee') → Food
+    });
+
+    it('should fall back to AI for free-text the regex cannot parse', async () => {
+      // "paid 25 for lunch today" has a number, so canHandle() routes it to the quick-expense
+      // handler — but the number is mid-string, so parseQuickExpense() returns null and the
+      // handler delegates to AI. This exercises the AI fallback path.
+      const ctx = createMockContext('paid 25 for lunch today', userA);
+      mockAIService.processQuickExpense.mockResolvedValue(MOCK_AI_RESPONSES.QUICK_EXPENSE_COFFEE);
+
+      await messageHandlers.handleText(ctx);
+
+      // AI IS the path here
+      expect(mockAIService.processQuickExpense).toHaveBeenCalled();
+
+      // DB reflects the AI-parsed values (mock returns "Afternoon Coffee" / 15.50 / Food)
       const tx = await prisma.transaction.findFirst({
         where: { description: 'Afternoon Coffee' }
       });
-
       expect(tx).toBeTruthy();
       expect(Number(tx?.amountSGD)).toBe(15.50);
       expect(tx?.category).toBe('Food');
@@ -203,10 +229,65 @@ describe('Critical Flows E2E', () => {
   // 💰 FLOW 3: Balance & Settle (Snapshot System)
   // ==========================================
   describe('Flow 3: View Balance and Settle', () => {
-    it('should show preview with snapshot and settle debts using watermark', async () => {
-      // Setup: Bryan paid $100. Default split 70/30 means:
-      // Bryan share: $70, HweiYeen share: $30
-      // Since Bryan paid, HweiYeen owes Bryan $30
+    it('settle_up callback: when current user is OWED, shows "no need to pay" (balance-based flow)', async () => {
+      // Setup: Bryan paid $100 at 70/30 → HweiYeen owes Bryan $30.
+      // The settle_up CALLBACK now uses balance-based logic (not the old watermark preview).
+      // Since Bryan (userA) is the one OWED, the bot should tell him he doesn't need to pay.
+      const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
+      if (!bryanUser) throw new Error('Bryan user not found');
+
+      await createTestTransaction({
+        amountSGD: 100,
+        description: "Dinner",
+        category: "Food",
+        payerId: bryanUser.id,
+        isSettled: false,
+        bryanPercentage: 0.7,
+        hweiYeenPercentage: 0.3,
+      });
+
+      const ctx = createMockContext('', userA, 'settle_up'); // userA = Bryan
+      await callbackHandlers.handleCallback(ctx);
+
+      // CallbackRouter sends "⏳ Loading..." first, then the handler's reply
+      const messages = (ctx.reply as any).mock.calls.map((c: any[]) => String(c[0])).join('\n');
+      expect(messages).toMatch(/don't need to pay|all good|owes you/i);
+      // Bryan is owed $30 → message should reference that he's owed, not that he owes
+      expect(messages).toContain('30.00');
+    });
+
+    it('settle_up callback: when current user OWES, shows a Pay button (balance-based flow)', async () => {
+      // Setup: HweiYeen paid $100 at 70/30 → Bryan owes HweiYeen $70.
+      // Bryan (userA) triggers settle_up and IS the one who owes → should see a Pay prompt.
+      const hyUser = await prisma.user.findFirst({ where: { role: 'HweiYeen' } });
+      if (!hyUser) throw new Error('HweiYeen user not found');
+
+      await createTestTransaction({
+        amountSGD: 100,
+        description: "Groceries",
+        category: "Groceries",
+        payerId: hyUser.id,
+        isSettled: false,
+        bryanPercentage: 0.7,
+        hweiYeenPercentage: 0.3,
+      });
+
+      const ctx = createMockContext('', userA, 'settle_up'); // userA = Bryan (owes $70)
+      await callbackHandlers.handleCallback(ctx);
+
+      const messages = (ctx.reply as any).mock.calls.map((c: any[]) => String(c[0])).join('\n');
+      expect(messages).toMatch(/owes \$70\.00|Pay/i);
+
+      // The Pay button should carry the settle_pay_full_ callback (→ confirmation card in FEAT-1)
+      const allMarkup = (ctx.reply as any).mock.calls
+        .map((c: any[]) => JSON.stringify(c[1]?.reply_markup ?? ''))
+        .join('');
+      expect(allMarkup).toMatch(/settle_pay_full_70\.00/);
+    });
+
+    it('/settle command: watermark protection — txns added after preview are NOT settled', async () => {
+      // The watermark "Ready to settle" preview flow lives under the /settle COMMAND
+      // (commandHandlers.handleSettle), distinct from the settle_up callback above.
       const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
       if (!bryanUser) throw new Error('Bryan user not found');
 
@@ -219,40 +300,25 @@ describe('Critical Flows E2E', () => {
         bryanPercentage: 0.7,
         hweiYeenPercentage: 0.3,
       });
-
-      // Get the transaction ID as watermark (max ID before settlement)
       const watermarkID = tx1.id.toString();
 
-      const ctx = createMockContext('', userA, 'settle_up');
+      const { CommandHandlers } = await import('../../handlers/commandHandlers');
+      const commandHandlers = new CommandHandlers(expenseService, {} as any, historyService);
 
-      // 1. Trigger Settle View (should show preview with watermark)
-      // Note: CallbackRouter shows "⏳ Loading..." first, then handler sends preview
-      await callbackHandlers.handleCallback(ctx);
-      
-      // Verify reply was called at least twice (loading + preview)
-      expect(ctx.reply).toHaveBeenCalledTimes(2);
-      
-      // First call is loading message
-      const loadingMessage = (ctx.reply as any).mock.calls[0][0];
-      expect(loadingMessage).toBe('⏳ Loading...');
-      
-      // Second call is the preview message
-      const previewMessage = (ctx.reply as any).mock.calls[1][0];
+      const cmdCtx = createMockContext('/settle', userA);
+      cmdCtx.message = { text: '/settle', message_id: 1 } as any;
+
+      // 1. /settle shows the watermark preview
+      await commandHandlers.handleSettle(cmdCtx);
+      const previewMessage = (cmdCtx.reply as any).mock.calls[0][0];
       expect(previewMessage).toContain('Ready to settle');
-      expect(previewMessage).toContain('transactions');
       expect(previewMessage).toContain('SGD $');
 
-      // Extract watermark from callback data in the reply
-      const replyMarkup = (ctx.reply as any).mock.calls[1][1]?.reply_markup;
-      expect(replyMarkup).toBeTruthy();
-      const confirmButton = replyMarkup.inline_keyboard[0][0];
+      const confirmButton = (cmdCtx.reply as any).mock.calls[0][1].reply_markup.inline_keyboard[0][0];
       expect(confirmButton.callback_data).toMatch(/^settle_confirm_\d+$/);
-      
-      // Verify watermark matches transaction ID
-      const extractedWatermark = confirmButton.callback_data.replace('settle_confirm_', '');
-      expect(extractedWatermark).toBe(watermarkID);
+      expect(confirmButton.callback_data.replace('settle_confirm_', '')).toBe(watermarkID);
 
-      // 2. Add a new transaction AFTER preview (should NOT be settled)
+      // 2. A new transaction is added AFTER the preview
       const tx2 = await createTestTransaction({
         amountSGD: 50,
         description: "Coffee",
@@ -261,21 +327,19 @@ describe('Critical Flows E2E', () => {
         isSettled: false,
       });
 
-      // 3. Confirm Settlement with watermark
-      // The confirm callback needs the preview message (second reply) as the message to edit
+      // 3. Confirm settlement with the original watermark
       const confirmCtx = createMockContext('', userA, `settle_confirm_${watermarkID}`);
       confirmCtx.callbackQuery = {
         ...confirmCtx.callbackQuery!,
-        message: ctx.reply.mock.results[1].value as any, // Use second reply (preview message)
+        message: cmdCtx.reply.mock.results[0].value as any,
       } as any;
       await callbackHandlers.handleCallback(confirmCtx);
 
-      // 4. Verify only original transaction is settled (watermark protection)
+      // 4. Watermark protection: only tx1 settled, tx2 (added after) untouched
       const tx1After = await prisma.transaction.findUnique({ where: { id: tx1.id } });
       const tx2After = await prisma.transaction.findUnique({ where: { id: tx2.id } });
-      
-      expect(tx1After?.isSettled).toBe(true); // Original transaction settled
-      expect(tx2After?.isSettled).toBe(false); // New transaction NOT settled (watermark protection)
+      expect(tx1After?.isSettled).toBe(true);
+      expect(tx2After?.isSettled).toBe(false);
     });
 
     it('should handle /settle command with preview', async () => {
@@ -345,7 +409,8 @@ describe('Critical Flows E2E', () => {
       // Verify cancel was handled (editMessageText should be called)
       expect(cancelCtx.editMessageText).toHaveBeenCalled();
       const cancelMessage = (cancelCtx.editMessageText as any).mock.calls[0][0];
-      expect(cancelMessage).toContain('cancelled');
+      // ARIA-approved copy (HY UX sprint): warmer than the old "❌ Settlement cancelled."
+      expect(cancelMessage).toContain('No rush');
 
       // Verify transaction is still unsettled
       const unsettledCount = await prisma.transaction.count({

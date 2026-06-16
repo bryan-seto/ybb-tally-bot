@@ -139,9 +139,15 @@ export class TransactionCallbackHandler implements ICallbackHandler {
       const id = data.replace('tx_edit_', '');
       session.editingTxId = id;
       session.editMode = 'ai_natural_language';
-      await ctx.reply('What would you like to change for this transaction?', {
-        reply_markup: { force_reply: true }
-      });
+      await ctx.reply(
+        '✨ **AI Edit Mode**\n\n' +
+        'What would you like to change?\n\n' +
+        '💡 To change split: type `split 50-50`',
+        {
+          parse_mode: 'Markdown',
+          reply_markup: { force_reply: true }
+        }
+      );
       return;
     }
 

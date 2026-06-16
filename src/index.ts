@@ -1,4 +1,10 @@
-import dotenv from 'dotenv';
+/**
+ * Main Entry Point
+ * 
+ * IMPORTANT: Environment variables are loaded by config.ts before any validation.
+ * Config.ts handles the loading priority: .env.local > .env
+ */
+
 import { YBBTallyBot } from './bot';
 import { ExpenseService } from './services/expenseService';
 import { prisma } from './lib/prisma';
@@ -6,8 +12,8 @@ import { CONFIG, BOT_USERS } from './config';
 import { setupServer } from './server';
 import { setupJobs } from './jobs';
 import { UserRole } from '@prisma/client';
-
-dotenv.config();
+import { verifyDatabaseConnection } from './utils/databaseVerification';
+import { shouldUseWebhook } from './utils/transportMode';
 
 declare global {
   var botInstance: YBBTallyBot | undefined;
@@ -26,7 +32,8 @@ const expenseService = new ExpenseService();
 const bot = new YBBTallyBot(
   CONFIG.TELEGRAM_TOKEN,
   CONFIG.GEMINI_API_KEY,
-  CONFIG.ALLOWED_USER_IDS.join(',')
+  CONFIG.ALLOWED_USER_IDS.join(','),
+  CONFIG.GROQ_API_KEY
 );
 
 global.botInstance = bot;
@@ -75,21 +82,33 @@ async function initializeDatabase(): Promise<void> {
 
 async function main() {
   try {
-    await initializeDatabase();
-    
-    setupServer(bot);
+    // Start server FIRST (before async operations) so healthcheck can pass
+    // This ensures Railway healthcheck works even if async init takes time
+    const server = setupServer(bot);
     setupJobs(bot, expenseService);
+    
+    // Verify database connection (after server starts)
+    await verifyDatabaseConnection();
+    
+    // Then initialize database (create users, etc.)
+    await initializeDatabase();
 
     const environment = CONFIG.NODE_ENV || 'development';
-    const isProduction = environment === 'production';
-    const isStaging = environment === 'staging';
 
-    if ((isProduction || isStaging) && CONFIG.WEBHOOK_URL) {
+    if (shouldUseWebhook(environment, CONFIG.WEBHOOK_URL)) {
       const fullWebhookUrl = `${CONFIG.WEBHOOK_URL}/webhook`;
       console.log(`🌐 Running in ${environment.toUpperCase()} mode with WEBHOOKS`);
       await bot.getBot().telegram.deleteWebhook({ drop_pending_updates: true });
       await bot.getBot().telegram.setWebhook(fullWebhookUrl, { drop_pending_updates: true });
       console.log(`📡 Webhook set: ${fullWebhookUrl}`);
+
+      // Verify the webhook actually took — guards against races with stale deployments
+      const webhookInfo = await bot.getBot().telegram.getWebhookInfo();
+      const registeredUrl = webhookInfo.url ?? '';
+      if (registeredUrl !== fullWebhookUrl) {
+        throw new Error(`[Startup] Webhook mismatch after set: expected ${fullWebhookUrl} but got ${registeredUrl}`);
+      }
+      console.log(`✅ Webhook verified: ${registeredUrl}`);
       
       // Cache bot username and setup commands for webhook mode
       await bot.cacheBotUsername();
@@ -115,4 +134,7 @@ async function main() {
   }
 }
 
-main();
+// Only run main() if not in test environment
+if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+  main();
+}

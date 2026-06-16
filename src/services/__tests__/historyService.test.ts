@@ -45,6 +45,8 @@ describe('HistoryService', () => {
         merchant: 'Lunch',
         amount: 50.5,
         currency: 'SGD',
+        originalAmount: null,
+        fxRate: null,
         status: 'unsettled',
         category: 'Food',
         description: 'Lunch',
@@ -82,6 +84,11 @@ describe('HistoryService', () => {
         paidBy: 'Bryan',
         payerId: BigInt(10),
         payerRole: 'Bryan',
+        splitType: undefined,
+        bryanPercentage: undefined,
+        hweiYeenPercentage: undefined,
+        originalAmount: null,
+        fxRate: null,
       });
     });
 
@@ -107,7 +114,39 @@ describe('HistoryService', () => {
         currency: 'SGD',
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
-      expect(line).toBe('/123 🔴 *Grab* - $15.50');
+      expect(line).toBe('/123 🔴 *Grab* - S$15.50');
+    });
+
+    it('strips * from merchant name (Telegram Markdown V1 cannot escape it)', () => {
+      // Real-world crash: "AMAZE* KLOOK TRAVEL SINGAPORE SGP" caused a 400 error
+      // because the previous escapeMarkdown used \* which V1 treats as literal backslash.
+      const mockTx = {
+        id: BigInt(315),
+        status: 'unsettled' as const,
+        merchant: 'AMAZE* KLOOK TRAVEL SINGAPORE SGP',
+        amount: 109.79,
+        currency: 'SGD',
+      };
+      const line = historyService.formatTransactionListItem(mockTx as any);
+      // Must NOT contain * outside the surrounding bold markers
+      expect(line).toBe('/315 🔴 *AMAZE KLOOK TRAVEL SINGAPORE SGP* - S$109.79');
+      // Crucially: no backslash-asterisk that would confuse Telegram
+      expect(line).not.toContain('\\*');
+      // Only two * chars: the surrounding bold markers
+      expect((line.match(/\*/g) ?? []).length).toBe(2);
+    });
+
+    it('strips _ from merchant name to prevent accidental italic', () => {
+      const mockTx = {
+        id: BigInt(1),
+        status: 'settled' as const,
+        merchant: 'Shop_Name',
+        amount: 20.0,
+        currency: 'SGD',
+      };
+      const line = historyService.formatTransactionListItem(mockTx as any);
+      expect(line).toBe('/1 ✅ *ShopName* - S$20.00');
+      expect(line).not.toContain('_');
     });
   });
 });

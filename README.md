@@ -50,6 +50,8 @@ npm run prisma:generate
 
 ### 3. Environment Configuration
 
+#### Production Setup
+
 Copy `.env.example` to `.env` and update the values:
 
 ```bash
@@ -57,6 +59,56 @@ cp .env.example .env
 ```
 
 **Important**: Replace `[YOUR_PASSWORD]` in `DATABASE_URL` with your actual Supabase database password.
+
+#### Local Development Setup
+
+For local development, create `.env.local` (this file is gitignored):
+
+```bash
+cp .env.local.example .env.local
+```
+
+**Required Environment Variables for `.env.local`:**
+
+```env
+# Required - User IDs (must be numeric strings)
+USER_A_ID=109284773
+USER_A_NAME=Bryan
+USER_B_ID=424894363
+USER_B_NAME=Hwei Yeen
+
+# Required - Bot Configuration
+TELEGRAM_BOT_TOKEN=your_dev_bot_token
+GEMINI_API_KEY=your_gemini_key
+BACKUP_RECIPIENT_ID=109284773
+
+# Required - Database (local Docker)
+DATABASE_URL=postgresql://postgres:password@localhost:5432/ybb_tally_bot
+
+# Optional
+NODE_ENV=development
+PORT=10001
+WEBHOOK_URL=
+SENTRY_DSN=
+ALLOWED_USER_IDS=
+```
+
+⚠️ **Security:** `.env.local` is gitignored. Never commit personal IDs or tokens.
+
+**Starting Local Development:**
+
+```bash
+# Start local database (Docker)
+npm run db:local:up
+
+# Initialize database schema
+npm run db:local:init
+
+# Start bot in local mode
+npm run dev:local
+```
+
+**Note:** The bot uses strict environment variable validation. If required variables are missing or invalid, the application will fail fast on startup with descriptive error messages.
 
 ### 4. Database Setup
 
@@ -238,11 +290,23 @@ npm test
 
 ## Deployment
 
-The bot includes a keep-alive HTTP server for Render.com deployment:
+The bot is deployed on Railway.app and includes a keep-alive HTTP server:
 
-- Listens on `PORT` environment variable (default: 8080)
-- Responds to HTTP requests to prevent Render from killing the bot
+- Listens on `PORT` environment variable (default: 10000)
+- Responds to HTTP requests for health checks
 - Server starts immediately when the application loads
+- Webhook URL: `https://ybb-tally-bot-production.up.railway.app/webhook`
+
+### Railway Deployment
+
+The service is configured via `railway.json` and automatically deploys from the `main` branch:
+
+- **Build Command**: `npm ci && npm run build && npm run db:verify`
+- **Start Command**: `npm start`
+- **Health Check**: `/health` endpoint
+- **Public URL**: `https://ybb-tally-bot-production.up.railway.app`
+
+Environment variables are configured in the Railway dashboard under the service's Variables tab.
 
 ## Project Structure
 

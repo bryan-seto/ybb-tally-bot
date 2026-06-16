@@ -28,8 +28,8 @@ describe('SplitRulesService', () => {
 
       // Test: Get split rule for known category
       const groceriesRule = await service.getSplitRule('Groceries');
-      expect(groceriesRule.userAPercent).toBe(0.7);
-      expect(groceriesRule.userBPercent).toBe(0.3);
+      expect(groceriesRule.userAPercent).toBe(0.5);
+      expect(groceriesRule.userBPercent).toBe(0.5);
 
       // Test: Get split rule for another known category
       const foodRule = await service.getSplitRule('Food');
@@ -38,8 +38,8 @@ describe('SplitRulesService', () => {
 
       // Test: Get split rule for unknown category (should return global default)
       const unknownRule = await service.getSplitRule('UnknownCategory');
-      expect(unknownRule.userAPercent).toBe(0.7);
-      expect(unknownRule.userBPercent).toBe(0.3);
+      expect(unknownRule.userAPercent).toBe(0.5);
+      expect(unknownRule.userBPercent).toBe(0.5);
     });
 
     it('should return defaults when Settings.value is null', async () => {
@@ -51,8 +51,8 @@ describe('SplitRulesService', () => {
       } as any);
 
       const rule = await service.getSplitRule('Groceries');
-      expect(rule.userAPercent).toBe(0.7);
-      expect(rule.userBPercent).toBe(0.3);
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
     });
   });
 
@@ -76,8 +76,8 @@ describe('SplitRulesService', () => {
 
       // Test: Groceries should return default (not in custom config)
       const groceriesRule = await service.getSplitRule('Groceries');
-      expect(groceriesRule.userAPercent).toBe(0.7);
-      expect(groceriesRule.userBPercent).toBe(0.3);
+      expect(groceriesRule.userAPercent).toBe(0.5);
+      expect(groceriesRule.userBPercent).toBe(0.5);
     });
 
     it('should merge custom config with defaults', async () => {
@@ -99,8 +99,8 @@ describe('SplitRulesService', () => {
 
       // Test: Groceries uses default (merged)
       const groceriesRule = await service.getSplitRule('Groceries');
-      expect(groceriesRule.userAPercent).toBe(0.7);
-      expect(groceriesRule.userBPercent).toBe(0.3);
+      expect(groceriesRule.userAPercent).toBe(0.5);
+      expect(groceriesRule.userBPercent).toBe(0.5);
     });
   });
 
@@ -123,8 +123,8 @@ describe('SplitRulesService', () => {
 
     it('should normalize "grocery" to "Groceries"', async () => {
       const rule = await service.getSplitRule('grocery');
-      expect(rule.userAPercent).toBe(0.7);
-      expect(rule.userBPercent).toBe(0.3);
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
     });
 
     it('should normalize "dining" to "Food"', async () => {
@@ -233,8 +233,8 @@ describe('SplitRulesService', () => {
 
       // Should return defaults (empty object merged with defaults)
       const rule = await service.getSplitRule('Groceries');
-      expect(rule.userAPercent).toBe(0.7);
-      expect(rule.userBPercent).toBe(0.3);
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
     });
 
     it('should return defaults when database contains null value', async () => {
@@ -284,13 +284,13 @@ describe('SplitRulesService', () => {
 
       // Groceries should use default (invalid rule filtered out)
       const groceriesRule = await service.getSplitRule('Groceries');
-      expect(groceriesRule.userAPercent).toBe(0.7);
-      expect(groceriesRule.userBPercent).toBe(0.3);
+      expect(groceriesRule.userAPercent).toBe(0.5);
+      expect(groceriesRule.userBPercent).toBe(0.5);
 
       // Bills should use default (invalid structure filtered out)
       const billsRule = await service.getSplitRule('Bills');
-      expect(billsRule.userAPercent).toBe(0.7);
-      expect(billsRule.userBPercent).toBe(0.3);
+      expect(billsRule.userAPercent).toBe(0.5);
+      expect(billsRule.userBPercent).toBe(0.5);
     });
   });
 
@@ -400,5 +400,29 @@ describe('SplitRulesService', () => {
       expect(rule.userBPercent).toBe(0.5);
     });
   });
-});
 
+  // TDD Contract Tests (as specified in the plan)
+  describe('TDD Contract Tests', () => {
+    beforeEach(() => {
+      vi.mocked(prisma.settings.findUnique).mockResolvedValue(null);
+    });
+
+    it('Test: Household Defaults - should return 50/50 for Groceries', async () => {
+      const rule = await service.getSplitRule('Groceries');
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
+      // Constraint: Must not return 0.7/0.3
+      expect(rule.userAPercent).not.toBe(0.7);
+      expect(rule.userBPercent).not.toBe(0.3);
+    });
+
+    it('Test: Unknown Category Fallback - should return 50/50 for AlienTechnology', async () => {
+      const rule = await service.getSplitRule('AlienTechnology');
+      expect(rule.userAPercent).toBe(0.5);
+      expect(rule.userBPercent).toBe(0.5);
+      // Constraint: Must use GLOBAL_DEFAULT (no longer 0.7/0.3)
+      expect(rule.userAPercent).not.toBe(0.7);
+      expect(rule.userBPercent).not.toBe(0.3);
+    });
+  });
+});

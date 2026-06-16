@@ -179,8 +179,15 @@ export class PhotoHandler {
       const userAName = getUserAName();
       const userBName = getUserBName();
       
+      // Escape special Markdown chars in dynamic strings (e.g. merchant names like "AMAZE*")
+      const escapeMd = (s: string) => s.replace(/[*_`[\]()~>#+=|{}.!\\-]/g, '\\$&');
+
       savedTransactions.forEach(tx => {
-        summary += `• **${tx.description}**: SGD $${tx.amountSGD.toFixed(2)} (${tx.category})`;
+        summary += `• **${escapeMd(tx.description ?? '')}**: ${
+          tx.currency !== 'SGD' && tx.originalAmount != null
+            ? `${tx.currency} ${tx.originalAmount.toLocaleString()} (≈ SGD $${tx.amountSGD.toFixed(2)})`
+            : `SGD $${tx.amountSGD.toFixed(2)}`
+        } (${tx.category})`;
         
         // Add split details if available
         if (tx.bryanPercentage !== null && tx.hweiYeenPercentage !== null) {
@@ -188,7 +195,7 @@ export class PhotoHandler {
           const userBPercent = Math.round(tx.hweiYeenPercentage * 100);
           const userAAmount = tx.amountSGD * tx.bryanPercentage;
           const userBAmount = tx.amountSGD * tx.hweiYeenPercentage;
-          summary += `\n  📊 Split: ${userAName} ${userAPercent}% ($${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% ($${userBAmount.toFixed(2)})`;
+          summary += `\n  📊 Split: ${userAName} ${userAPercent}% (S$${userAAmount.toFixed(2)}) / ${userBName} ${userBPercent}% (S$${userBAmount.toFixed(2)})`;
         }
         summary += '\n';
       });

@@ -412,6 +412,84 @@ describe('HistoryService - Characterization Tests', () => {
 
       expect(result).toMatchSnapshot();
     });
+
+    it('should show original foreign amount and SGD equivalent for non-SGD with FX data', () => {
+      const tx = {
+        id: BigInt('6'),
+        date: mockDate,
+        merchant: 'Pho shop',
+        amount: 2.45,          // amountSGD
+        currency: 'VND',
+        originalAmount: 50000,
+        fxRate: 0.000049,
+        status: 'unsettled' as const,
+        category: 'Food',
+        description: 'pho',
+        paidBy: 'Bryan',
+      };
+
+      const result = historyService.formatTransactionListItem(tx);
+
+      // Should show "VND 50,000 → S$2.45 (@ 0.000049)" NOT "VND 2.45"
+      expect(result).toMatchSnapshot();
+      expect(result).toContain('VND 50,000');
+      expect(result).toContain('S$2.45');
+      expect(result).not.toMatch(/VND 2\.45/); // the old bug
+    });
+
+    it('should show JPY original + SGD for non-SGD with FX data', () => {
+      const tx = {
+        id: BigInt('7'),
+        date: mockDate,
+        merchant: 'ramen',
+        amount: 10.51,         // amountSGD
+        currency: 'JPY',
+        originalAmount: 1200,
+        fxRate: 0.008759,
+        status: 'unsettled' as const,
+        category: 'Food',
+        description: 'ramen',
+        paidBy: 'Bryan',
+      };
+
+      const result = historyService.formatTransactionListItem(tx);
+
+      expect(result).toMatchSnapshot();
+      expect(result).toContain('JPY 1,200');
+      expect(result).toContain('S$10.51');
+      expect(result).not.toMatch(/JPY 10\.51/); // the old bug
+    });
+  });
+
+  describe('formatTransactionDetail with FX data', () => {
+    const mockDate = new Date('2024-01-15T12:00:00.000Z');
+
+    it('should show original + SGD + rate in detail Amount line for non-SGD', () => {
+      const tx = {
+        id: BigInt('10'),
+        date: mockDate,
+        merchant: 'ramen',
+        amount: 10.51,         // amountSGD
+        currency: 'JPY',
+        originalAmount: 1200,
+        fxRate: 0.008759,
+        status: 'unsettled' as const,
+        category: 'Food',
+        description: 'ramen',
+        paidBy: 'Bryan',
+        payerId: BigInt('109284773'),
+        payerRole: 'Bryan',
+        splitType: 'FIFTY_FIFTY',
+        bryanPercentage: 0.5,
+        hweiYeenPercentage: 0.5,
+      };
+
+      const result = historyService.formatTransactionDetail(tx);
+
+      expect(result).toMatchSnapshot();
+      expect(result).toContain('JPY 1,200 → S$10.51');
+      expect(result).toContain('0.008759');
+    });
   });
 });
 

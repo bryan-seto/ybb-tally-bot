@@ -1,12 +1,12 @@
 import { Context, Markup } from 'telegraf';
-import QuickChart from 'quickchart-js';
 import { prisma } from '../../lib/prisma';
 import { USER_NAMES } from '../../config';
 import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
-import { getMonthsAgo, formatDate } from '../../utils/dateHelpers';
+import { MonthlyExpenseReportService } from '../../services/monthlyExpenseReportService';
+import { formatDate } from '../../utils/dateHelpers';
 
 /**
  * Handler for menu navigation callbacks
@@ -21,13 +21,12 @@ export class MenuCallbackHandler implements ICallbackHandler {
 
   canHandle(data: string): boolean {
     return data === 'open_menu' || 
-           data === 'menu_search' || 
-           data === 'menu_reports' || 
            data === 'menu_balance' || 
            data === 'menu_unsettled' || 
            data === 'menu_history' || 
            data === 'menu_add' ||
-           data === 'menu_edit_last';
+           data === 'menu_edit_last' ||
+           data === 'menu_monthly_report';
   }
 
   async handle(ctx: any, data: string): Promise<void> {
@@ -41,12 +40,11 @@ export class MenuCallbackHandler implements ICallbackHandler {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: '🔍 Search', callback_data: 'menu_search' },
-                { text: '📊 Reports', callback_data: 'menu_reports' },
-              ],
-              [
                 { text: '🔄 Recurring', callback_data: 'menu_recurring' },
                 { text: '⚙️ Split Rules', callback_data: 'OPEN_SPLIT_SETTINGS' },
+              ],
+              [
+                { text: '📊 Monthly Report', callback_data: 'menu_monthly_report' },
               ],
               [
                 { text: '❓ User Guide', url: 'https://github.com/bryan-seto/ybb-tally-bot/blob/main/USER_GUIDE.md' },
@@ -65,7 +63,7 @@ export class MenuCallbackHandler implements ICallbackHandler {
     if (data === 'menu_balance') {
       await ctx.answerCbQuery();
       
-      const message = await this.expenseService.getDetailedBalanceMessage();
+      const message = await this.expenseService.getOutstandingBalanceMessage();
       await ctx.reply(message, { parse_mode: 'Markdown' });
       return;
     }
@@ -101,38 +99,6 @@ export class MenuCallbackHandler implements ICallbackHandler {
       return;
     }
 
-    if (data === 'menu_search') {
-      await ctx.answerCbQuery();
-      
-      session.searchMode = true;
-      await ctx.reply('Type a keyword to search (e.g., "Grab" or "Sushi"):', Markup.keyboard([['❌ Cancel']]).resize());
-      return;
-    }
-
-    if (data === 'menu_reports') {
-      await ctx.answerCbQuery();
-      
-      const report = await this.expenseService.getMonthlyReport(0);
-      const reportDate = getMonthsAgo(0);
-      const monthName = formatDate(reportDate, 'MMMM yyyy');
-
-      const chart = new QuickChart();
-      chart.setConfig({
-        type: 'bar',
-        data: {
-          labels: report.topCategories.map((c) => c.category),
-          datasets: [{ label: 'Spending by Category', data: report.topCategories.map((c) => c.amount) }],
-        },
-      });
-      chart.setWidth(800);
-      chart.setHeight(400);
-      const chartUrl = chart.getUrl();
-
-      const message = this.expenseService.formatMonthlyReportMessage(report, monthName, chartUrl);
-      await ctx.reply(message, { parse_mode: 'Markdown' });
-      return;
-    }
-
     if (data === 'menu_edit_last') {
       await ctx.answerCbQuery();
       
@@ -163,6 +129,15 @@ export class MenuCallbackHandler implements ICallbackHandler {
           },
         }
       );
+      return;
+    }
+
+    if (data === 'menu_monthly_report') {
+      await ctx.answerCbQuery();
+      
+      const monthlyReportService = new MonthlyExpenseReportService();
+      const report = await monthlyReportService.getDetailedMonthlyReport();
+      await ctx.reply(report, { parse_mode: 'Markdown' });
       return;
     }
   }

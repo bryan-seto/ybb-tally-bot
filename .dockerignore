@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+
+# Build output (rebuilt inside the image)
+dist
+
+# Version control / CI
+.git
+.gitignore
+.github
+
+# Secrets and local env (NEVER ship into the image)
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Local-only / docs / dev artifacts
+backups
+reports
+*.md
+docker-compose.yml
+.cursorrules
+.cursor
+.vscode
+.idea
+
+# Logs and OS cruft
+*.log
+.DS_Store

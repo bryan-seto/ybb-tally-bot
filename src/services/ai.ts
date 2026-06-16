@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import { prisma } from '../lib/prisma';
 import { z } from 'zod';
 import * as Sentry from "@sentry/node";
@@ -55,18 +56,50 @@ export interface CorrectionResult {
   actions: CorrectionAction[];
 }
 // Model priority list for waterfall fallback
+// Priority order: Groq flash → Gemini flash → Groq thinking → Gemini thinking
+// Model names: Groq models use format "groq:model-name", Gemini models use just the identifier
 const MODEL_PRIORITY = [
+  // Groq Flash Models (First priority - fastest, high volume)
+  'groq:llama-3.1-8b-instant',
+  'groq:llama-3.1-70b-versatile',
+  'groq:mixtral-8x7b-32768',
+  'groq:gemma-7b-it',
+  // Gemini Flash Models (Second priority - reliable, good quality)
   'gemini-2.5-flash',
-  'gemini-2.0-flash-exp',
-  'gemini-2.0-flash',
-  'gemini-2.5-flash-lite'
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-3.0-flash',
+  // Groq Thinking Models (Third priority - better quality, slower)
+  'groq:llama-3.3-70b-versatile',
+  'groq:llama-4-scout-instruct',
+  // Gemini Thinking Models (Last priority - highest quality, slowest)
+  'gemini-3.0-pro-preview',
+  'gemini-3.0-flash-thinking-exp'
+] as const;
+
+// Vision-capable models only (Gemini models support vision, Groq models do not)
+const VISION_MODEL_PRIORITY = [
+  // Gemini Flash Models (First priority - fastest vision models)
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-3.0-flash',
+  // Gemini Thinking Models (Last priority - highest quality, slowest)
+  'gemini-3.0-pro-preview',
+  'gemini-3.0-flash-thinking-exp'
 ] as const;
 
 export class AIService {
   private genAI: GoogleGenerativeAI;
+  private groqClient: Groq | null;
 
-  constructor(apiKey: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
+  constructor(geminiApiKey: string, groqApiKey?: string) {
+    this.genAI = new GoogleGenerativeAI(geminiApiKey);
+    this.groqClient = groqApiKey ? new Groq({ apiKey: groqApiKey }) : null;
     // Models are created on-demand in generateContentWithFallback
   }
 
@@ -94,23 +127,85 @@ export class AIService {
   }
 
   /**
-   * Check if an error is retryable (429 rate limit or 503 overload)
+   * Check if an error is retryable (should try next model)
+   * Returns true for rate limits, quota issues, model availability issues, and other transient errors
+   * Note: 404 (model not found) is treated as retryable to try next model
    */
   private isRetryableError(error: any): boolean {
     const msg = (error.message?.toLowerCase() || '');
     const status = error.status || error.code || error.response?.status;
     
-    return (
-      status === 429 ||
-      status === 503 ||
-      msg.includes('429') ||
-      msg.includes('503') ||
-      msg.includes('quota') ||
-      msg.includes('rate limit') ||
-      msg.includes('too many requests') ||
-      msg.includes('overloaded') ||
-      msg.includes('resource exhausted')
-    );
+    // Retryable HTTP status codes (including 404 for model not found)
+    if (status === 429 || status === 503 || status === 502 || status === 504 || status === 404) {
+      return true;
+    }
+    
+    // Retryable error messages
+    const retryablePatterns = [
+      '429',
+      '503',
+      '502',
+      '504',
+      '404',
+      'not found',
+      'quota',
+      'rate limit',
+      'too many requests',
+      'overloaded',
+      'resource exhausted',
+      'unavailable',
+      'not available',
+      'service unavailable',
+      'model not found',
+      'model unavailable',
+      'is not found',
+      'not supported',
+      'limit exceeded',
+      'exceeded',
+      'timeout',
+      'deadline exceeded',
+      'connection',
+      'network'
+    ];
+    
+    for (const pattern of retryablePatterns) {
+      if (msg.includes(pattern)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Check if an error is fatal (should NOT try other models, e.g., invalid API key)
+   */
+  private isFatalError(error: any): boolean {
+    const msg = (error.message?.toLowerCase() || '');
+    const status = error.status || error.code || error.response?.status;
+    
+    // Fatal HTTP status codes
+    if (status === 401 || status === 403) {
+      return true;
+    }
+    
+    // Fatal error messages
+    const fatalPatterns = [
+      'invalid api key',
+      'unauthorized',
+      'forbidden',
+      'authentication',
+      'permission denied',
+      'invalid key'
+    ];
+    
+    for (const pattern of fatalPatterns) {
+      if (msg.includes(pattern)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**
@@ -118,15 +213,49 @@ export class AIService {
    */
   private async generateContentWithFallback(
     prompt: string | Array<string | { inlineData: { data: string; mimeType: string } }>,
-    onFallback?: FallbackCallback
+    onFallback?: FallbackCallback,
+    modelPriority: readonly string[] = MODEL_PRIORITY
   ): Promise<AIResponse> {
-    for (let i = 0; i < MODEL_PRIORITY.length; i++) {
-      const modelName = MODEL_PRIORITY[i];
+    let lastError: any = null;
+    let hadQuotaError = false; // Track if ANY model failed with quota error
+    
+    for (let i = 0; i < modelPriority.length; i++) {
+      const modelName = modelPriority[i];
       try {
-        const model = this.genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        let text: string;
+        const isGroqModel = modelName.startsWith('groq:');
+        
+        if (isGroqModel) {
+          // Use Groq client
+          if (!this.groqClient) {
+            // Skip Groq models if API key not provided, try next model
+            console.log(`Skipping Groq model ${modelName} - API key not provided`);
+            lastError = new Error('Groq API key not provided');
+            continue;
+          }
+          
+          const actualModelName = modelName.replace('groq:', '');
+          // Groq API only supports text prompts (no images for now)
+          const promptText = Array.isArray(prompt) 
+            ? prompt.map(p => typeof p === 'string' ? p : '[Image data not supported by Groq]').join('\n')
+            : prompt as string;
+          
+          const completion = await this.groqClient.chat.completions.create({
+            model: actualModelName,
+            messages: [
+              { role: 'user', content: promptText }
+            ],
+          });
+          
+          text = completion.choices[0]?.message?.content || '';
+        } else {
+          // Use Gemini client
+          const model = this.genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          text = response.text();
+        }
+        
         
         // Success - return with model info
         return {
@@ -134,29 +263,67 @@ export class AIService {
           usedModel: modelName
         };
       } catch (error: any) {
+        lastError = error;
+        
+        const isFatal = this.isFatalError(error);
         const isRetryable = this.isRetryableError(error);
         
-        if (!isRetryable) {
-          // Non-retryable error - throw immediately
+        // Check if this is a quota error (even if not the last error)
+        const errorMsg = error.message?.toLowerCase() || '';
+        const errorStatus = error.status || error.code || error.response?.status;
+        const isQuotaError = errorStatus === 429 || 
+                            errorMsg.includes('quota') || 
+                            errorMsg.includes('rate limit') ||
+                            errorMsg.includes('exceeded') ||
+                            errorMsg.includes('free tier') ||
+                            errorMsg.includes('limits ran out') ||
+                            errorMsg.includes('too many requests');
+        
+        if (isQuotaError) {
+          hadQuotaError = true; // Track that we had quota errors
+        }
+        
+        
+        // Check for fatal errors (e.g., invalid API key) - don't try other models
+        if (isFatal) {
           throw error;
         }
         
-        // Retryable error - notify via callback BEFORE trying next model
-        if (i < MODEL_PRIORITY.length - 1) {
-          const nextModel = MODEL_PRIORITY[i + 1];
-          if (onFallback) {
-            await onFallback(modelName, nextModel); // Real-time notification
+        // Notify via callback BEFORE trying next model (if available)
+        // Don't show fallback messages - they're noisy and quota errors will be shown in final error
+        if (i < modelPriority.length - 1) {
+          const nextModel = modelPriority[i + 1];
+          if (onFallback && !isQuotaError) {
+            // Only call fallback for non-quota errors (quota errors will be shown in final message)
+            await onFallback(modelName, nextModel);
           }
-          console.log(`Model ${modelName} failed with retryable error, switching to ${nextModel}...`);
+          if (isRetryable) {
+            console.log(`Model ${modelName} failed with retryable error, switching to ${nextModel}...`);
+          } else {
+            console.log(`Model ${modelName} failed (${error.message}), trying next model ${nextModel}...`);
+          }
           continue;
         } else {
-          // All models exhausted
-          throw new Error(`All models exhausted. Last error: ${error.message}`);
+          // This was the last model - throw with comprehensive error
+          const errorMsg = lastError?.message || 'Unknown error';
+          const errorDetails = isRetryable ? 'retryable' : 'non-retryable';
+          
+          // If ANY model failed with quota error (not just the last one), show quota error message
+          if (hadQuotaError) {
+            const quotaError = new Error('AI daily free limits ran out. Upgrade to get more limits.');
+            quotaError.name = 'QuotaExceededError';
+            (quotaError as any).status = 429;
+            (quotaError as any).code = 429;
+            throw quotaError;
+          }
+          
+          throw new Error(`All ${modelPriority.length} models exhausted (${errorDetails}). Last error from ${modelName}: ${errorMsg}`);
         }
       }
     }
     
-    throw new Error('No models available');
+    // Should never reach here, but just in case
+    throw new Error(`No models available. Last error: ${lastError?.message || 'Unknown error'}`);
   }
 
   /**
@@ -182,7 +349,7 @@ IMPORTANT:
 - If multiple images are provided, check if they are parts of the same long receipt. If so, combine them into one transaction.
 - If they are different receipts, provide individual details for each in the "transactions" array.
 - For each transaction, extract:
-  - amount: The total amount in SGD (numbers only).
+  - amount: The exact numeric amount shown (do NOT convert currencies).
   - merchant: The store or service provider name.
   - category: One of "Food", "Transport", "Shopping", "Bills", "Travel", "Other".
   - date: The date in YYYY-MM-DD format (if found).
@@ -198,7 +365,8 @@ Extract the following information in JSON format:
       "date": "string"
     }
   ],
-  "total": number (sum of all amounts in SGD),
+  "total": number (sum of all amounts shown on the receipt),
+  "currency": "string" (the 3-letter ISO currency code from the receipt, e.g. "SGD", "VND", "MYR", "JPY"; default "SGD" if not shown),
   "merchant": "string" (Main merchant or "Multiple Merchants"),
   "category": "string" (Main category or "Multiple Categories")
 }
@@ -213,7 +381,8 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
         },
       }));
 
-      const aiResponse = await this.generateContentWithFallback([prompt, ...imageParts], onFallback);
+      // Use only vision-capable models (Gemini) for receipt processing since Groq doesn't support images
+      const aiResponse = await this.generateContentWithFallback([prompt, ...imageParts], onFallback, VISION_MODEL_PRIORITY);
       const text = aiResponse.text;
       const usedModel = aiResponse.usedModel;
 
@@ -256,19 +425,30 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
 
       const latencyMs = Date.now() - startTime;
 
-      // Log to SystemLog (include model info)
-      await prisma.systemLog.create({
-        data: {
-          userId,
-          event: 'receipt_processed',
-          metadata: {
-            latencyMs,
-            isValid: receiptData.isValid,
-            success: true,
-            usedModel,
-          },
-        },
-      });
+      // Log to SystemLog (include model info) - only if user exists
+      try {
+        const userExists = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        
+        if (userExists) {
+          await prisma.systemLog.create({
+            data: {
+              userId,
+              event: 'receipt_processed',
+              metadata: {
+                latencyMs,
+                isValid: receiptData.isValid,
+                success: true,
+                usedModel,
+              },
+            },
+          });
+        }
+      } catch (logError) {
+        console.error('Error logging receipt processing:', logError);
+      }
 
       return receiptData;
     } catch (error: any) {
@@ -282,18 +462,29 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
         Sentry.captureException(error);
       });
 
-      // Log error to SystemLog
-      await prisma.systemLog.create({
-        data: {
-          userId,
-          event: 'receipt_processed',
-          metadata: {
-            latencyMs,
-            success: false,
-            errorMsg: error.message || 'Unknown error',
-          },
-        },
-      });
+      // Log error to SystemLog - only if user exists
+      try {
+        const userExists = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        
+        if (userExists) {
+          await prisma.systemLog.create({
+            data: {
+              userId,
+              event: 'receipt_processed',
+              metadata: {
+                latencyMs,
+                success: false,
+                errorMsg: error.message || 'Unknown error',
+              },
+            },
+          });
+        }
+      } catch (logError) {
+        console.error('Error logging receipt processing error:', logError);
+      }
 
       throw error;
     }
@@ -319,6 +510,11 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
     }>,
     onFallback?: FallbackCallback
   ): Promise<CorrectionResult> {
+    const userAName = getUserAName();
+    const userBName = getUserBName();
+    const userBShortName = userBName.substring(0, 2);
+    const userBFirstName = userBName.split(' ')[0];
+
     const prompt = `You are a financial assistant bot. A user has sent correction command(s).
 The user might request MULTIPLE changes in one message. Identify ALL actions requested.
 
@@ -346,8 +542,8 @@ Analyze the user's intent and respond in JSON format:
       "action": "UPDATE_SPLIT" | "UPDATE_AMOUNT" | "UPDATE_CATEGORY" | "DELETE" | "UPDATE_PAYER" | "UPDATE_STATUS" | "UPDATE_DATE" | "UPDATE_TIME" | "UPDATE_DESCRIPTION" | "UNKNOWN",
       "transactionId": number (best matching transaction ID),
       "data": {
-        "bryanPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
-        "hweiYeenPercentage": number (0.0-1.0, only for UPDATE_SPLIT),
+        "bryanPercentage": number (0.0-1.0, only for UPDATE_SPLIT, MUST be decimal: 50% = 0.5, 100% = 1.0, 0% = 0.0),
+        "hweiYeenPercentage": number (0.0-1.0, only for UPDATE_SPLIT, MUST be decimal: 50% = 0.5, 100% = 1.0, 0% = 0.0),
         "amountSGD": number (only for UPDATE_AMOUNT),
         "category": string (only for UPDATE_CATEGORY),
         "payerKey": "BRYAN" | "HWEI_YEEN" (only for UPDATE_PAYER),
@@ -363,12 +559,15 @@ Analyze the user's intent and respond in JSON format:
 }
 
 Examples:
-- "split venchi 50-50" → One action: UPDATE_SPLIT, statusMessage: "Updating split for Venchi to 50-50..."
+- "split venchi 50-50" → One action: UPDATE_SPLIT with bryanPercentage: 0.5, hweiYeenPercentage: 0.5, statusMessage: "Updating split for Venchi to 50-50..."
+- "split 100-0" or "split 100/0" → One action: UPDATE_SPLIT with bryanPercentage: 1.0, hweiYeenPercentage: 0.0, statusMessage: "Updating split to 100-0..."
+- "split 0-100" or "split 0/100" → One action: UPDATE_SPLIT with bryanPercentage: 0.0, hweiYeenPercentage: 1.0, statusMessage: "Updating split to 0-100..."
+- "split 70-30" → One action: UPDATE_SPLIT with bryanPercentage: 0.7, hweiYeenPercentage: 0.3, statusMessage: "Updating split to 70-30..."
 - "delete last two" → Two DELETE actions for the two most recent transactions
 - "make the $20 one food and delete the coffee" → Two actions: UPDATE_CATEGORY for the $20 transaction, and DELETE for "coffee"
 - "change amount to $15" → One action: UPDATE_AMOUNT for most recent, statusMessage: "Updating amount to $15.00..."
-- "paid by ${getUserBName()}" or "change payer to ${getUserBName().substring(0, 2)}" → One action: UPDATE_PAYER, payerKey: "HWEI_YEEN", statusMessage: "Updating payer to ${getUserBName()}..."
-- "paid by ${getUserAName()}" → One action: UPDATE_PAYER, payerKey: "BRYAN", statusMessage: "Updating payer to ${getUserAName()}..."
+- "paid by ${userBName}" or "paid by ${userBFirstName}" or "paid by hy" or "paid by Hy" or "change payer to hy" or "change payer to ${userBName}" → One action: UPDATE_PAYER, payerKey: "HWEI_YEEN", statusMessage: "Updating payer to ${userBName}..."
+- "paid by ${userAName}" or "paid by Bryan" or "change payer to ${userAName}" → One action: UPDATE_PAYER, payerKey: "BRYAN", statusMessage: "Updating payer to ${userAName}..."
 - "settle this" or "mark as settled" → One action: UPDATE_STATUS, isSettled: true, statusMessage: "Marking transaction as settled..."
 - "unsettle" or "mark as unsettled" → One action: UPDATE_STATUS, isSettled: false, statusMessage: "Marking transaction as unsettled..."
 - "change date to Dec 30" or "date: 2025-12-30" → One action: UPDATE_DATE, date: "2025-12-30", statusMessage: "Updating date to 2025-12-30..."
@@ -381,10 +580,35 @@ IMPORTANT:
 - For each action, create a user-friendly statusMessage in present continuous tense
 - If user says "last two" or "last 3", create that many DELETE actions
 - Match transactions by description keywords, amounts, or position (last, first, etc.)
+- If user mentions a payer name (e.g., "paid by hy", "payer hy", "change payer to hy"), they want to CHANGE the payer to that person, even if the transaction currently shows a different payer. Match the payer name correctly using PAYER MAPPING rules below.
 
-PAYER MAPPING (canonical):
-- If user says "paid by ${getUserBName().substring(0, 2)}", "${getUserBName()}", "${getUserBName().replace(' ', '')}", "${getUserBName().split(' ')[0]}", etc. → return payerKey: "HWEI_YEEN"
-- If user says "${getUserAName()}", "paid by ${getUserAName()}", etc. → return payerKey: "BRYAN"
+SPLIT PARSING (CRITICAL):
+- When user says "split XX-YY" where XX and YY are numbers, parse as percentages that MUST add up to 100
+- Convert percentages to decimal (0.0-1.0 range): XX% = XX/100, YY% = YY/100
+- Examples: "split 100-0" → bryanPercentage: 1.0, hweiYeenPercentage: 0.0
+- Examples: "split 50-50" → bryanPercentage: 0.5, hweiYeenPercentage: 0.5
+- Examples: "split 0-100" → bryanPercentage: 0.0, hweiYeenPercentage: 1.0
+- Examples: "split 70-30" → bryanPercentage: 0.7, hweiYeenPercentage: 0.3
+- CRITICAL: bryanPercentage + hweiYeenPercentage MUST equal 1.0 (100%). If they don't add up to 100, normalize them (e.g., if user says "split 60-40", both must sum to 100; if they say "split 60-30", this is invalid - either reject or normalize proportionally)
+
+PAYER MAPPING (canonical - CRITICAL):
+The two users are:
+1. User A: ${userAName} (role: Bryan) - payerKey: "BRYAN"
+2. User B: ${userBName} (role: HweiYeen) - payerKey: "HWEI_YEEN"
+
+**IMPORTANT: "hy", "Hy", "HY" (case-insensitive) ALWAYS refers to User B (HweiYeen), NOT User A (Bryan).**
+
+For User B (HweiYeen):
+- Full name: "${userBName}"
+- First name: "${userBFirstName}"
+- Short forms/nicknames: "hy", "Hy", "HY", "${userBShortName}", or any substring of "${userBName}"
+- Examples that map to HWEI_YEEN: "paid by ${userBName}", "paid by ${userBFirstName}", "paid by hy", "paid by Hy", "paid by HY", "paid by ${userBShortName}", "change payer to hy", "change payer to ${userBName}", "payer hy", etc.
+- If the user's input contains "hy" (case-insensitive) or matches any part of "${userBName}", return payerKey: "HWEI_YEEN"
+
+For User A (Bryan):
+- Full name: "${userAName}"
+- Examples that map to BRYAN: "${userAName}", "paid by ${userAName}", "paid by Bryan", "change payer to ${userAName}", "payer ${userAName}", etc.
+- If the user's input contains "${userAName}" or "Bryan", return payerKey: "BRYAN"
 
 STATUS MAPPING:
 - "settle", "mark as settled", "mark settled" → isSettled: true
@@ -507,6 +731,7 @@ Return ONLY valid JSON, with no markdown formatting (no \`\`\`json code blocks),
     text: string,
     onFallback?: FallbackCallback
   ): Promise<{ amount: number; description: string; category: string }> {
+    console.log('[DEBUG] processQuickExpense: Called with text:', text);
     const VALID_CATEGORIES = ['Food', 'Transport', 'Shopping', 'Groceries', 'Bills', 'Entertainment', 'Medical', 'Travel', 'Other'];
 
     const prompt = `You are a financial assistant. Parse the following expense message and extract the amount, description, and category.
@@ -535,17 +760,21 @@ Return ONLY valid JSON in this exact format (no markdown, no explanations):
       const responseText = aiResponse.text;
 
       // Extract JSON from response
+      console.log('[DEBUG] processQuickExpense: Extracting JSON from response...');
       const extractedJSON = this.extractJSON(responseText);
       if (!extractedJSON) {
-        console.error('[processQuickExpense] No JSON found in response:', responseText.substring(0, 500));
+        console.error('[FATAL] processQuickExpense: No JSON found in response:', responseText.substring(0, 500));
         throw new Error('No JSON found in response');
       }
+      console.log('[DEBUG] processQuickExpense: Extracted JSON:', extractedJSON);
 
       let parsed;
       try {
+        console.log('[DEBUG] processQuickExpense: Parsing JSON...');
         parsed = JSON.parse(extractedJSON);
+        console.log('[DEBUG] processQuickExpense: Parsed result:', parsed);
       } catch (parseError: any) {
-        console.error('[processQuickExpense] JSON parse error:', {
+        console.error('[FATAL] processQuickExpense: JSON parse error:', {
           error: parseError.message,
           extractedJSON: extractedJSON.substring(0, 200),
           fullResponse: responseText.substring(0, 500)
@@ -560,23 +789,56 @@ Return ONLY valid JSON in this exact format (no markdown, no explanations):
       }
 
       // Validate the parsed data
+      console.log('[DEBUG] processQuickExpense: Validating parsed data...');
       if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
+        console.error('[FATAL] processQuickExpense: Invalid amount:', parsed.amount);
         throw new Error('Invalid amount in response');
       }
       if (typeof parsed.description !== 'string' || parsed.description.trim().length === 0) {
+        console.error('[FATAL] processQuickExpense: Invalid description:', parsed.description);
         throw new Error('Invalid description in response');
       }
       if (typeof parsed.category !== 'string' || !VALID_CATEGORIES.includes(parsed.category)) {
+        console.error('[FATAL] processQuickExpense: Invalid category:', parsed.category, 'Valid categories:', VALID_CATEGORIES);
         throw new Error(`Invalid category in response: ${parsed.category}. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
       }
 
+      console.log('[DEBUG] processQuickExpense: Validation passed, returning result');
       return {
         amount: parsed.amount,
         description: parsed.description.trim(),
         category: parsed.category,
       };
     } catch (error: any) {
-      console.error('Error processing quick expense:', error);
+      console.error('[FATAL] processQuickExpense: Error processing quick expense:', error);
+      console.error('[FATAL] processQuickExpense: Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+        text: text
+      });
+      
+      // Check if it's a quota/rate limit error and provide user-friendly message
+      const errorMsg = error.message?.toLowerCase() || '';
+      const isQuotaError = errorMsg.includes('quota') || 
+                          errorMsg.includes('rate limit') || 
+                          errorMsg.includes('429') ||
+                          errorMsg.includes('exceeded') ||
+                          errorMsg.includes('free tier') ||
+                          errorMsg.includes('limits ran out') ||
+                          error.status === 429 ||
+                          error.code === 429;
+      
+      if (isQuotaError) {
+        const quotaError = new Error('AI daily free limits ran out. Upgrade to get more limits.');
+        quotaError.name = 'QuotaExceededError';
+        (quotaError as any).status = 429;
+        Sentry.captureException(quotaError, {
+          extra: { originalError: error.message, text }
+        });
+        throw quotaError;
+      }
+      
       Sentry.captureException(error);
       throw error;
     }

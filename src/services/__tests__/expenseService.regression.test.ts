@@ -2,17 +2,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ExpenseService } from '../expenseService';
 import { prisma } from '../../lib/prisma';
 
-vi.mock('../../lib/prisma', () => ({
-  prisma: {
-    user: {
-      findFirst: vi.fn(),
+vi.mock('../../lib/prisma', () => {
+  const transaction = {
+    findMany: vi.fn(),
+    create: vi.fn(),
+  };
+  return {
+    prisma: {
+      user: {
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+      },
+      transaction,
+      settings: {
+        findUnique: vi.fn(),
+      },
+      // $transaction runs its callback with a tx client; route tx.transaction back to the mock
+      $transaction: vi.fn(async (cb: any) => cb({ transaction })),
     },
-    transaction: {
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 describe('ExpenseService - Regression Tests for Refactored Methods', () => {
   let expenseService: ExpenseService;
@@ -162,8 +171,8 @@ describe('ExpenseService - Regression Tests for Refactored Methods', () => {
       expect(result.bryanShare).toBe(0);
       expect(result.hweiYeenShare).toBe(0);
       expect(result.totalSpending).toBe(0);
-      expect(result.avgBryanPercent).toBe(70); // Default
-      expect(result.avgHweiYeenPercent).toBe(30); // Default
+      expect(result.avgBryanPercent).toBe(50); // Neutral 50/50 default when no transactions (post 50/50 migration)
+      expect(result.avgHweiYeenPercent).toBe(50); // Default
     });
   });
 
@@ -228,85 +237,6 @@ describe('ExpenseService - Regression Tests for Refactored Methods', () => {
     });
   });
 
-  describe('formatMonthlyReportMessage', () => {
-    it('should include category percentages like old bot.ts', () => {
-      const report = {
-        totalSpend: 100,
-        bryanPaid: 70,
-        hweiYeenPaid: 30,
-        transactionCount: 5,
-        topCategories: [
-          { category: 'Food', amount: 50 },
-          { category: 'Transport', amount: 30 },
-        ],
-        bryanCategories: [
-          { category: 'Food', amount: 35 },
-        ],
-        hweiYeenCategories: [
-          { category: 'Food', amount: 15 },
-        ],
-      };
-
-      const message = expenseService.formatMonthlyReportMessage(
-        report,
-        'December 2025',
-        'https://chart.url'
-      );
-
-      // Should contain percentages
-      expect(message).toContain('(50%)'); // 35/70 = 50%
-      expect(message).toMatch(/Food.*\(50%\)/);
-      expect(message).toContain('📊 **Monthly Report');
-      expect(message).toContain('December 2025');
-      expect(message).toContain('[View Chart](https://chart.url)');
-    });
-
-    it('should handle zero paid amount gracefully', () => {
-      const report = {
-        totalSpend: 50,
-        bryanPaid: 0,
-        hweiYeenPaid: 50,
-        transactionCount: 1,
-        topCategories: [],
-        bryanCategories: [],
-        hweiYeenCategories: [
-          { category: 'Food', amount: 50 },
-        ],
-      };
-
-      const message = expenseService.formatMonthlyReportMessage(
-        report,
-        'December 2025',
-        'https://chart.url'
-      );
-
-      // Should show 0% for Bryan categories since he paid nothing
-      expect(message).toContain('No categories found'); // Bryan has no categories
-      expect(message).toContain('(100%)'); // Hwei Yeen's category is 100% of her spending
-    });
-
-    it('should show "No categories found" when empty', () => {
-      const report = {
-        totalSpend: 0,
-        bryanPaid: 0,
-        hweiYeenPaid: 0,
-        transactionCount: 0,
-        topCategories: [],
-        bryanCategories: [],
-        hweiYeenCategories: [],
-      };
-
-      const message = expenseService.formatMonthlyReportMessage(
-        report,
-        'December 2025',
-        'https://chart.url'
-      );
-
-      expect(message).toContain('No categories found');
-      expect(message).toContain('Total Spend: SGD $0.00');
-    });
-  });
-
   describe('recordAISavedTransactions', () => {
     it('should maintain backward compatibility with AI service', async () => {
       const receiptData = {
@@ -328,6 +258,7 @@ describe('ExpenseService - Regression Tests for Refactored Methods', () => {
         payer: { id: BigInt(1), role: 'Bryan' },
       } as any);
 
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: BigInt(1) } as any); // payer-exists check
       vi.mocked(prisma.transaction.findMany).mockResolvedValue([]);
 
       const result = await expenseService.recordAISavedTransactions(

@@ -8,6 +8,7 @@ import { RecurringExpenseService } from './services/recurringExpenseService';
 import { AnalyticsService } from './services/analyticsService';
 import { SplitRulesService } from './services/splitRulesService';
 import { formatDate } from './utils/dateHelpers';
+import { formatBalanceHeader } from './utils/balanceHeader';
 import { prisma } from './lib/prisma';
 import { CONFIG, USER_NAMES, USER_IDS, getAllowedUserIds, isAuthorizedUserId, getUserIdByRole, getNameByUserId, getUserNameByRole } from './config';
 import { CommandHandlers } from './handlers/commandHandlers';
@@ -27,7 +28,7 @@ function getGreeting(userId: string): string {
 }
 
 // Session data interface
-interface BotSession {
+export interface BotSession {
   awaitingAmountConfirmation?: boolean;
   awaitingPayer?: boolean;
   manualAddMode?: boolean;
@@ -46,10 +47,15 @@ interface BotSession {
   editLastMode?: boolean;
   editLastAction?: 'amount' | 'category' | 'split';
   editLastTransactionId?: bigint;
-  searchMode?: boolean;
   pendingReceipts?: { [key: string]: any };
   waitingForSplitInput?: boolean;
   splitSettingsCategory?: string;
+  editingTxId?: string;
+  // Payment mode for partial settlement
+  paymentMode?: boolean;
+  paymentOutstanding?: number;
+  paymentUserOwes?: number;
+  paymentOwedTo?: string;
 }
 
 interface PendingPhoto {
@@ -80,9 +86,9 @@ export class YBBTallyBot {
   private botUsername: string = '';
   private isColdStart: boolean = true;
 
-  constructor(token: string, geminiApiKey: string, allowedUserIds: string) {
+  constructor(token: string, geminiApiKey: string, allowedUserIds: string, groqApiKey?: string) {
     this.bot = new Telegraf(token);
-    this.aiService = new AIService(geminiApiKey);
+    this.aiService = new AIService(geminiApiKey, groqApiKey);
     this.expenseService = new ExpenseService();
     this.historyService = new HistoryService();
     this.backupService = new BackupService();
@@ -225,26 +231,35 @@ export class YBBTallyBot {
         // Silently reject - do NOT reply to avoid revealing bot existence
         return;
       }
-
+      
       // Log all interactions (only for authorized users)
+      // Only log if user exists in User table to avoid foreign key constraint errors
       try {
-        let command = 'photo';
-        if (ctx.message && 'text' in ctx.message && ctx.message.text) {
-          command = ctx.message.text;
-        } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery && ctx.callbackQuery.data) {
-          command = ctx.callbackQuery.data;
-        }
-        
-        await prisma.systemLog.create({
-          data: {
-            userId: BigInt(userId),
-            event: 'command_used',
-            metadata: {
-              command,
-              chatType: ctx.chat?.type,
-            },
-          },
+        // Check if user exists before logging
+        const userExists = await prisma.user.findUnique({
+          where: { id: BigInt(userId) },
+          select: { id: true },
         });
+        
+        if (userExists) {
+          let command = 'photo';
+          if (ctx.message && 'text' in ctx.message && ctx.message.text) {
+            command = ctx.message.text;
+          } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery && ctx.callbackQuery.data) {
+            command = ctx.callbackQuery.data;
+          }
+          
+          await prisma.systemLog.create({
+            data: {
+              userId: BigInt(userId),
+              event: 'command_used',
+              metadata: {
+                command,
+                chatType: ctx.chat?.type,
+              },
+            },
+          });
+        }
       } catch (error) {
         console.error('Error logging interaction:', error);
       }
@@ -287,63 +302,53 @@ export class YBBTallyBot {
    * Get random balance header from templates
    */
   private async getRandomBalanceHeader(): Promise<string> {
-    const balance = await this.expenseService.calculateOutstandingBalance();
-    
-    // Handle settled state
-    if (balance.bryanOwes === 0 && balance.hweiYeenOwes === 0) {
-      return '🎉 All settled! Balance is $0.00';
-    }
+    // Use calculateNetBalance directly to get who-owes-whom info
+    const netBalance = await this.expenseService.calculateNetBalance();
 
     // Get user names from config
     const bryanName = getUserNameByRole('Bryan');
     const hweiYeenName = getUserNameByRole('HweiYeen');
 
-    // Pick random template
-    const templates: string[] = [];
-    
-    if (balance.bryanOwes > 0) {
-      templates.push(`📈 Scoreboard: ${hweiYeenName} is up by $${balance.bryanOwes.toFixed(2)}`);
-      templates.push(`👸 ${hweiYeenName} ➡️ 🤴 ${bryanName}: $${balance.bryanOwes.toFixed(2)}`);
-      templates.push(`🍪 Treat Status: ${bryanName} owes ${hweiYeenName} $${balance.bryanOwes.toFixed(2)}`);
-    } else if (balance.hweiYeenOwes > 0) {
-      templates.push(`📈 Scoreboard: ${bryanName} is up by $${balance.hweiYeenOwes.toFixed(2)}`);
-      templates.push(`🤴 ${bryanName} ➡️ 👸 ${hweiYeenName}: $${balance.hweiYeenOwes.toFixed(2)}`);
-      templates.push(`🍪 Treat Status: ${hweiYeenName} owes ${bryanName} $${balance.hweiYeenOwes.toFixed(2)}`);
-    }
-
-    if (templates.length === 0) {
-      return '💰 Balance Status';
-    }
-
-    const randomIndex = Math.floor(Math.random() * templates.length);
-    return templates[randomIndex];
+    // Delegate to the pure, unit-tested helper (FEAT-2: subject-inclusive header)
+    return formatBalanceHeader(
+      { netOutstanding: netBalance.netOutstanding, whoOwes: netBalance.whoOwes },
+      bryanName,
+      hweiYeenName
+    );
   }
 
   /**
    * Get dashboard message content
    */
   private async getDashboardMessage(): Promise<string> {
-    // Get random header
-    const header = await this.getRandomBalanceHeader();
-    
-    // Get last 3 transactions
-    const transactions = await this.historyService.getRecentTransactions(3, 0);
-    
-    // Build activity feed
-    let activityFeed = '';
-    if (transactions.length > 0) {
-      activityFeed = '\n\n📋 **Latest Activity:**\n';
-      for (const tx of transactions) {
-        const line = this.historyService.formatTransactionListItem(tx);
-        activityFeed += `${line}\n`;
-      }
-    } else {
-      activityFeed = '\n\n📋 **Latest Activity:**\nNo transactions yet.';
+    // Get random header — falls back gracefully on DB error
+    let header = '💰 Balance Status';
+    try {
+      header = await this.getRandomBalanceHeader();
+    } catch (headerErr: any) {
+      console.error('[getDashboardMessage] Balance header failed:', headerErr?.message ?? headerErr);
     }
-    
+
+    // Get last 3 transactions — falls back gracefully on DB error
+    let activityFeed = '\n\n📋 **Latest Activity:**\nUnavailable right now.';
+    try {
+      const transactions = await this.historyService.getRecentTransactions(3, 0);
+      if (transactions.length > 0) {
+        activityFeed = '\n\n📋 **Latest Activity:**\n';
+        for (const tx of transactions) {
+          const line = this.historyService.formatTransactionListItem(tx);
+          activityFeed += `${line}\n`;
+        }
+      } else {
+        activityFeed = '\n\n📋 **Latest Activity:**\nNo transactions yet.';
+      }
+    } catch (histErr: any) {
+      console.error('[getDashboardMessage] Recent transactions failed:', histErr?.message ?? histErr);
+    }
+
     // Footer instruction
     const footer = '\n👇 **Quick Record:** Send a photo or type \'5 Coffee\'.\n💡 **Tip:** Made a mistake? Type \'edit /15 20\' to change amount, or \'edit /15 lunch\' to change description.';
-    
+
     return `${header}${activityFeed}${footer}`;
   }
 
@@ -483,9 +488,6 @@ export class YBBTallyBot {
     // Settle all expenses command
     this.bot.command('settle', async (ctx) => await this.commandHandlers.handleSettle(ctx));
 
-    // Monthly report command
-    this.bot.command('report', async (ctx) => await this.commandHandlers.handleReport(ctx));
-
     // Manual add command
     this.bot.command('add', async (ctx) => {
       if (!ctx.session) {
@@ -506,6 +508,10 @@ export class YBBTallyBot {
 
     // Detailed balance command
     this.bot.command('detailedBalance', async (ctx) => await this.commandHandlers.handleDetailedBalance(ctx));
+
+    // FX rate management
+    this.bot.command('setrate', async (ctx) => await this.commandHandlers.handleSetRate(ctx));
+    this.bot.command('clearrate', async (ctx) => await this.commandHandlers.handleClearRate(ctx));
 
     // Fixed command (admin only - for error recovery)
     this.bot.command('fixed', async (ctx) => await this.commandHandlers.handleFixed(ctx));

@@ -6,10 +6,10 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 ✅ **Status:** Settled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Restaurant
-💰 **Amount:** SGD $50.50
+💰 **Amount:** S$50.50
 📂 **Category:** Food
 👤 **Paid By:** Bryan
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
 ✅ Settled (No active debt)
 📝 **Description:** Lunch"
@@ -21,7 +21,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 🔴 **Status:** Unsettled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Grocery Store
-💰 **Amount:** SGD $100.00
+💰 **Amount:** S$100.00
 📂 **Category:** Groceries
 👤 **Paid By:** Bryan
 ⚖️ **Split:** 50% / 50%
@@ -36,7 +36,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 ✅ **Status:** Settled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Bills Payment
-💰 **Amount:** SGD $150.00
+💰 **Amount:** S$150.00
 📂 **Category:** Bills
 👤 **Paid By:** Bryan
 ⚖️ **Split:** 100% (Bryan) / 0% (HY)
@@ -51,7 +51,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 🔴 **Status:** Unsettled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Shopping Mall
-💰 **Amount:** SGD $200.00
+💰 **Amount:** S$200.00
 📂 **Category:** Shopping
 👤 **Paid By:** Hwei Yeen
 ⚖️ **Split:** 70% (Bryan) / 30% (HY)
@@ -66,10 +66,10 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 ✅ **Status:** Settled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Coffee Shop
-💰 **Amount:** SGD $5.50
+💰 **Amount:** S$5.50
 📂 **Category:** Food
 👤 **Paid By:** Bryan
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
 ✅ Settled (No active debt)
 📝 **Description:** Coffee"
@@ -81,7 +81,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 🔴 **Status:** Unsettled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** International Store
-💰 **Amount:** USD 50.00
+💰 **Amount:** S$50.00
 📂 **Category:** Shopping
 👤 **Paid By:** Bryan
 ⚖️ **Split:** 60% (Bryan) / 40% (HY)
@@ -96,24 +96,43 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail > sho
 🔴 **Status:** Unsettled
 📅 **Date:** 15 Jan 2024, 12:00 PM
 🏪 **Merchant:** Grab
-💰 **Amount:** SGD $25.75
+💰 **Amount:** S$25.75
 📂 **Category:** Transport
 👤 **Paid By:** Hwei Yeen
-⚖️ **Split:** 70% Bryan / 30% HY
+⚖️ **Split:** 50% Bryan / 50% HY
 ⚖️ **BALANCE IMPACT**
-🔴 👉 Bryan owes Hwei Yeen $18.02
+🔴 👉 Bryan owes Hwei Yeen $12.88
 📝 **Description:** Taxi ride"
 `;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Store\\_with\\_underscores\\*and\\*special\\[chars\\]* - $100.00"`;
+exports[`HistoryService - Characterization Tests > formatTransactionDetail with FX data > should show original + SGD + rate in detail Amount line for non-SGD 1`] = `
+"💳 **Transaction Details**
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format SGD currency transaction 1`] = `"/1 ✅ *Restaurant* - $50.50"`;
+🔴 **Status:** Unsettled
+📅 **Date:** 15 Jan 2024, 12:00 PM
+🏪 **Merchant:** ramen
+💰 **Amount:** JPY 1,200 → S$10.51 (@ 0.008759)
+📂 **Category:** Food
+👤 **Paid By:** Bryan
+⚖️ **Split:** 50% / 50%
+⚖️ **BALANCE IMPACT**
+🔴 👉 Hwei Yeen owes Bryan $5.25
+📝 **Description:** ramen"
+`;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format non-SGD currency transaction 1`] = `"/2 🔴 *International Store* - USD 25.75"`;
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Storewithunderscoresandspecialchars* - S$100.00"`;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format settled transaction 1`] = `"/3 ✅ *Grab* - $15.00"`;
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format SGD currency transaction 1`] = `"/1 ✅ *Restaurant* - S$50.50"`;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format unsettled transaction 1`] = `"/4 🔴 *Coffee Shop* - $5.50"`;
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format non-SGD currency transaction 1`] = `"/2 🔴 *International Store* - S$25.75"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format settled transaction 1`] = `"/3 ✅ *Grab* - S$15.00"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format unsettled transaction 1`] = `"/4 🔴 *Coffee Shop* - S$5.50"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should show JPY original + SGD for non-SGD with FX data 1`] = `"/7 🔴 *ramen* - JPY 1,200 → S$10.51 (@ 0.008759)"`;
+
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should show original foreign amount and SGD equivalent for non-SGD with FX data 1`] = `"/6 🔴 *Pho shop* - VND 50,000 → S$2.45 (@ 0.000049)"`;
 
 exports[`HistoryService - Characterization Tests > getRecentTransactions > should handle transactions with null description and category 1`] = `
 [
@@ -123,8 +142,10 @@ exports[`HistoryService - Characterization Tests > getRecentTransactions > shoul
     "currency": "SGD",
     "date": 2024-01-15T12:00:00.000Z,
     "description": "No description",
+    "fxRate": null,
     "id": 3n,
     "merchant": "No description",
+    "originalAmount": null,
     "paidBy": "Bryan",
     "status": "unsettled",
   },
@@ -141,8 +162,10 @@ exports[`HistoryService - Characterization Tests > getRecentTransactions > shoul
     "currency": "SGD",
     "date": 2024-01-15T12:00:00.000Z,
     "description": "Lunch at Restaurant",
+    "fxRate": null,
     "id": 1n,
     "merchant": "Lunch at Restaurant",
+    "originalAmount": null,
     "paidBy": "Bryan",
     "status": "unsettled",
   },
@@ -152,8 +175,10 @@ exports[`HistoryService - Characterization Tests > getRecentTransactions > shoul
     "currency": "SGD",
     "date": 2024-01-15T12:00:00.000Z,
     "description": "Grab ride",
+    "fxRate": null,
     "id": 2n,
     "merchant": "Grab ride",
+    "originalAmount": null,
     "paidBy": "Hwei Yeen",
     "status": "settled",
   },
@@ -168,9 +193,11 @@ exports[`HistoryService - Characterization Tests > getTransactionById > should h
   "currency": "SGD",
   "date": 2024-01-15T12:00:00.000Z,
   "description": "Grocery shopping",
+  "fxRate": null,
   "hweiYeenPercentage": 0.3,
   "id": 2n,
   "merchant": "Grocery shopping",
+  "originalAmount": null,
   "paidBy": "Hwei Yeen",
   "payerId": 424894363n,
   "payerRole": "HweiYeen",
@@ -187,9 +214,11 @@ exports[`HistoryService - Characterization Tests > getTransactionById > should r
   "currency": "SGD",
   "date": 2024-01-15T12:00:00.000Z,
   "description": "Lunch",
+  "fxRate": null,
   "hweiYeenPercentage": 0.5,
   "id": 1n,
   "merchant": "Lunch",
+  "originalAmount": null,
   "paidBy": "Bryan",
   "payerId": 109284773n,
   "payerRole": "Bryan",

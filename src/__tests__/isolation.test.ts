@@ -1,18 +1,32 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import dotenv from 'dotenv';
+import * as fs from 'fs';
+import path from 'path';
 
-// Mock the config module before importing
-vi.mock('../config', async () => {
-  const actual = await vi.importActual('../config');
+// config.ts gates .env.local loading on fs.existsSync(). Mock fs so tests can
+// control whether .env.local "exists". Preserve all other fs functions.
+// config.ts uses `import fs from 'fs'` (default) while this test uses
+// `import * as fs` (named); both must point at the SAME mock fn so that
+// vi.mocked(fs.existsSync) here actually controls config's fs.existsSync.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const existsSync = vi.fn(actual.existsSync);
   return {
     ...actual,
+    existsSync,
+    default: { ...actual, existsSync },
   };
 });
 
 describe('Multi-Instance Isolation Tests', () => {
   const originalEnv = process.env;
+  let dotenvConfigSpy: any;
+  let existsSyncSpy: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    
     // Reset to default values
     process.env = {
       ...originalEnv,
@@ -20,36 +34,112 @@ describe('Multi-Instance Isolation Tests', () => {
       USER_B_ID: '424894363',
       USER_A_NAME: 'Bryan',
       USER_B_NAME: 'Hwei Yeen',
+      TELEGRAM_BOT_TOKEN: '123456:ABC-DEF123456789',
+      GEMINI_API_KEY: 'test_key_12345',
+      BACKUP_RECIPIENT_ID: '109284773',
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+      NODE_ENV: 'test',
     };
   });
 
   afterEach(() => {
     process.env = originalEnv;
     vi.restoreAllMocks();
+    vi.resetModules();
   });
 
-  describe('Config Load Tests', () => {
-    it('should load USER_A_NAME from environment variable', async () => {
-      // Mock environment variable
-      process.env.USER_A_NAME = 'Alex';
-      
-      // Clear module cache to force reload
-      vi.resetModules();
+  describe('Config Precedence & Fallback', () => {
+    it('should prioritize .env.local over process.env when file exists', async () => {
+      // Setup: Mock .env.local to exist and contain USER_A_NAME='FileValue'
+      // Use valid token format (must be at least 35 chars and match pattern)
+      const validToken = '1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+      const mockEnvLocal = {
+        USER_A_NAME: 'FileValue',
+        USER_A_ID: '111111111',
+        USER_B_ID: '222222222',
+        USER_B_NAME: 'FileUserB',
+        TELEGRAM_BOT_TOKEN: validToken,
+        GEMINI_API_KEY: 'test_key_12345',
+        BACKUP_RECIPIENT_ID: '111111111',
+        DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+        NODE_ENV: 'test',
+      };
+
+      // Mock dotenv.config to simulate .env.local loading
+      dotenvConfigSpy = vi.spyOn(dotenv, 'config').mockImplementation((options: any) => {
+        if (options?.path?.includes('.env.local')) {
+          // Simulate loading .env.local values (with override: true)
+          Object.assign(process.env, mockEnvLocal);
+          return { parsed: mockEnvLocal };
+        }
+        if (options?.path?.includes('.env')) {
+          // Simulate loading .env (should not override .env.local)
+          return { parsed: {} };
+        }
+        return { parsed: {} };
+      });
+
+      // config.ts only loads .env.local when fs.existsSync(envLocal) is true.
+      // fs is mocked at module top (vi.mock('fs')); point existsSync at .env.local here.
+      vi.mocked(fs.existsSync).mockImplementation((p: any) =>
+        String(p).includes('.env.local')
+      );
+
+      // Set process.env to different value (will be overridden by .env.local)
+      process.env.USER_A_NAME = 'EnvValue';
+      process.env.USER_A_ID = '109284773';
+      process.env.USER_B_ID = '424894363';
+      process.env.USER_B_NAME = 'Hwei Yeen';
+      process.env.TELEGRAM_BOT_TOKEN = validToken;
+      process.env.GEMINI_API_KEY = 'test_key_12345';
+      process.env.BACKUP_RECIPIENT_ID = '109284773';
+      process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+      process.env.NODE_ENV = 'test';
+
+      // Action: Dynamic import the config module
       const config = await import('../config');
+
+      // Assert: Config value equals 'FileValue' (from .env.local, not process.env)
+      expect(config.getUserAName()).toBe('FileValue');
       
-      // This test will need to be updated once config.ts is refactored
-      // For now, we're testing the contract
-      expect(process.env.USER_A_NAME).toBe('Alex');
+      dotenvConfigSpy.mockRestore();
     });
 
-    it('should return default value when USER_A_NAME is not set', async () => {
-      delete process.env.USER_A_NAME;
+    it('should use process.env when .env.local does not exist', async () => {
+      // Setup: Use valid token format (must be at least 35 chars and match pattern)
+      const validToken = '1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
       
-      vi.resetModules();
+      // Setup: Mock .env.local to NOT exist (return empty/undefined)
+      dotenvConfigSpy = vi.spyOn(dotenv, 'config').mockImplementation((options: any) => {
+        if (options?.path?.includes('.env.local')) {
+          // Simulate .env.local not existing - return empty (doesn't override process.env)
+          return { parsed: {} };
+        }
+        if (options?.path?.includes('.env')) {
+          // Simulate .env file (fallback)
+          return { parsed: {} };
+        }
+        return { parsed: {} };
+      });
+
+      // Setup: Set process.env values (these will be used since .env.local doesn't exist)
+      process.env.USER_A_NAME = 'EnvValue';
+      process.env.USER_A_ID = '109284773';
+      process.env.USER_B_ID = '424894363';
+      process.env.USER_B_NAME = 'Hwei Yeen';
+      process.env.TELEGRAM_BOT_TOKEN = validToken;
+      process.env.GEMINI_API_KEY = 'test_key_12345';
+      process.env.BACKUP_RECIPIENT_ID = '109284773';
+      process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+      process.env.NODE_ENV = 'test';
+
+      // Action: Dynamic import the config module
       const config = await import('../config');
+
+      // Assert: Config value equals 'EnvValue' (from process.env, since .env.local doesn't exist)
+      expect(config.getUserAName()).toBe('EnvValue');
       
-      // After refactor, config.getUserAName() should return 'Bryan' as default
-      expect(process.env.USER_A_NAME).toBeUndefined();
+      dotenvConfigSpy.mockRestore();
     });
   });
 

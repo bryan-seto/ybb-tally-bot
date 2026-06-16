@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 .env.local
+.env.test
+.env.*.local
 *.log
 .DS_Store
 *.tsbuildinfo
@@ -11,3 +13,7 @@ dist/
 
 
 
+
+# Scratchpad Documentation
+FIX_SHIRLYN_DEPLOYMENT.md
+LOCAL_RUNTIME_SETUP.md

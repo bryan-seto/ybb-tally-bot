@@ -3,17 +3,27 @@ import { ExpenseService } from '../expenseService';
 import { prisma } from '../../lib/prisma';
 
 // Mock the entire prisma client
-vi.mock('../../lib/prisma', () => ({
-  prisma: {
-    transaction: {
-      create: vi.fn(),
-      findMany: vi.fn(),
+vi.mock('../../lib/prisma', () => {
+  const transaction = {
+    create: vi.fn(),
+    findMany: vi.fn(),
+  };
+  return {
+    prisma: {
+      transaction,
+      user: {
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+      },
+      settings: {
+        findUnique: vi.fn(),
+      },
+      // $transaction runs its callback with a tx client. recordAISavedTransactions
+      // uses tx.transaction.create, so route it back to the same mock.
+      $transaction: vi.fn(async (cb: any) => cb({ transaction })),
     },
-    user: {
-      findFirst: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 describe('ExpenseService - Optimistic AI Flow', () => {
   let expenseService: ExpenseService;
@@ -45,6 +55,7 @@ describe('ExpenseService - Optimistic AI Flow', () => {
     }));
 
     // Mock balance related calls
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: userId } as any); // payer-exists check
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: BigInt(1), role: 'Bryan' } as any);
     vi.mocked(prisma.transaction.findMany).mockResolvedValue([]);
 
@@ -72,6 +83,7 @@ describe('ExpenseService - Optimistic AI Flow', () => {
       ...data,
       payer: { name: 'Bryan', role: 'Bryan' }
     }));
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: userId } as any); // payer-exists check
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: BigInt(1), role: 'Bryan' } as any);
     vi.mocked(prisma.transaction.findMany).mockResolvedValue([]);
 

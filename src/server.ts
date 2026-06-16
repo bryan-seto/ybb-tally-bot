@@ -11,9 +11,11 @@ export function setupServer(bot: YBBTallyBot) {
   });
 
   app.get('/health', (req: Request, res: Response) => {
+    // Health check should always return 200 once server is up
+    // This allows Railway healthchecks to pass even during async initialization
     res.status(200).json({
       status: 'ok',
-      message: 'Bot is alive',
+      message: 'Server is running',
       timestamp: new Date().toISOString()
     });
   });

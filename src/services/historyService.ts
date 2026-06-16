@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { formatDate } from '../utils/dateHelpers';
+import { formatFxAmountString } from '../utils/fxFormat';
 
 export interface TransactionListItem {
   id: bigint;
@@ -11,6 +12,8 @@ export interface TransactionListItem {
   category: string;
   description: string;
   paidBy: string;
+  originalAmount?: number | null;
+  fxRate?: number | null;
 }
 
 export interface TransactionDetail extends TransactionListItem {
@@ -19,6 +22,8 @@ export interface TransactionDetail extends TransactionListItem {
   splitType?: string;
   bryanPercentage?: number;
   hweiYeenPercentage?: number;
+  originalAmount?: number | null;
+  fxRate?: number | null;
 }
 
 export class HistoryService {
@@ -43,7 +48,9 @@ export class HistoryService {
       merchant: t.description || 'No description',
       amount: t.amountSGD,
       currency: t.currency,
-      status: t.isSettled ? 'settled' : 'unsettled',
+      originalAmount: t.originalAmount ?? null,
+      fxRate: t.fxRate ?? null,
+      status: (t.isSettled || t.category === 'Settlement' || t.category === 'Payment') ? 'settled' : 'unsettled',
       category: t.category || 'Other',
       description: t.description || 'No description',
       paidBy: t.payer.name,
@@ -71,7 +78,7 @@ export class HistoryService {
       merchant: rawTx.description || 'No description',
       amount: rawTx.amountSGD,
       currency: rawTx.currency,
-      status: rawTx.isSettled ? 'settled' : 'unsettled',
+      status: (rawTx.isSettled || rawTx.category === 'Settlement' || rawTx.category === 'Payment') ? 'settled' : 'unsettled',
       category: rawTx.category || 'Other',
       description: rawTx.description || 'No description',
       paidBy: rawTx.payer.name,
@@ -80,6 +87,8 @@ export class HistoryService {
       splitType: rawTx.splitType || undefined,
       bryanPercentage: rawTx.bryanPercentage ?? undefined,
       hweiYeenPercentage: rawTx.hweiYeenPercentage ?? undefined,
+      originalAmount: rawTx.originalAmount ?? null,
+      fxRate: rawTx.fxRate ?? null,
     };
   }
 
@@ -109,30 +118,34 @@ export class HistoryService {
   }
 
   /**
-   * Escape Markdown special characters
+   * Escape Markdown special characters for Telegram Markdown V1.
+   *
+   * IMPORTANT: Telegram Markdown V1 (parse_mode: 'Markdown') does NOT support
+   * backslash escaping — a backslash before a special char is treated as a
+   * literal backslash, not an escape sequence. Using \* in a merchant name like
+   * "AMAZE\* KLOOK..." still leaves an unmatched * that breaks entity parsing.
+   *
+   * Solution: strip the four chars that open/close Markdown formatting markers
+   * (* _ ` [ ]) rather than attempting to escape them.
    */
   private escapeMarkdown(text: string): string {
-    return text.replace(/([_*\[\]()~`>#+=|{}.!-])/g, '\\$1');
+    return text.replace(/[*_`[\]]/g, '');
   }
 
   /**
-   * Format amount string based on currency (for list items)
+   * Format amount string based on currency (for list items in activity feed).
+   * Uses fxFormat so foreign items show "JPY 1,200 → S$10.51 (@ 0.008759)"
+   * instead of the old (broken) "JPY 9.61".
    */
-  private formatAmountString(amount: number, currency: string): string {
-    if (currency === 'SGD') {
-      return `$${amount.toFixed(2)}`;
-    }
-    return `${currency} ${amount.toFixed(2)}`;
+  private formatAmountString(amount: number, currency: string, originalAmount?: number | null, fxRate?: number | null): string {
+    return formatFxAmountString(amount, currency, originalAmount, fxRate);
   }
 
   /**
-   * Format amount string for detail view (includes currency prefix for SGD)
+   * Format amount string for detail view (includes currency prefix for SGD).
    */
-  private formatAmountStringForDetail(amount: number, currency: string): string {
-    if (currency === 'SGD') {
-      return `SGD $${amount.toFixed(2)}`;
-    }
-    return `${currency} ${amount.toFixed(2)}`;
+  private formatAmountStringForDetail(amount: number, currency: string, originalAmount?: number | null, fxRate?: number | null): string {
+    return formatFxAmountString(amount, currency, originalAmount, fxRate);
   }
 
   /**
@@ -140,7 +153,7 @@ export class HistoryService {
    */
   formatTransactionListItem(tx: TransactionListItem): string {
     const statusEmoji = this.getStatusEmoji(tx.status);
-    const amountStr = this.formatAmountString(tx.amount, tx.currency);
+    const amountStr = this.formatAmountString(tx.amount, tx.currency, tx.originalAmount, tx.fxRate);
     
     // Escape merchant name to prevent Markdown parsing errors
     const merchant = this.escapeMarkdown(tx.merchant);
@@ -189,8 +202,8 @@ export class HistoryService {
 
     // 2. The Constants
     const AMOUNT = Number(tx.amount);
-    const BRYAN_PCT = tx.bryanPercentage ?? 0.7; // Default fallback
-    const HY_PCT = tx.hweiYeenPercentage ?? 0.3; // Default fallback
+    const BRYAN_PCT = tx.bryanPercentage ?? 0.5; // Default fallback
+    const HY_PCT = tx.hweiYeenPercentage ?? 0.5; // Default fallback
 
     // 3. The Ledger (Who paid what vs Who consumed what)
     // We use the immutable 'role' field to identify the payer
@@ -227,13 +240,18 @@ export class HistoryService {
     const statusEmoji = this.getStatusEmoji(tx.status);
     const statusText = this.getStatusText(tx.status);
     const dateStr = formatDate(tx.date, 'dd MMM yyyy, hh:mm a');
-    const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency);
+
+    // Amount display: delegate to shared FX formatter
+    // Non-SGD with data: "JPY 1,200 → S$10.51 (@ 0.008759)"
+    // SGD or old record:  "S$45.00"
+    const amountStr = this.formatAmountStringForDetail(tx.amount, tx.currency, tx.originalAmount, tx.fxRate);
+
     const splitDetails = this.formatSplitDetails(tx);
     const balanceImpact = this.formatBalanceImpact(tx);
 
     // Format percentages for display
-    const bryanPercent = Math.round((tx.bryanPercentage ?? 0.7) * 100);
-    const hyPercent = Math.round((tx.hweiYeenPercentage ?? 0.3) * 100);
+    const bryanPercent = Math.round((tx.bryanPercentage ?? 0.5) * 100);
+    const hyPercent = Math.round((tx.hweiYeenPercentage ?? 0.5) * 100);
 
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +

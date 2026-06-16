@@ -29,9 +29,9 @@ export class ValidationError extends Error {
  * Default split rules (hardcoded fallback)
  */
 const DEFAULT_RULES: SplitRulesConfig = {
-  'Groceries': { userAPercent: 0.7, userBPercent: 0.3 },
-  'Bills': { userAPercent: 0.7, userBPercent: 0.3 },
-  'Shopping': { userAPercent: 0.7, userBPercent: 0.3 },
+  'Groceries': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Bills': { userAPercent: 0.5, userBPercent: 0.5 },
+  'Shopping': { userAPercent: 0.5, userBPercent: 0.5 },
   'Food': { userAPercent: 0.5, userBPercent: 0.5 },
   'Travel': { userAPercent: 0.5, userBPercent: 0.5 },
   'Entertainment': { userAPercent: 0.5, userBPercent: 0.5 },
@@ -41,7 +41,7 @@ const DEFAULT_RULES: SplitRulesConfig = {
 /**
  * Global default (when category not found)
  */
-const GLOBAL_DEFAULT: CategorySplitRule = { userAPercent: 0.7, userBPercent: 0.3 };
+const GLOBAL_DEFAULT: CategorySplitRule = { userAPercent: 0.5, userBPercent: 0.5 };
 
 /**
  * Category normalization mappings
