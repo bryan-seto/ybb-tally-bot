@@ -22,17 +22,13 @@ export class AICorrectionHandler extends BaseMessageHandler {
   }
 
   canHandle(text: string, session: any): boolean {
-    // Only handle if text starts with @bot tag
-    // This handler is checked BEFORE other handlers when bot is tagged
-    if (!text.trim().startsWith('@')) {
+    // Only handle if the bot's own username appears in the message (e.g. @YBBTally_Bot)
+    // Fires regardless of where in the message the tag appears, not just at the start.
+    const botUsername = this.getBotUsername?.();
+    if (!botUsername) {
       return false;
     }
-
-    // Don't handle if in manual add or edit mode (unless explicitly tagged)
-    // Actually, if bot is tagged, we should handle it regardless of mode
-    // The caller (MessageHandlers) should clear session modes before routing here
-    
-    return true; // If bot is tagged, this handler should handle it
+    return text.includes(`@${botUsername}`);
   }
 
   async handle(ctx: any, text: string): Promise<void> {

@@ -31,8 +31,14 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       return false;
     }
 
-    // Don't handle if text starts with @ (bot tags should go to AI correction handler)
+    // Don't handle if the bot itself is mentioned anywhere in the message.
+    // startsWith('@') guards plain @OtherUser mentions at the start.
+    // The includes() guard catches mid-sentence bot tags like "hey @bot split venchi".
     if (text.trim().startsWith('@')) {
+      return false;
+    }
+    const botUsername = this.getBotUsername?.();
+    if (botUsername && text.includes(`@${botUsername}`)) {
       return false;
     }
 
