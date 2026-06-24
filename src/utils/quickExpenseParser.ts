@@ -245,3 +245,40 @@ export function parseQuickExpense(text: string): ParsedExpense | null {
   // No pattern matched - return null to use AI instead
   return null;
 }
+
+// ── Multi-line batch parsing ───────────────────────────────────────────────
+
+export interface MultipleExpensesResult {
+  /** Successfully parsed expenses, in input order */
+  parsed: ParsedExpense[];
+  /** Lines that could not be parsed (trimmed, non-empty lines only) */
+  failedLines: string[];
+}
+
+/**
+ * Parse a multi-line message into multiple ParsedExpense objects.
+ *
+ * Each non-empty line is passed through parseQuickExpense individually.
+ * Lines that fail to parse are collected in failedLines (for the caller
+ * to surface a warning). Single-line messages return an array of length 1
+ * (back-compat: existing callers can delegate here directly).
+ */
+export function parseMultipleExpenses(text: string): MultipleExpensesResult {
+  const lines = text.split(/\r?\n/);
+  const parsed: ParsedExpense[] = [];
+  const failedLines: string[] = [];
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue; // skip blank lines
+
+    const result = parseQuickExpense(trimmed);
+    if (result) {
+      parsed.push(result);
+    } else {
+      failedLines.push(trimmed);
+    }
+  }
+
+  return { parsed, failedLines };
+}

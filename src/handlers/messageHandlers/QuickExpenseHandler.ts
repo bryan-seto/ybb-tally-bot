@@ -6,7 +6,7 @@ import { SplitRulesService } from '../../services/splitRulesService';
 import { SessionManager } from './SessionManager';
 import { Markup } from 'telegraf';
 import { getUserAName, getUserBName } from '../../config';
-import { parseQuickExpense } from '../../utils/quickExpenseParser';
+import { parseQuickExpense, parseMultipleExpenses } from '../../utils/quickExpenseParser';
 import { formatFxAmountString } from '../../utils/fxFormat';
 
 /**
@@ -47,6 +47,19 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       return false;
     }
 
+    // Multi-line: if there are ≥2 non-empty lines and the first parseable line
+    // looks like an expense, hand off to handle() which runs the full batch path.
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length >= 2) {
+      // Accept if at least the first line looks like an expense (letters + digits)
+      const firstLine = lines[0];
+      const hasLetters = /[a-zA-Z]/.test(firstLine);
+      const hasNumbers = /\d/.test(firstLine);
+      if (hasLetters && hasNumbers) {
+        return true;
+      }
+    }
+
     // Priority 1.5: Check for Quick Expense pattern (before other handlers)
     // Pattern 1: Number first (e.g., "2 coffee", "130 groceries")
     const quickExpensePattern = /^\d+(\.\d{1,2})?\s+[a-zA-Z].*/;
@@ -76,6 +89,76 @@ export class QuickExpenseHandler extends BaseMessageHandler {
     });
     let statusMsg: any = null;
     try {
+      // ── Multi-line batch path ──────────────────────────────────────────
+      // If the message has ≥2 non-empty lines, attempt to parse each line
+      // individually. Record all parseable lines; report skipped lines.
+      const inputLines = text.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+      if (inputLines.length >= 2) {
+        const { parsed: batchParsed, failedLines } = parseMultipleExpenses(text);
+
+        if (batchParsed.length > 0) {
+          statusMsg = await ctx.reply('👀 Processing expenses...', { parse_mode: 'HTML' });
+
+          const userId = BigInt(ctx.from.id);
+          const confirmations: string[] = [];
+          let lastBalanceMessage = '';
+
+          for (const expense of batchParsed) {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              `⏳ Saving expense ${confirmations.length + 1} of ${batchParsed.length}...`,
+              { parse_mode: 'HTML' }
+            );
+
+            const { transaction, balanceMessage } = await this.expenseService.createSmartExpense(
+              userId,
+              expense.amount,
+              expense.category,
+              expense.description,
+              expense.currency ?? 'SGD'
+            );
+            lastBalanceMessage = balanceMessage;
+
+            // Build per-line display
+            const parsedCurrency: string = expense.currency ?? 'SGD';
+            const amountDisplay = formatFxAmountString(
+              transaction.amountSGD,
+              parsedCurrency,
+              transaction.originalAmount,
+              transaction.fxRate,
+            );
+            const funConfirmation = this.expenseService.getFunConfirmation(expense.category);
+            confirmations.push(`${funConfirmation} ${expense.description} — ${amountDisplay} (${expense.category})`);
+          }
+
+          const summaryLines = confirmations.join('\n');
+          let skippedNote = '';
+          if (failedLines.length > 0) {
+            skippedNote = `\n\n⚠️ Couldn't parse ${failedLines.length} line${failedLines.length > 1 ? 's' : ''}:\n${failedLines.map((l: string) => `• ${l}`).join('\n')}`;
+          }
+
+          const finalMessage = `✅ Recorded ${batchParsed.length} expense${batchParsed.length > 1 ? 's' : ''}:\n${summaryLines}\n\n${lastBalanceMessage}${skippedNote}`;
+
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            statusMsg.message_id,
+            undefined,
+            finalMessage,
+            { parse_mode: 'Markdown' }
+          );
+
+          if (this.showDashboard) {
+            await this.showDashboard(ctx, false);
+          }
+          return;
+        }
+        // If zero lines parsed, fall through to single-expense path
+        // (which will try AI on the full text)
+      }
+
+      // ── Single-expense path (original logic) ─────────────────────────
       // Send initial status message
       statusMsg = await ctx.reply('👀 Processing expense...', { parse_mode: 'HTML' });
       console.log('[DEBUG] handleQuickExpense: Status message sent');
