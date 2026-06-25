@@ -485,5 +485,60 @@ describe('Critical Flows E2E', () => {
       expect(ctx.telegram.editMessageText).toHaveBeenCalled();
     });
   });
+
+  // ==========================================
+  // 💸 FLOW 6: P-3 / E-02 — settle_confirm success is a reply, not an edit
+  // ==========================================
+  describe('Flow 6: settle_confirm success message (P-3 fix)', () => {
+    it('settle_confirm_<id> success arrives as a reply (detectable by harness) not just an edit', async () => {
+      // This is the root-cause regression test for P-3 / E-02.
+      // The bug: SettleCallbackHandler used ctx.editMessageText for the success
+      // message, then called showDashboard which sent a new message.
+      // click_and_poll saw the dashboard first and failed the "🤝"/"settled" check.
+      // Fix: success uses ctx.reply so the harness sees it as a new bot message.
+
+      const bryanUser = await prisma.user.findFirst({ where: { role: 'Bryan' } });
+      if (!bryanUser) throw new Error('Bryan user not found');
+
+      const tx = await createTestTransaction({
+        amountSGD: 50,
+        description: 'Dinner',
+        category: 'Food',
+        payerId: bryanUser.id,
+        isSettled: false,
+      });
+
+      const watermarkId = tx.id.toString();
+      const ctx = createMockContext('', userA, `settle_confirm_${watermarkId}`);
+
+      await callbackHandlers.handleCallback(ctx);
+
+      // The success message MUST arrive via ctx.reply (new message),
+      // not only via ctx.editMessageText.
+      const replyCalls = (ctx.reply as any).mock.calls;
+      const replyTexts = replyCalls.map((c: any[]) => String(c[0]));
+      const hasSettledReply = replyTexts.some(t => t.includes('🤝') || /settled/i.test(t));
+
+      expect(hasSettledReply).toBe(true);
+
+      // Sanity: DB row must be settled
+      const after = await prisma.transaction.findUnique({ where: { id: tx.id } });
+      expect(after?.isSettled).toBe(true);
+    });
+
+    it('settle_confirm_<id> with nothing to settle returns early (idempotency)', async () => {
+      // No unsettled transactions in DB — handler should report "already settled"
+      // and not crash.
+      const ctx = createMockContext('', userA, 'settle_confirm_99999');
+
+      await callbackHandlers.handleCallback(ctx);
+
+      // Should have replied with some message (edit or reply), not thrown
+      const anyReply =
+        (ctx.reply as any).mock.calls.length > 0 ||
+        (ctx.editMessageText as any).mock.calls.length > 0;
+      expect(anyReply).toBe(true);
+    });
+  });
 });
 

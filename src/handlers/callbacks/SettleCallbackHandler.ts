@@ -289,8 +289,9 @@ export class SettleCallbackHandler implements ICallbackHandler {
           });
         }
         
-        // Success response
-        await ctx.editMessageText(
+        // Success response — use reply (not editMessageText) so the harness
+        // can detect it as a new message even when showDashboard fires next.
+        await ctx.reply(
           `🤝 All Settled! Marked ${result.count} transaction${result.count > 1 ? 's' : ''} as paid.`
         );
         
@@ -300,7 +301,7 @@ export class SettleCallbackHandler implements ICallbackHandler {
         }
       } catch (error: any) {
         console.error('Error executing settlement:', error);
-        await ctx.editMessageText('❌ Sorry, an error occurred during settlement. Please try again.');
+        await ctx.reply('❌ Sorry, an error occurred during settlement. Please try again.');
       }
       return;
     }
