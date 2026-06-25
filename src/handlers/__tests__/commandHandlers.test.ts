@@ -151,4 +151,42 @@ describe('Recurring Command Parser', () => {
   });
 });
 
+// ─── Fix 1 regression: escapeMd helper ────────────────────────────────────
+// These tests FAIL before the fix (markdownUtils does not exist yet)
+// and PASS after the fix is applied.
+describe('escapeMd', () => {
+  let escapeMd: (s: string) => string;
+  beforeEach(async () => {
+    const mod = await import('../../utils/markdownUtils');
+    escapeMd = mod.escapeMd;
+  });
+
+  it('escapes unbalanced asterisk (AMAZE* case)', () => {
+    expect(escapeMd('AMAZE* KLOOK TRAVEL SINGAPORE SGP')).toBe('AMAZE\\* KLOOK TRAVEL SINGAPORE SGP');
+  });
+
+  it('escapes underscore', () => {
+    expect(escapeMd('hello_world')).toBe('hello\\_world');
+  });
+
+  it('escapes backtick', () => {
+    expect(escapeMd('`code`')).toBe('\\`code\\`');
+  });
+
+  it('escapes opening square bracket (Telegram Markdown v1 only requires [)', () => {
+    // Telegram Markdown v1 only needs '[' escaped, not ']'
+    expect(escapeMd('[link](url)')).toBe('\\[link](url)');
+  });
+
+  it('leaves safe strings unchanged', () => {
+    expect(escapeMd('cold storage groceries')).toBe('cold storage groceries');
+    expect(escapeMd('pho')).toBe('pho');
+    expect(escapeMd('20 coffee')).toBe('20 coffee');
+  });
+
+  it('escapes backslash', () => {
+    expect(escapeMd('back\\slash')).toBe('back\\\\slash');
+  });
+});
+
 

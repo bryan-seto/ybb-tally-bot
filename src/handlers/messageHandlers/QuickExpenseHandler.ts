@@ -9,6 +9,19 @@ import { getUserAName, getUserBName } from '../../config';
 import { parseQuickExpense, parseMultipleExpenses } from '../../utils/quickExpenseParser';
 import { formatFxAmountString } from '../../utils/fxFormat';
 
+/** Wrap a Telegram API call with a timeout. Rejects with an error on timeout. */
+async function withTelegramTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Telegram API timeout after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 /**
  * Handler for quick expense one-liners (e.g., "130 groceries", "5.50 coffee")
  */
@@ -106,12 +119,14 @@ export class QuickExpenseHandler extends BaseMessageHandler {
           let skippedDuplicates = 0;
 
           for (const expense of batchParsed) {
-            await ctx.telegram.editMessageText(
-              ctx.chat.id,
-              statusMsg.message_id,
-              undefined,
-              `⏳ Saving expense ${confirmations.length + 1} of ${batchParsed.length}...`,
-              { parse_mode: 'HTML' }
+            await withTelegramTimeout(
+              ctx.telegram.editMessageText(
+                ctx.chat.id,
+                statusMsg.message_id,
+                undefined,
+                `⏳ Saving expense ${confirmations.length + 1} of ${batchParsed.length}...`,
+                { parse_mode: 'HTML' }
+              )
             );
 
             const batchIndex = batchParsed.indexOf(expense);
@@ -210,12 +225,14 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       }
 
       // Update status message
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        statusMsg.message_id,
-        undefined,
-        '⏳ Saving expense...',
-        { parse_mode: 'HTML' }
+      await withTelegramTimeout(
+        ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          '⏳ Saving expense...',
+          { parse_mode: 'HTML' }
+        )
       );
 
       // Get user ID
