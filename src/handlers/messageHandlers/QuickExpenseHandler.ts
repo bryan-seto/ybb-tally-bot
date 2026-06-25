@@ -100,8 +100,10 @@ export class QuickExpenseHandler extends BaseMessageHandler {
           statusMsg = await ctx.reply('👀 Processing expenses...', { parse_mode: 'HTML' });
 
           const userId = BigInt(ctx.from.id);
+          const tgMsgId = ctx.message?.message_id ? BigInt(ctx.message.message_id) : undefined;
           const confirmations: string[] = [];
           let lastBalanceMessage = '';
+          let skippedDuplicates = 0;
 
           for (const expense of batchParsed) {
             await ctx.telegram.editMessageText(
@@ -112,14 +114,22 @@ export class QuickExpenseHandler extends BaseMessageHandler {
               { parse_mode: 'HTML' }
             );
 
-            const { transaction, balanceMessage } = await this.expenseService.createSmartExpense(
+            const batchIndex = batchParsed.indexOf(expense);
+            const { transaction, balanceMessage, duplicate } = await this.expenseService.createSmartExpense(
               userId,
               expense.amount,
               expense.category,
               expense.description,
-              expense.currency ?? 'SGD'
+              expense.currency ?? 'SGD',
+              tgMsgId,
+              batchIndex
             );
             lastBalanceMessage = balanceMessage;
+
+            if (duplicate) {
+              skippedDuplicates++;
+              continue;
+            }
 
             // Build per-line display
             const parsedCurrency: string = expense.currency ?? 'SGD';
@@ -139,7 +149,20 @@ export class QuickExpenseHandler extends BaseMessageHandler {
             skippedNote = `\n\n⚠️ Couldn't parse ${failedLines.length} line${failedLines.length > 1 ? 's' : ''}:\n${failedLines.map((l: string) => `• ${l}`).join('\n')}`;
           }
 
-          const finalMessage = `✅ Recorded ${batchParsed.length} expense${batchParsed.length > 1 ? 's' : ''}:\n${summaryLines}\n\n${lastBalanceMessage}${skippedNote}`;
+          // If ALL were duplicates, say so and bail early quietly
+          if (confirmations.length === 0 && skippedDuplicates > 0) {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              `⚠️ Already recorded (duplicate message) — nothing added.`,
+              { parse_mode: 'HTML' }
+            );
+            return;
+          }
+
+          const recordedCount = confirmations.length;
+          const finalMessage = `✅ Recorded ${recordedCount} expense${recordedCount > 1 ? 's' : ''}:\n${summaryLines}\n\n${lastBalanceMessage}${skippedNote}`;
 
           await ctx.telegram.editMessageText(
             ctx.chat.id,
@@ -197,6 +220,7 @@ export class QuickExpenseHandler extends BaseMessageHandler {
 
       // Get user ID
       const userId = BigInt(ctx.from.id);
+      const tgMsgId = ctx.message?.message_id ? BigInt(ctx.message.message_id) : undefined;
       console.log('[DEBUG] handleQuickExpense: User ID:', userId.toString());
 
       // Create smart expense
@@ -211,7 +235,9 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         parsed.amount,
         parsed.category,
         parsed.description,
-        (parsed as any).currency ?? 'SGD'
+        (parsed as any).currency ?? 'SGD',
+        tgMsgId,
+        0
       );
       console.log('[DEBUG] handleQuickExpense: Transaction created successfully:', {
         transactionId: transaction.id.toString(),

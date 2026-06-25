@@ -439,10 +439,13 @@ export class ExpenseService {
     amount: number,
     category: string,
     description: string,
-    currency = 'SGD'
+    currency = 'SGD',
+    telegramMessageId?: bigint,
+    telegramBatchIndex?: number
   ): Promise<{
     transaction: any;
     balanceMessage: string;
+    duplicate?: boolean;
   }> {
     console.log('[DEBUG] createSmartExpense args:', { 
       userId: userId.toString(), 
@@ -480,6 +483,25 @@ export class ExpenseService {
     let fxRate: number | null = null;
     const resolvedCurrency = currency.toUpperCase();
 
+    // ── Idempotency guard ──────────────────────────────────────────────────
+    // If the same Telegram message_id + batch index already exists, skip silently.
+    if (telegramMessageId != null) {
+      const existing = await prisma.transaction.findUnique({
+        where: {
+          telegramMessageId_telegramBatchIndex: {
+            telegramMessageId,
+            telegramBatchIndex: telegramBatchIndex ?? 0,
+          },
+        },
+      });
+      if (existing) {
+        console.log(`[DEDUP] Skipping duplicate: telegramMessageId=${telegramMessageId} batchIndex=${telegramBatchIndex ?? 0}`);
+        const balanceMessage = await this.getOutstandingBalanceMessage();
+        return { transaction: existing, balanceMessage, duplicate: true };
+      }
+    }
+    // ── End idempotency guard ──────────────────────────────────────────────
+
     if (resolvedCurrency !== 'SGD') {
       const fx = await this.fxRateService.convertToSGD(amount, resolvedCurrency);
       amountSGD = fx.sgdAmount;
@@ -499,6 +521,10 @@ export class ExpenseService {
       date: new Date(),
       bryanPercentage: split.bryan,
       hweiYeenPercentage: split.hwei,
+      ...(telegramMessageId != null ? {
+        telegramMessageId,
+        telegramBatchIndex: telegramBatchIndex ?? 0,
+      } : {}),
     };
     console.log('[DEBUG] createSmartExpense: Creating transaction with data:', {
       ...transactionData,
