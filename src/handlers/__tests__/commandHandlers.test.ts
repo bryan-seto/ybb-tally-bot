@@ -185,7 +185,32 @@ describe('escapeMd', () => {
   });
 
   it('escapes backslash', () => {
-    expect(escapeMd('back\\slash')).toBe('back\\\\slash');
+    expect(escapeMd('back\\\\slash')).toBe('back\\\\\\\\slash');
+  });
+
+  // ── U-7…U-14: QA plan hardening cases ──────────────────────────────────
+
+  // U-7: empty string guard
+  it('returns empty string unchanged', () => {
+    expect(escapeMd('')).toBe('');
+  });
+
+  // U-8: all four special chars combined — no double-escape in a single pass
+  it('escapes all four specials in one string without double-escaping', () => {
+    expect(escapeMd('a*b_c`d[e')).toBe('a\\*b\\_c\\`d\\[e');
+  });
+
+  // U-9: backslash-first ordering — an already-escaped asterisk must not double-escape
+  it('backslash-first ordering: \\* input → \\\\\\* (backslash escaped, then asterisk escaped)', () => {
+    // Input: \*  (backslash then asterisk)
+    // Expected: \\* (escaped backslash, then escaped asterisk)
+    expect(escapeMd('\\*')).toBe('\\\\\\*');
+  });
+
+  // U-10: Markdown v1 scope — does NOT escape MarkdownV2-only chars
+  it('does not escape ] ) ~ > # + = | { } ! . - (v1 scope only)', () => {
+    const v2Only = '])(~>#+=|{}.!-';
+    expect(escapeMd(v2Only)).toBe(v2Only);
   });
 });
 
