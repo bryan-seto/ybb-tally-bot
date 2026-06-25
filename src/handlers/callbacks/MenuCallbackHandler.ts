@@ -7,6 +7,7 @@ import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
 import { MonthlyExpenseReportService } from '../../services/monthlyExpenseReportService';
 import { formatDate } from '../../utils/dateHelpers';
+import { escapeMd } from '../../utils/markdownUtils';
 
 /**
  * Handler for menu navigation callbacks
@@ -82,7 +83,7 @@ export class MenuCallbackHandler implements ICallbackHandler {
       let message = `🧾 **Unsettled Transactions**\n\n`;
       last10.forEach((t, index) => {
         const dateStr = formatDate(t.date, 'dd MMM yyyy');
-        message += `${index + 1}. ${dateStr} - ${t.description} ($${t.amount.toFixed(2)}) - ${t.payerName}\n`;
+        message += `${index + 1}. ${dateStr} - ${escapeMd(t.description)} ($${t.amount.toFixed(2)}) - ${escapeMd(t.payerName)}\n`;
       });
       message += `\n**Total Unsettled Transactions: ${pendingTransactions.length}**`;
       

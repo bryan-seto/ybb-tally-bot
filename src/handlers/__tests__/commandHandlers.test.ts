@@ -151,4 +151,67 @@ describe('Recurring Command Parser', () => {
   });
 });
 
+// ─── Fix 1 regression: escapeMd helper ────────────────────────────────────
+// These tests FAIL before the fix (markdownUtils does not exist yet)
+// and PASS after the fix is applied.
+describe('escapeMd', () => {
+  let escapeMd: (s: string) => string;
+  beforeEach(async () => {
+    const mod = await import('../../utils/markdownUtils');
+    escapeMd = mod.escapeMd;
+  });
+
+  it('escapes unbalanced asterisk (AMAZE* case)', () => {
+    expect(escapeMd('AMAZE* KLOOK TRAVEL SINGAPORE SGP')).toBe('AMAZE\\* KLOOK TRAVEL SINGAPORE SGP');
+  });
+
+  it('escapes underscore', () => {
+    expect(escapeMd('hello_world')).toBe('hello\\_world');
+  });
+
+  it('escapes backtick', () => {
+    expect(escapeMd('`code`')).toBe('\\`code\\`');
+  });
+
+  it('escapes opening square bracket (Telegram Markdown v1 only requires [)', () => {
+    // Telegram Markdown v1 only needs '[' escaped, not ']'
+    expect(escapeMd('[link](url)')).toBe('\\[link](url)');
+  });
+
+  it('leaves safe strings unchanged', () => {
+    expect(escapeMd('cold storage groceries')).toBe('cold storage groceries');
+    expect(escapeMd('pho')).toBe('pho');
+    expect(escapeMd('20 coffee')).toBe('20 coffee');
+  });
+
+  it('escapes backslash', () => {
+    expect(escapeMd('back\\\\slash')).toBe('back\\\\\\\\slash');
+  });
+
+  // ── U-7…U-14: QA plan hardening cases ──────────────────────────────────
+
+  // U-7: empty string guard
+  it('returns empty string unchanged', () => {
+    expect(escapeMd('')).toBe('');
+  });
+
+  // U-8: all four special chars combined — no double-escape in a single pass
+  it('escapes all four specials in one string without double-escaping', () => {
+    expect(escapeMd('a*b_c`d[e')).toBe('a\\*b\\_c\\`d\\[e');
+  });
+
+  // U-9: backslash-first ordering — an already-escaped asterisk must not double-escape
+  it('backslash-first ordering: \\* input → \\\\\\* (backslash escaped, then asterisk escaped)', () => {
+    // Input: \*  (backslash then asterisk)
+    // Expected: \\* (escaped backslash, then escaped asterisk)
+    expect(escapeMd('\\*')).toBe('\\\\\\*');
+  });
+
+  // U-10: Markdown v1 scope — does NOT escape MarkdownV2-only chars
+  it('does not escape ] ) ~ > # + = | { } ! . - (v1 scope only)', () => {
+    const v2Only = '])(~>#+=|{}.!-';
+    expect(escapeMd(v2Only)).toBe(v2Only);
+  });
+});
+
 

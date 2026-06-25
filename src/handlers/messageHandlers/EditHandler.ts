@@ -9,6 +9,7 @@ import { Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma';
 import { TransactionDetailHandler } from './TransactionDetailHandler';
 import { executeCorrectionActions } from './CorrectionActionExecutor';
+import { escapeMd } from '../../utils/markdownUtils';
 
 /**
  * Handler for edit operations:
@@ -140,9 +141,9 @@ export class EditHandler extends BaseMessageHandler {
               // change.old and change.new are already numbers
               diffMessage += `💵 Amount: $${Number(change.old).toFixed(2)} ➡️ $${Number(change.new).toFixed(2)}\n`;
             } else if (change.field === 'description') {
-              diffMessage += `📝 Description: "${change.old}" ➡️ "${change.new}"\n`;
+              diffMessage += `📝 Description: "${escapeMd(String(change.old))}" ➡️ "${escapeMd(String(change.new))}"\n`;
             } else if (change.field === 'category') {
-              diffMessage += `📂 Category: ${change.old} ➡️ ${change.new}\n`;
+              diffMessage += `📂 Category: ${escapeMd(String(change.old))} ➡️ ${escapeMd(String(change.new))}\n`;
             }
           });
 

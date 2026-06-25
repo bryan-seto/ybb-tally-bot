@@ -32,14 +32,17 @@ model Transaction {
   date               DateTime  @default(now())
   originalAmount     Float?
   fxRate             Float?
-  isSettled          Boolean   @default(false)
-  splitType          SplitType @default(FULL)
-  bryanPercentage    Float?    @default(0.7)
-  hweiYeenPercentage Float?    @default(0.3)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  payer              User      @relation("Payer", fields: [payerId], references: [id])
+  isSettled           Boolean   @default(false)
+  splitType           SplitType @default(FULL)
+  bryanPercentage     Float?    @default(0.7)
+  hweiYeenPercentage  Float?    @default(0.3)
+  telegramMessageId   BigInt?
+  telegramBatchIndex  Int?      @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  payer               User      @relation("Payer", fields: [payerId], references: [id])
 
+  @@unique([telegramMessageId, telegramBatchIndex])
   @@map("transactions")
 }
 

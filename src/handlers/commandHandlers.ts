@@ -6,6 +6,7 @@ import { HistoryService } from '../services/historyService';
 import { FxRateService } from '../services/fxRateService';
 import { formatDate, getNow } from '../utils/dateHelpers';
 import { USER_NAMES, CONFIG, USER_IDS, getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
+import { escapeMd } from '../utils/markdownUtils';
 
 export class CommandHandlers {
   private fxRateService: FxRateService;
@@ -40,14 +41,13 @@ export class CommandHandlers {
       
       pendingTransactions.forEach((t, index) => {
         const dateStr = formatDate(t.date, 'dd MMM yyyy');
-        message += `${index + 1}. **${t.description}**\n`;
+        message += `${index + 1}. **${escapeMd(t.description)}**\n`;
         message += `   Amount: SGD $${t.amount.toFixed(2)}\n`;
         
         // Map database payer name to config name using role
         const payerDisplayName = t.payerRole === USER_A_ROLE_KEY ? userAName : userBName;
-        message += `   Paid by: ${payerDisplayName}\n`;
-        
-        message += `   Category: ${t.category}\n`;
+        message += `   Paid by: ${escapeMd(payerDisplayName)}\n`;
+        message += `   Category: ${escapeMd(t.category)}\n`;
         message += `   Date: ${dateStr}\n`;
         
         if (t.bryanOwes > 0) {
@@ -64,7 +64,7 @@ export class CommandHandlers {
 
       await ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error: any) {
-      console.error('Error getting pending transactions:', error);
+      console.error('Error getting pending transactions:', error.message, error.response?.description);
       await ctx.reply('Sorry, I encountered an error retrieving pending transactions. Please try again.');
     }
   }

@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma';
 import { formatDate } from '../utils/dateHelpers';
 import { formatFxAmountString } from '../utils/fxFormat';
+import { escapeMd } from '../utils/markdownUtils';
 
 export interface TransactionListItem {
   id: bigint;
@@ -118,18 +119,12 @@ export class HistoryService {
   }
 
   /**
-   * Escape Markdown special characters for Telegram Markdown V1.
-   *
-   * IMPORTANT: Telegram Markdown V1 (parse_mode: 'Markdown') does NOT support
-   * backslash escaping — a backslash before a special char is treated as a
-   * literal backslash, not an escape sequence. Using \* in a merchant name like
-   * "AMAZE\* KLOOK..." still leaves an unmatched * that breaks entity parsing.
-   *
-   * Solution: strip the four chars that open/close Markdown formatting markers
-   * (* _ ` [ ]) rather than attempting to escape them.
+   * Escape Markdown v1 special characters for Telegram Markdown (parse_mode: 'Markdown').
+   * Delegates to the shared escapeMd utility from markdownUtils.ts.
+   * Note: In Telegram Markdown v1, backslash-escaping IS supported for * _ ` [
    */
   private escapeMarkdown(text: string): string {
-    return text.replace(/[*_`[\]]/g, '');
+    return escapeMd(text);
   }
 
   /**
@@ -256,13 +251,13 @@ export class HistoryService {
     return `💳 **Transaction Details**\n\n` +
       `${statusEmoji} **Status:** ${statusText}\n` +
       `📅 **Date:** ${dateStr}\n` +
-      `🏪 **Merchant:** ${tx.merchant}\n` +
+      `🏪 **Merchant:** ${escapeMd(tx.merchant)}\n` +
       `💰 **Amount:** ${amountStr}\n` +
-      `📂 **Category:** ${tx.category}\n` +
-      `👤 **Paid By:** ${tx.paidBy}\n` +
+      `📂 **Category:** ${escapeMd(tx.category)}\n` +
+      `👤 **Paid By:** ${escapeMd(tx.paidBy)}\n` +
       (splitDetails ? `${splitDetails}\n` : `⚖️ **Split:** ${bryanPercent}% Bryan / ${hyPercent}% HY\n`) +
       `⚖️ **BALANCE IMPACT**\n${balanceImpact}\n` +
-      `📝 **Description:** ${tx.description}`;
+      `📝 **Description:** ${escapeMd(tx.description)}`;
   }
 }
 

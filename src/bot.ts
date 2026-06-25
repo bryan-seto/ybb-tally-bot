@@ -408,8 +408,8 @@ export class YBBTallyBot {
       } catch (fallbackError) {
         console.error('[showDashboard] Error sending fallback dashboard:', fallbackError);
       }
-      // Re-throw to be caught by command handler
-      throw error;
+      // Do NOT re-throw — dashboard failures must never poison a successful expense save.
+      // The expense was already recorded; only the UI refresh failed.
     }
   }
 

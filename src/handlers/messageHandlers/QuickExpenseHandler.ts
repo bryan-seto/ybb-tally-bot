@@ -9,6 +9,19 @@ import { getUserAName, getUserBName } from '../../config';
 import { parseQuickExpense, parseMultipleExpenses } from '../../utils/quickExpenseParser';
 import { formatFxAmountString } from '../../utils/fxFormat';
 
+/** Wrap a Telegram API call with a timeout. Rejects with an error on timeout. */
+async function withTelegramTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Telegram API timeout after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 /**
  * Handler for quick expense one-liners (e.g., "130 groceries", "5.50 coffee")
  */
@@ -100,26 +113,38 @@ export class QuickExpenseHandler extends BaseMessageHandler {
           statusMsg = await ctx.reply('👀 Processing expenses...', { parse_mode: 'HTML' });
 
           const userId = BigInt(ctx.from.id);
+          const tgMsgId = ctx.message?.message_id ? BigInt(ctx.message.message_id) : undefined;
           const confirmations: string[] = [];
           let lastBalanceMessage = '';
+          let skippedDuplicates = 0;
 
           for (const expense of batchParsed) {
-            await ctx.telegram.editMessageText(
-              ctx.chat.id,
-              statusMsg.message_id,
-              undefined,
-              `⏳ Saving expense ${confirmations.length + 1} of ${batchParsed.length}...`,
-              { parse_mode: 'HTML' }
+            await withTelegramTimeout(
+              ctx.telegram.editMessageText(
+                ctx.chat.id,
+                statusMsg.message_id,
+                undefined,
+                `⏳ Saving expense ${confirmations.length + 1} of ${batchParsed.length}...`,
+                { parse_mode: 'HTML' }
+              )
             );
 
-            const { transaction, balanceMessage } = await this.expenseService.createSmartExpense(
+            const batchIndex = batchParsed.indexOf(expense);
+            const { transaction, balanceMessage, duplicate } = await this.expenseService.createSmartExpense(
               userId,
               expense.amount,
               expense.category,
               expense.description,
-              expense.currency ?? 'SGD'
+              expense.currency ?? 'SGD',
+              tgMsgId,
+              batchIndex
             );
             lastBalanceMessage = balanceMessage;
+
+            if (duplicate) {
+              skippedDuplicates++;
+              continue;
+            }
 
             // Build per-line display
             const parsedCurrency: string = expense.currency ?? 'SGD';
@@ -139,7 +164,20 @@ export class QuickExpenseHandler extends BaseMessageHandler {
             skippedNote = `\n\n⚠️ Couldn't parse ${failedLines.length} line${failedLines.length > 1 ? 's' : ''}:\n${failedLines.map((l: string) => `• ${l}`).join('\n')}`;
           }
 
-          const finalMessage = `✅ Recorded ${batchParsed.length} expense${batchParsed.length > 1 ? 's' : ''}:\n${summaryLines}\n\n${lastBalanceMessage}${skippedNote}`;
+          // If ALL were duplicates, say so and bail early quietly
+          if (confirmations.length === 0 && skippedDuplicates > 0) {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              statusMsg.message_id,
+              undefined,
+              `⚠️ Already recorded (duplicate message) — nothing added.`,
+              { parse_mode: 'HTML' }
+            );
+            return;
+          }
+
+          const recordedCount = confirmations.length;
+          const finalMessage = `✅ Recorded ${recordedCount} expense${recordedCount > 1 ? 's' : ''}:\n${summaryLines}\n\n${lastBalanceMessage}${skippedNote}`;
 
           await ctx.telegram.editMessageText(
             ctx.chat.id,
@@ -148,6 +186,11 @@ export class QuickExpenseHandler extends BaseMessageHandler {
             finalMessage,
             { parse_mode: 'Markdown' }
           );
+
+          // Clear any residual session state from this batch so the next message starts clean
+          if (ctx.session) {
+            this.sessionManager.clearSession(ctx.session);
+          }
 
           if (this.showDashboard) {
             await this.showDashboard(ctx, false);
@@ -187,16 +230,19 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       }
 
       // Update status message
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        statusMsg.message_id,
-        undefined,
-        '⏳ Saving expense...',
-        { parse_mode: 'HTML' }
+      await withTelegramTimeout(
+        ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          '⏳ Saving expense...',
+          { parse_mode: 'HTML' }
+        )
       );
 
       // Get user ID
       const userId = BigInt(ctx.from.id);
+      const tgMsgId = ctx.message?.message_id ? BigInt(ctx.message.message_id) : undefined;
       console.log('[DEBUG] handleQuickExpense: User ID:', userId.toString());
 
       // Create smart expense
@@ -211,7 +257,9 @@ export class QuickExpenseHandler extends BaseMessageHandler {
         parsed.amount,
         parsed.category,
         parsed.description,
-        (parsed as any).currency ?? 'SGD'
+        (parsed as any).currency ?? 'SGD',
+        tgMsgId,
+        0
       );
       console.log('[DEBUG] handleQuickExpense: Transaction created successfully:', {
         transactionId: transaction.id.toString(),
@@ -283,6 +331,11 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       // Send stale rate warning as a separate reply (so tests can detect via ctx.reply)
       if (staleRateWarning) {
         await ctx.reply(staleRateWarning.trim());
+      }
+
+      // Clear any residual session state so the next message starts clean
+      if (ctx.session) {
+        this.sessionManager.clearSession(ctx.session);
       }
 
       // Show fresh dashboard after expense save

@@ -120,7 +120,7 @@ exports[`HistoryService - Characterization Tests > formatTransactionDetail with 
 📝 **Description:** ramen"
 `;
 
-exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Storewithunderscoresandspecialchars* - S$100.00"`;
+exports[`HistoryService - Characterization Tests > formatTransactionListItem > should escape markdown special characters in merchant name 1`] = `"/5 ✅ *Store\\_with\\_underscores\\*and\\*special\\[chars]* - S$100.00"`;
 
 exports[`HistoryService - Characterization Tests > formatTransactionListItem > should format SGD currency transaction 1`] = `"/1 ✅ *Restaurant* - S$50.50"`;
 

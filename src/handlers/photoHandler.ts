@@ -5,6 +5,7 @@ import { CONFIG, getUserAName, getUserBName } from '../config';
 import { getNow } from '../utils/dateHelpers';
 import { ExpenseService } from '../services/expenseService';
 import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
+import { escapeMd } from '../utils/markdownUtils';
 
 interface PendingPhoto {
   fileId: string;
@@ -179,8 +180,8 @@ export class PhotoHandler {
       const userAName = getUserAName();
       const userBName = getUserBName();
       
-      // Escape special Markdown chars in dynamic strings (e.g. merchant names like "AMAZE*")
-      const escapeMd = (s: string) => s.replace(/[*_`[\]()~>#+=|{}.!\\-]/g, '\\$&');
+      // Escape special Markdown v1 chars in dynamic strings (e.g. merchant names like "AMAZE*")
+      // using the shared escapeMd utility (markdownUtils.ts)
 
       savedTransactions.forEach(tx => {
         summary += `• **${escapeMd(tx.description ?? '')}**: ${

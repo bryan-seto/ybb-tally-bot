@@ -3,6 +3,7 @@ import { ICallbackHandler } from './ICallbackHandler';
 import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
+import { escapeMd } from '../../utils/markdownUtils';
 
 /**
  * Handler for history navigation callbacks
@@ -16,7 +17,7 @@ export class HistoryCallbackHandler implements ICallbackHandler {
   ) {}
 
   canHandle(data: string): boolean {
-    return data === 'view_history' || data === 'menu_history' || data.startsWith('history_load_');
+    return data === 'view_history' || data === 'menu_history' || data.startsWith('history_load_') || data.startsWith('history_tx_');
   }
 
   async handle(ctx: any, data: string): Promise<void> {
@@ -30,6 +31,33 @@ export class HistoryCallbackHandler implements ICallbackHandler {
       await ctx.answerCbQuery();
       const offset = parseInt(data.replace('history_load_', ''));
       await this.showHistory(ctx, offset);
+      return;
+    }
+
+    // Tap on an individual transaction row → show detail card
+    if (data.startsWith('history_tx_')) {
+      await ctx.answerCbQuery();
+      const txId = BigInt(data.replace('history_tx_', ''));
+      const transaction = await this.historyService.getTransactionById(txId);
+      if (!transaction) {
+        await ctx.answerCbQuery('Transaction not found', { show_alert: true });
+        return;
+      }
+      const card = this.historyService.formatTransactionDetail(transaction);
+      const keyboard = Markup.inlineKeyboard([
+        [{ text: '« Back to History', callback_data: 'view_history' }],
+      ]);
+      try {
+        await ctx.editMessageText(card, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      } catch {
+        await ctx.reply(card, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard.reply_markup,
+        });
+      }
       return;
     }
   }
@@ -68,8 +96,15 @@ export class HistoryCallbackHandler implements ICallbackHandler {
 
       const message = lines.join('\n');
 
+      // Add per-transaction tappable buttons (one per row)
+      const keyboard: any[] = transactions.map(tx => [
+        Markup.button.callback(
+          `/${tx.id} ${tx.status === 'settled' ? '✅' : '🔴'} ${tx.merchant.slice(0, 20)}`,
+          `history_tx_${tx.id}`
+        ),
+      ]);
+
       // Add pagination button if there are more transactions
-      const keyboard: any[] = [];
       if (offset + 20 < totalCount) {
         keyboard.push([
           Markup.button.callback('⬇️ Load More', `history_load_${offset + 20}`)
