@@ -28,13 +28,18 @@ export async function executeCorrectionActions(
     if (step.action === 'UNKNOWN') continue;
 
     // Update status message for current action
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      statusMsg.message_id,
-      undefined,
-      `⏳ <i>${step.statusMessage}</i>`,
-      { parse_mode: 'HTML' }
-    );
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        undefined,
+        `⏳ <i>${step.statusMessage}</i>`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (editErr) {
+      // Non-fatal: if the status message can't be edited (e.g. too old), continue
+      console.warn('[executeCorrectionActions] Could not edit status message:', editErr);
+    }
 
     // Small delay for natural feel
     await new Promise(resolve => setTimeout(resolve, 500));

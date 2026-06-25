@@ -117,9 +117,9 @@ describe('HistoryService', () => {
       expect(line).toBe('/123 🔴 *Grab* - S$15.50');
     });
 
-    it('strips * from merchant name (Telegram Markdown V1 cannot escape it)', () => {
+    it('escapes * in merchant name with backslash (Telegram Markdown V1 supports \\*)', () => {
       // Real-world crash: "AMAZE* KLOOK TRAVEL SINGAPORE SGP" caused a 400 error
-      // because the previous escapeMarkdown used \* which V1 treats as literal backslash.
+      // with the old strip approach. Now we use backslash-escape (\*) which V1 supports.
       const mockTx = {
         id: BigInt(315),
         status: 'unsettled' as const,
@@ -128,15 +128,13 @@ describe('HistoryService', () => {
         currency: 'SGD',
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
-      // Must NOT contain * outside the surrounding bold markers
-      expect(line).toBe('/315 🔴 *AMAZE KLOOK TRAVEL SINGAPORE SGP* - S$109.79');
-      // Crucially: no backslash-asterisk that would confuse Telegram
-      expect(line).not.toContain('\\*');
-      // Only two * chars: the surrounding bold markers
-      expect((line.match(/\*/g) ?? []).length).toBe(2);
+      // The * in "AMAZE*" must be escaped as \*
+      expect(line).toBe('/315 🔴 *AMAZE\\* KLOOK TRAVEL SINGAPORE SGP* - S$109.79');
+      // Only the surrounding bold markers are unescaped *; the merchant's * is escaped
+      expect(line).toContain('AMAZE\\*');
     });
 
-    it('strips _ from merchant name to prevent accidental italic', () => {
+    it('escapes _ in merchant name with backslash (prevents accidental italic)', () => {
       const mockTx = {
         id: BigInt(1),
         status: 'settled' as const,
@@ -145,8 +143,8 @@ describe('HistoryService', () => {
         currency: 'SGD',
       };
       const line = historyService.formatTransactionListItem(mockTx as any);
-      expect(line).toBe('/1 ✅ *ShopName* - S$20.00');
-      expect(line).not.toContain('_');
+      expect(line).toBe('/1 ✅ *Shop\\_Name* - S$20.00');
+      expect(line).toContain('Shop\\_Name');
     });
   });
 });

@@ -31,9 +31,17 @@ export class ManualAddHandler extends BaseMessageHandler {
       session.manualAddStep = 'amount';
       await ctx.reply(`Description: ${text}\n\nAmount in SGD?`);
     } else if (session.manualAddStep === 'amount') {
-      const amount = parseFloat(text.replace(/[^0-9.]/g, ''));
-      if (isNaN(amount) || amount <= 0) {
-        await ctx.reply('Invalid amount. Please enter a number:');
+      // Validate: must be a positive number (integers and decimals allowed, negatives/zero rejected)
+      const trimmed = text.trim();
+      const amount = parseFloat(trimmed);
+      if (isNaN(amount) || amount <= 0 || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+        if (amount < 0 || trimmed.startsWith('-')) {
+          await ctx.reply('❌ Amount must be positive. Please enter a number (e.g. 12.50):');
+        } else if (amount === 0) {
+          await ctx.reply('❌ Amount must be greater than zero. Please enter a number (e.g. 5):');
+        } else {
+          await ctx.reply('❌ Invalid amount. Please enter a number (e.g. 12.50):');
+        }
         return;
       }
       session.manualAmount = amount;

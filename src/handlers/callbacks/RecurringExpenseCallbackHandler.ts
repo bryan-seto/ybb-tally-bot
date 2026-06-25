@@ -6,6 +6,7 @@ import { ExpenseService } from '../../services/expenseService';
 import { HistoryService } from '../../services/historyService';
 import { RecurringExpenseService } from '../../services/recurringExpenseService';
 import { formatDate, getNextRecurringDate } from '../../utils/dateHelpers';
+import { escapeMd } from '../../utils/markdownUtils';
 
 /**
  * Handler for recurring expense callbacks
@@ -306,7 +307,7 @@ export class RecurringExpenseCallbackHandler implements ICallbackHandler {
         const nextRunDate = getNextRecurringDate(expense.dayOfMonth);
         const nextRunDateStr = formatDate(nextRunDate, 'dd MMM yyyy');
         
-        message += `• **${expense.description}**\n`;
+        message += `• **${escapeMd(expense.description)}**\n`;
         message += `  Amount: SGD $${expense.amountOriginal.toFixed(2)}\n`;
         message += `  Payer: ${payerName}\n`;
         message += `  Day of month: ${expense.dayOfMonth}\n`;

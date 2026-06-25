@@ -187,6 +187,11 @@ export class QuickExpenseHandler extends BaseMessageHandler {
             { parse_mode: 'Markdown' }
           );
 
+          // Clear any residual session state from this batch so the next message starts clean
+          if (ctx.session) {
+            this.sessionManager.clearSession(ctx.session);
+          }
+
           if (this.showDashboard) {
             await this.showDashboard(ctx, false);
           }
@@ -326,6 +331,11 @@ export class QuickExpenseHandler extends BaseMessageHandler {
       // Send stale rate warning as a separate reply (so tests can detect via ctx.reply)
       if (staleRateWarning) {
         await ctx.reply(staleRateWarning.trim());
+      }
+
+      // Clear any residual session state so the next message starts clean
+      if (ctx.session) {
+        this.sessionManager.clearSession(ctx.session);
       }
 
       // Show fresh dashboard after expense save
