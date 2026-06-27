@@ -254,7 +254,7 @@ export function getNameByUserId(userId: string): string {
 /**
  * Safety guard: Prevents dangerous operations in production
  * @param operationName - Description of the operation being blocked
- * @throws Error if NODE_ENV is 'production'
+ * @throws Error if NODE_ENV is 'production' OR if DATABASE_URL points to a cloud host
  */
 export function ensureNotProduction(operationName: string): void {
   if (CONFIG.NODE_ENV === 'production') {
@@ -262,6 +262,18 @@ export function ensureNotProduction(operationName: string): void {
       `🚨 SAFETY BLOCKED: ${operationName} is not allowed in production environment.\n` +
       `This protects live user data. Use local development environment (NODE_ENV=development) for testing.\n` +
       `Current NODE_ENV: ${CONFIG.NODE_ENV}`
+    );
+  }
+  // Belt-and-suspenders: also block if DATABASE_URL resolves to a non-local host.
+  // This catches the case where NODE_ENV is not set to 'production' but the URL
+  // is still pointing at the prod/cloud database (the exact failure mode of 2026-06-25).
+  const dbUrl = process.env.DATABASE_URL ?? '';
+  const isLocal = /(?:localhost|127\.0\.0\.1)/.test(dbUrl);
+  if (!isLocal) {
+    throw new Error(
+      `🚨 SAFETY BLOCKED: ${operationName} is not allowed when DATABASE_URL points to a remote host.\n` +
+      `DATABASE_URL must resolve to localhost for test/destructive operations.\n` +
+      `Got host outside localhost. Use TEST_DATABASE_URL with a local Postgres instance.`
     );
   }
 }

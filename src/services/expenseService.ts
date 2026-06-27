@@ -4,6 +4,7 @@ import { getUserNameByRole, USER_A_ROLE_KEY, USER_B_ROLE_KEY } from '../config';
 import { SplitRulesService } from './splitRulesService';
 import { analyticsBus, AnalyticsEventType } from '../events/analyticsBus';
 import { FxRateService } from './fxRateService';
+import { validateFxInvariant, isAboveLargeAmountThreshold } from './expenseServiceGuards';
 
 export class ExpenseService {
   private splitRulesService: SplitRulesService;
@@ -509,6 +510,22 @@ export class ExpenseService {
       fxRate = fx.fxRate;
     }
 
+    // ── Guard: FX-invariant ────────────────────────────────────────────────
+    // Reject non-SGD writes that have a null/1:1 fxRate — this is the
+    // catastrophic balance-inflation failure mode (skill: FX silent 1:1 fallback).
+    validateFxInvariant(resolvedCurrency, fxRate, amountSGD);
+
+    // ── Guard: Large-amount soft-warn ──────────────────────────────────────
+    // Log a warning for unusually large SGD amounts — NOT a hard block.
+    // Caller is responsible for surfacing a confirmation if needed.
+    if (isAboveLargeAmountThreshold(amountSGD)) {
+      console.warn(
+        `[ExpenseService] Large amount warning: amountSGD=${amountSGD.toFixed(2)} ` +
+        `(currency=${resolvedCurrency}, description="${description}"). ` +
+        `Review if this is intentional.`
+      );
+    }
+
     // Create the transaction
     const transactionData = {
       amountSGD,
@@ -668,7 +685,19 @@ export class ExpenseService {
           originalAmount = item.amount;
           itemFxRate = fx.fxRate;
         }
-        
+
+        // ── Guard: FX-invariant (same as createSmartExpense) ──────────────
+        validateFxInvariant(receiptCurrency, itemFxRate, amountSGD);
+
+        // ── Guard: Large-amount soft-warn ──────────────────────────────────
+        if (isAboveLargeAmountThreshold(amountSGD)) {
+          console.warn(
+            `[ExpenseService] Large amount warning (AI receipt): amountSGD=${amountSGD.toFixed(2)} ` +
+            `(currency=${receiptCurrency}, merchant="${item.merchant}"). ` +
+            `Review if this is intentional.`
+          );
+        }
+
         const createdTx = await tx.transaction.create({
           data: {
             amountSGD,
