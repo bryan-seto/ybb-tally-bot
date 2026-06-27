@@ -1,10 +1,16 @@
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'child_process';
 import { ensureNotProduction } from '../../../config';
+import { assertNotLocalDB } from '../../safety/prod-db-guard';
 
 // Use test PostgreSQL database URL from env, or use main DB with test suffix
 // The schema.prisma uses PostgreSQL provider, so we must use PostgreSQL
-export const TEST_DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL?.replace(/\/[^\/]+$/, '/ybb_tally_test') || 'postgresql://user:password@localhost:5432/ybb_tally_test';
+export const TEST_DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL?.replace(/\/[^\/]+$/, '/ybb_tally_test') || 'postgresql://user:***@localhost:5432/ybb_tally_test';
+
+// Defense-in-depth: assert local URL at the point of DB-URL resolution.
+// vitest.setup.ts already blocks non-local runs globally; this catches any
+// future code path that bypasses the global setup (e.g. direct ts-node invocation).
+assertNotLocalDB(TEST_DB_URL);
 
 export const prisma = new PrismaClient({
   datasources: {
